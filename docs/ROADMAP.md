@@ -32,13 +32,16 @@ matrix enforced at handshake, per-class resources (Warrior=Rage, Mage=Mana, Rang
 regen/decay and ability costs, and a unique racial ability per race (heal / attack / defense / speed)
 built on a timed-effect system.
 
-### Étape B — Inventory, items & full-loot corpses
+### Étape B — Inventory, items & full-loot corpses ✅
 
-- [ ] Item definitions (data-driven) + player inventory and equipment slots.
-- [ ] On death, the body becomes a **lootable corpse container** left in the world holding the
-      player's inventory + equipment. **Full loot: any player can loot it.** The corpse remains until
-      emptied, then despawns.
-- [ ] Loot interaction messages (open corpse, take item), AoI-gated like everything else.
+Data-driven items (weapons/armor with stat bonuses, stackable materials/consumables), player
+inventory + equipment slots (weapon/armor) feeding effective stats, and gold. On death the body
+becomes a **lootable corpse** holding the player's inventory + equipped gear + gold; **full loot —
+any player can loot it** (range-gated); the corpse despawns once emptied. Monster kills grant XP and
+gold to the killer.
+
+- [ ] Item-by-item loot windows (currently loot-all on interact) and inventory management (move/drop).
+- [ ] Consumable use (e.g. healing potions) and vendors.
 
 ### Étape C — Grouping
 
@@ -55,14 +58,16 @@ built on a timed-effect system.
       instanced copies); players are assigned to one; the interest grid already localizes work per
       instance. This is also the seam toward server meshing (M6).
 
-### Étape E — Progression (XP-driven, not expansion-style levels)
+### Étape E — Progression (XP-driven, not expansion-style levels) ✅ (core)
 
-- [ ] **A small, fixed set of levels** whose only role is to **unlock spells and gate access to
-      events/content** — deliberately NOT a WoW-style ever-inflating level treadmill.
-- [ ] Primary power growth is **stat evolution from experience**: killing monsters and completing
-      events grants XP that raises the character's stats over time.
-- [ ] Two intertwined tracks: discrete unlocks (levels → abilities/events) and continuous stat growth
-      (XP → stats). Both are data-driven (curves/thresholds in JSON).
+A small, fixed level cap (data-driven thresholds) whose role is to **unlock abilities** — advanced
+class abilities gate on level, deliberately NOT a WoW-style ever-inflating treadmill. Primary power
+growth is **continuous stat evolution from XP**: killing monsters grants XP that raises attack,
+defense, and max health over time (verified: a hunter's max HP grew as it levelled). Both tracks are
+data-driven.
+
+- [ ] Gate **event/content access** by level (needs an events system).
+- [ ] XP from **completing events**, not just kills; per-class ability unlock trees.
 
 ### Étape F — Hardcore death & the account bank
 

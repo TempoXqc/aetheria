@@ -1,5 +1,5 @@
 [
-  { "id": 1, "name": "Warrior", "maxHealth": 120, "moveSpeed": 5.0, "attackPower": 12, "defense": 6, "basicAbilityId": 1, "resource": 1, "maxResource": 100, "resourceRegenPerSec": 0 },
-  { "id": 2, "name": "Mage",    "maxHealth": 80,  "moveSpeed": 5.0, "attackPower": 18, "defense": 2, "basicAbilityId": 2, "resource": 0, "maxResource": 100, "resourceRegenPerSec": 8 },
-  { "id": 3, "name": "Ranger",  "maxHealth": 95,  "moveSpeed": 5.5, "attackPower": 14, "defense": 3, "basicAbilityId": 3, "resource": 2, "maxResource": 100, "resourceRegenPerSec": 20 }
+  { "id": 1, "name": "Warrior", "maxHealth": 120, "moveSpeed": 5.0, "attackPower": 12, "defense": 6, "basicAbilityId": 1, "abilityIds": [1, 20], "resource": 1, "maxResource": 100, "resourceRegenPerSec": 0 },
+  { "id": 2, "name": "Mage",    "maxHealth": 80,  "moveSpeed": 5.0, "attackPower": 18, "defense": 2, "basicAbilityId": 2, "abilityIds": [2, 21], "resource": 0, "maxResource": 100, "resourceRegenPerSec": 8 },
+  { "id": 3, "name": "Ranger",  "maxHealth": 95,  "moveSpeed": 5.5, "attackPower": 14, "defense": 3, "basicAbilityId": 3, "abilityIds": [3, 22], "resource": 2, "maxResource": 100, "resourceRegenPerSec": 20 }
 ]

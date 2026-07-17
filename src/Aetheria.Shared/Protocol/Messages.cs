@@ -1,4 +1,5 @@
 using Aetheria.Shared.Combat;
+using Aetheria.Shared.Items;
 using Aetheria.Shared.Math;
 
 namespace Aetheria.Shared.Protocol;
@@ -68,6 +69,22 @@ public readonly struct UseRacial
     public void Write(PacketWriter w) => w.WriteByte((byte)MessageType.UseRacial);
 
     public static UseRacial Read(ref PacketReader r) => default;
+}
+
+/// <summary>Request to loot everything from a corpse. The server validates range and ownership rules.</summary>
+public readonly struct LootCorpse
+{
+    public readonly int CorpseEntityId;
+
+    public LootCorpse(int corpseEntityId) => CorpseEntityId = corpseEntityId;
+
+    public void Write(PacketWriter w)
+    {
+        w.WriteByte((byte)MessageType.LootCorpse);
+        w.WriteInt(CorpseEntityId);
+    }
+
+    public static LootCorpse Read(ref PacketReader r) => new(r.ReadInt());
 }
 
 /// <summary>A request to use an ability on a target entity. The server validates range and cooldown.</summary>
@@ -368,5 +385,86 @@ public readonly struct CombatEventMessage
         int remaining = r.ReadInt();
         bool killed = r.ReadBool();
         return new CombatEventMessage(attackerId, targetId, abilityId, damage, remaining, killed);
+    }
+}
+
+/// <summary>The caster's own progression + currency, sent to that client (not others).</summary>
+public readonly struct PlayerStatus
+{
+    public readonly int Level;
+    public readonly int TotalXp;
+
+    /// <summary>Total XP needed for the next level, or -1 at the cap.</summary>
+    public readonly int XpForNextLevel;
+    public readonly int Gold;
+
+    public PlayerStatus(int level, int totalXp, int xpForNextLevel, int gold)
+    {
+        Level = level;
+        TotalXp = totalXp;
+        XpForNextLevel = xpForNextLevel;
+        Gold = gold;
+    }
+
+    public void Write(PacketWriter w)
+    {
+        w.WriteByte((byte)MessageType.PlayerStatus);
+        w.WriteInt(Level);
+        w.WriteInt(TotalXp);
+        w.WriteInt(XpForNextLevel);
+        w.WriteInt(Gold);
+    }
+
+    public static PlayerStatus Read(ref PacketReader r)
+    {
+        int level = r.ReadInt();
+        int totalXp = r.ReadInt();
+        int xpForNext = r.ReadInt();
+        int gold = r.ReadInt();
+        return new PlayerStatus(level, totalXp, xpForNext, gold);
+    }
+}
+
+/// <summary>The caster's own inventory and equipped gear, sent to that client.</summary>
+public readonly struct InventoryState
+{
+    public readonly byte EquippedWeaponId;
+    public readonly byte EquippedArmorId;
+    public readonly IReadOnlyList<ItemStack> Items;
+
+    public InventoryState(byte equippedWeaponId, byte equippedArmorId, IReadOnlyList<ItemStack> items)
+    {
+        EquippedWeaponId = equippedWeaponId;
+        EquippedArmorId = equippedArmorId;
+        Items = items;
+    }
+
+    public void Write(PacketWriter w)
+    {
+        w.WriteByte((byte)MessageType.InventoryState);
+        w.WriteByte(EquippedWeaponId);
+        w.WriteByte(EquippedArmorId);
+        w.WriteUInt((uint)Items.Count);
+        for (int i = 0; i < Items.Count; i++)
+        {
+            w.WriteByte(Items[i].ItemId);
+            w.WriteInt(Items[i].Quantity);
+        }
+    }
+
+    public static InventoryState Read(ref PacketReader r)
+    {
+        byte weapon = r.ReadByte();
+        byte armor = r.ReadByte();
+        uint count = r.ReadUInt();
+        var items = new ItemStack[count];
+        for (uint i = 0; i < count; i++)
+        {
+            byte itemId = r.ReadByte();
+            int qty = r.ReadInt();
+            items[i] = new ItemStack(itemId, qty);
+        }
+
+        return new InventoryState(weapon, armor, items);
     }
 }

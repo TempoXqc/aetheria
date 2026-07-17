@@ -51,3 +51,5 @@ dotnet_diagnostic.CA1051.severity = none
 # CA1822: our per-message Write(...) methods share one instance-call shape by design; do not
 #         force some of them static just because a given payload is constant.
 dotnet_diagnostic.CA1822.severity = none
+# CA1711: "ItemStack" is deliberate domain vocabulary (an inventory stack), not a data-structure Stack.
+dotnet_diagnostic.CA1711.severity = none

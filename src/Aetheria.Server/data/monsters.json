@@ -1,4 +1,4 @@
 [
-  { "id": 1, "name": "Goblin Grunt", "maxHealth": 60, "moveSpeed": 4.0, "attackPower": 8,  "defense": 2, "aggroRadius": 15.0, "basicAbilityId": 4 },
-  { "id": 2, "name": "Dire Wolf",    "maxHealth": 90, "moveSpeed": 6.0, "attackPower": 12, "defense": 3, "aggroRadius": 20.0, "basicAbilityId": 4 }
+  { "id": 1, "name": "Goblin Grunt", "maxHealth": 60, "moveSpeed": 4.0, "attackPower": 8,  "defense": 2, "aggroRadius": 15.0, "basicAbilityId": 4, "xpReward": 25, "goldReward": 5 },
+  { "id": 2, "name": "Dire Wolf",    "maxHealth": 90, "moveSpeed": 6.0, "attackPower": 12, "defense": 3, "aggroRadius": 20.0, "basicAbilityId": 4, "xpReward": 40, "goldReward": 10 }
 ]

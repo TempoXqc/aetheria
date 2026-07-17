@@ -1,0 +1,8 @@
+[
+  { "id": 1,  "name": "Rusty Sword",  "type": 1, "slot": 1, "attackBonus": 3, "goldValue": 5 },
+  { "id": 2,  "name": "Iron Sword",   "type": 1, "slot": 1, "attackBonus": 6, "goldValue": 20 },
+  { "id": 3,  "name": "Leather Vest", "type": 2, "slot": 2, "defenseBonus": 4, "healthBonus": 10, "goldValue": 15 },
+  { "id": 10, "name": "Wolf Pelt",    "type": 0, "stackable": true, "maxStack": 20, "goldValue": 3 },
+  { "id": 11, "name": "Goblin Ear",   "type": 0, "stackable": true, "maxStack": 20, "goldValue": 2 },
+  { "id": 20, "name": "Minor Healing Potion", "type": 3, "stackable": true, "maxStack": 10, "goldValue": 5 }
+]

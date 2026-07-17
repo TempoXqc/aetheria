@@ -1,6 +1,8 @@
+using Aetheria.Server.Items;
 using Aetheria.Shared;
 using Aetheria.Shared.Combat;
 using Aetheria.Shared.Data;
+using Aetheria.Shared.Items;
 using Aetheria.Shared.Math;
 using Aetheria.Shared.Net;
 using Aetheria.Shared.Protocol;
@@ -24,6 +26,7 @@ public sealed class World
     private readonly List<int> _queryScratch = new(64);
     private readonly List<CombatEventMessage> _combatEvents = new();
     private readonly List<int> _respawnScratch = new();
+    private readonly List<ServerEntity> _aiScratch = new();
 
     private int _nextEntityId = 1;
     private int _spawnCounter;
@@ -59,9 +62,65 @@ public sealed class World
             RacialAbilityId = race.RacialAbilityId,
         };
         entity.InitResource(cls.Resource, cls.MaxResource, cls.ResourceRegenPerSec * SimulationConstants.TickDelta);
+        ApplyXp(entity, 0); // sets level 1 and zero progression bonuses
+        entity.RestoreToFull();
 
         AddAlive(entity);
         return entity;
+    }
+
+    /// <summary>
+    /// Give a freshly spawned player their starting gold, gear, and consumables — so a new character
+    /// has something to lose (and drop as loot) on death. Kept separate from <see cref="SpawnPlayer"/>
+    /// so the base spawn stays a clean, gear-free character for tests and future custom flows.
+    /// </summary>
+    public void GrantStarterKit(ServerEntity entity)
+    {
+        entity.Inventory.AddGold(SimulationConstants.StartingGold);
+        entity.EquippedWeaponId = 1;               // Rusty Sword
+        AddItem(entity, itemId: 20, quantity: 2);  // Minor Healing Potions
+        RecomputeEquipment(entity);
+        entity.RestoreToFull();
+    }
+
+    /// <summary>Add items to an entity's inventory, honouring the item's stacking rules.</summary>
+    public int AddItem(ServerEntity entity, byte itemId, int quantity)
+    {
+        ItemDefinition def = _gameData.GetItem(itemId);
+        return entity.Inventory.TryAdd(itemId, quantity, def.Stackable, def.MaxStack);
+    }
+
+    /// <summary>Recompute an entity's equipment stat bonuses from its currently equipped gear.</summary>
+    private void RecomputeEquipment(ServerEntity entity)
+    {
+        int atk = 0, def = 0, hp = 0;
+
+        if (entity.EquippedWeaponId != 0 && _gameData.HasItem(entity.EquippedWeaponId))
+        {
+            ItemDefinition w = _gameData.GetItem(entity.EquippedWeaponId);
+            atk += w.AttackBonus; def += w.DefenseBonus; hp += w.HealthBonus;
+        }
+
+        if (entity.EquippedArmorId != 0 && _gameData.HasItem(entity.EquippedArmorId))
+        {
+            ItemDefinition a = _gameData.GetItem(entity.EquippedArmorId);
+            atk += a.AttackBonus; def += a.DefenseBonus; hp += a.HealthBonus;
+        }
+
+        entity.EquipmentAttackBonus = atk;
+        entity.EquipmentDefenseBonus = def;
+        entity.EquipmentHealthBonus = hp;
+    }
+
+    /// <summary>Grant experience and recompute the resulting level and progression stat bonuses.</summary>
+    private void ApplyXp(ServerEntity entity, int xp)
+    {
+        entity.TotalXp += System.Math.Max(0, xp);
+        ProgressionConfig p = _gameData.Progression;
+        entity.Level = p.LevelForXp(entity.TotalXp);
+        entity.ProgressionAttackBonus = p.AttackBonusForXp(entity.TotalXp);
+        entity.ProgressionDefenseBonus = p.DefenseBonusForXp(entity.TotalXp);
+        entity.ProgressionHealthBonus = p.HealthBonusForXp(entity.TotalXp);
     }
 
     /// <summary>Create a monster entity from a monster definition at a fixed spawn position.</summary>
@@ -118,12 +177,23 @@ public sealed class World
     {
         if (!_entities.TryGetValue(attackerId, out ServerEntity? attacker) || attacker.IsDead ||
             !_entities.TryGetValue(targetId, out ServerEntity? target) || target.IsDead ||
-            attackerId == targetId)
+            attackerId == targetId ||
+            target.Kind == EntityKind.Corpse) // corpses are looted, not attacked
         {
             return false;
         }
 
         AbilityDefinition ability = _gameData.GetAbility(abilityId);
+
+        // Players may only use abilities in their class kit that their level has unlocked.
+        if (attacker.Kind == EntityKind.Player)
+        {
+            ClassDefinition cls = _gameData.GetClass(attacker.ClassId);
+            if (!cls.HasAbility(ability.Id) || attacker.Level < ability.UnlockLevel)
+            {
+                return false;
+            }
+        }
 
         if (!attacker.IsAbilityReady(ability.Id, Tick))
         {
@@ -225,7 +295,7 @@ public sealed class World
             {
                 result.Add(new EntitySnapshot(
                     e.Id, e.Kind, e.Faction, e.Position,
-                    e.Health, e.Stats.MaxHealth, (int)e.CurrentResource, e.MaxResource));
+                    e.Health, e.EffectiveMaxHealth, (int)e.CurrentResource, e.MaxResource));
             }
         }
 
@@ -266,9 +336,20 @@ public sealed class World
 
     private void RunMonsterAi()
     {
-        foreach (ServerEntity monster in _entities.Values)
+        // Snapshot the monster list: a monster's attack can kill a player and spawn a corpse
+        // (mutating _entities), which would otherwise invalidate a live enumerator.
+        _aiScratch.Clear();
+        foreach (ServerEntity e in _entities.Values)
         {
-            if (!monster.IsMonster || monster.IsDead)
+            if (e.IsMonster && e.IsAlive)
+            {
+                _aiScratch.Add(e);
+            }
+        }
+
+        foreach (ServerEntity monster in _aiScratch)
+        {
+            if (monster.IsDead)
             {
                 continue;
             }
@@ -361,11 +442,118 @@ public sealed class World
 
         if (target.IsDead)
         {
-            _grid.Remove(target.Id); // Remove the corpse from the visible/targetable world.
+            _grid.Remove(target.Id); // Pull the fallen entity out of the live world.
+            OnEntityKilled(attacker, target);
         }
 
         _combatEvents.Add(new CombatEventMessage(
             attacker.Id, target.Id, ability.Id, damage, target.Health, target.IsDead));
+    }
+
+    private void OnEntityKilled(ServerEntity killer, ServerEntity victim)
+    {
+        if (victim.Kind == EntityKind.Player)
+        {
+            // Full loot: the player's carried inventory, equipped gear, and gold drop as a lootable
+            // corpse anyone can plunder. The player itself will respawn empty-handed.
+            SpawnCorpse(victim);
+        }
+        else if (victim.IsMonster && killer.Kind == EntityKind.Player)
+        {
+            MonsterDefinition def = _gameData.GetMonster(victim.MonsterId);
+            ApplyXp(killer, def.XpReward);
+            killer.Inventory.AddGold(def.GoldReward);
+        }
+    }
+
+    private void SpawnCorpse(ServerEntity dead)
+    {
+        var loot = new Inventory(SimulationConstants.CorpseLootCapacity);
+        loot.AddGold(dead.Inventory.TakeAllGold());
+
+        foreach (ItemStack stack in dead.Inventory.Stacks.ToArray())
+        {
+            ItemDefinition def = _gameData.GetItem(stack.ItemId);
+            loot.TryAdd(stack.ItemId, stack.Quantity, def.Stackable, def.MaxStack);
+        }
+
+        dead.Inventory.Clear();
+
+        MoveEquippedToLoot(loot, dead.EquippedWeaponId);
+        MoveEquippedToLoot(loot, dead.EquippedArmorId);
+        dead.EquippedWeaponId = 0;
+        dead.EquippedArmorId = 0;
+        RecomputeEquipment(dead); // the respawned body has no gear until it loots/replaces it
+
+        int id = _nextEntityId++;
+        var corpse = new ServerEntity(id, EntityKind.Corpse, dead.Position, new StatBlock(1, 0f, 0, 0, 0f), 0)
+        {
+            Name = $"{dead.Name}'s Corpse",
+            Faction = dead.Faction,
+            LootContainer = loot,
+        };
+
+        _entities[id] = corpse;
+        _grid.InsertOrUpdate(id, corpse.Position);
+    }
+
+    private void MoveEquippedToLoot(Inventory loot, byte itemId)
+    {
+        if (itemId != 0 && _gameData.HasItem(itemId))
+        {
+            loot.TryAdd(itemId, 1, stackable: false, maxStack: 1);
+        }
+    }
+
+    /// <summary>
+    /// Loot everything from a corpse into the looter's inventory (gold + as many items as fit).
+    /// Validates the looter is a living player within range. The corpse despawns once emptied.
+    /// Returns true if anything was taken.
+    /// </summary>
+    public bool TryLootCorpse(int looterId, int corpseId)
+    {
+        if (!_entities.TryGetValue(looterId, out ServerEntity? looter) || looter.IsDead ||
+            looter.Kind != EntityKind.Player ||
+            !_entities.TryGetValue(corpseId, out ServerEntity? corpse) ||
+            corpse.Kind != EntityKind.Corpse || corpse.LootContainer is null)
+        {
+            return false;
+        }
+
+        if (Vec2.DistanceSquared(looter.Position, corpse.Position)
+            > SimulationConstants.LootRange * SimulationConstants.LootRange)
+        {
+            return false; // too far away
+        }
+
+        Inventory loot = corpse.LootContainer;
+        bool tookSomething = false;
+
+        int gold = loot.TakeAllGold();
+        if (gold > 0)
+        {
+            looter.Inventory.AddGold(gold);
+            tookSomething = true;
+        }
+
+        foreach (ItemStack stack in loot.Stacks.ToArray())
+        {
+            ItemDefinition def = _gameData.GetItem(stack.ItemId);
+            int leftover = looter.Inventory.TryAdd(stack.ItemId, stack.Quantity, def.Stackable, def.MaxStack);
+            int moved = stack.Quantity - leftover;
+            if (moved > 0)
+            {
+                loot.RemoveQuantity(stack.ItemId, moved);
+                tookSomething = true;
+            }
+        }
+
+        if (loot.IsEmpty)
+        {
+            Despawn(corpse.Id); // all loot recovered — the body disappears
+        }
+
+        return tookSomething;
     }
 
     private void AddAlive(ServerEntity entity)

@@ -1,5 +1,6 @@
 using System.Text.Json;
 using Aetheria.Shared.Combat;
+using Aetheria.Shared.Items;
 
 namespace Aetheria.Shared.Data;
 
@@ -16,17 +17,22 @@ public sealed class GameData
     private readonly Dictionary<byte, ClassDefinition> _classes;
     private readonly Dictionary<byte, AbilityDefinition> _abilities;
     private readonly Dictionary<byte, MonsterDefinition> _monsters;
+    private readonly Dictionary<byte, ItemDefinition> _items;
 
     public GameData(
         IEnumerable<RaceDefinition> races,
         IEnumerable<ClassDefinition> classes,
         IEnumerable<AbilityDefinition> abilities,
-        IEnumerable<MonsterDefinition> monsters)
+        IEnumerable<MonsterDefinition> monsters,
+        IEnumerable<ItemDefinition>? items = null,
+        ProgressionConfig? progression = null)
     {
         _races = races.ToDictionary(r => r.Id);
         _classes = classes.ToDictionary(c => c.Id);
         _abilities = abilities.ToDictionary(a => a.Id);
         _monsters = monsters.ToDictionary(m => m.Id);
+        _items = (items ?? []).ToDictionary(i => i.Id);
+        Progression = progression ?? new ProgressionConfig();
 
         if (_races.Count == 0 || _classes.Count == 0 || _abilities.Count == 0)
         {
@@ -37,6 +43,13 @@ public sealed class GameData
     public IReadOnlyCollection<RaceDefinition> Races => _races.Values;
     public IReadOnlyCollection<ClassDefinition> Classes => _classes.Values;
     public IReadOnlyCollection<MonsterDefinition> Monsters => _monsters.Values;
+    public IReadOnlyCollection<ItemDefinition> Items => _items.Values;
+    public ProgressionConfig Progression { get; }
+
+    public ItemDefinition GetItem(byte id)
+        => _items.TryGetValue(id, out ItemDefinition? i) ? i : _items.Values.First();
+
+    public bool HasItem(byte id) => _items.ContainsKey(id);
 
     public RaceDefinition GetRace(byte id)
         => _races.TryGetValue(id, out RaceDefinition? r) ? r : _races.Values.First();
@@ -63,8 +76,10 @@ public sealed class GameData
         var classes = LoadList<ClassDefinition>(Path.Combine(directory, "classes.json")) ?? defaults.Classes.ToList();
         var abilities = LoadList<AbilityDefinition>(Path.Combine(directory, "abilities.json")) ?? defaults._abilities.Values.ToList();
         var monsters = LoadList<MonsterDefinition>(Path.Combine(directory, "monsters.json")) ?? defaults.Monsters.ToList();
+        var items = LoadList<ItemDefinition>(Path.Combine(directory, "items.json")) ?? defaults.Items.ToList();
+        var progression = LoadObject<ProgressionConfig>(Path.Combine(directory, "progression.json")) ?? defaults.Progression;
 
-        return new GameData(races, classes, abilities, monsters);
+        return new GameData(races, classes, abilities, monsters, items, progression);
     }
 
     private static readonly JsonSerializerOptions JsonOptions = new()
@@ -93,6 +108,23 @@ public sealed class GameData
         }
     }
 
+    private static T? LoadObject<T>(string path) where T : class
+    {
+        try
+        {
+            if (!File.Exists(path))
+            {
+                return null;
+            }
+
+            return JsonSerializer.Deserialize<T>(File.ReadAllText(path), JsonOptions);
+        }
+        catch (Exception ex) when (ex is IOException or JsonException or UnauthorizedAccessException)
+        {
+            return null;
+        }
+    }
+
     /// <summary>True if the race is allowed to play the class (the balance matrix).</summary>
     public bool IsClassAllowedForRace(byte raceId, byte classId) => GetRace(raceId).AllowsClass(classId);
 
@@ -109,17 +141,21 @@ public sealed class GameData
         ],
         classes:
         [
-            new ClassDefinition { Id = 1, Name = "Warrior", MaxHealth = 120, MoveSpeed = 5.0f, AttackPower = 12, Defense = 6, BasicAbilityId = 1, Resource = ResourceType.Rage,   MaxResource = 100, ResourceRegenPerSec = 0f },
-            new ClassDefinition { Id = 2, Name = "Mage",    MaxHealth = 80,  MoveSpeed = 5.0f, AttackPower = 18, Defense = 2, BasicAbilityId = 2, Resource = ResourceType.Mana,   MaxResource = 100, ResourceRegenPerSec = 8f },
-            new ClassDefinition { Id = 3, Name = "Ranger",  MaxHealth = 95,  MoveSpeed = 5.5f, AttackPower = 14, Defense = 3, BasicAbilityId = 3, Resource = ResourceType.Energy, MaxResource = 100, ResourceRegenPerSec = 20f },
+            new ClassDefinition { Id = 1, Name = "Warrior", MaxHealth = 120, MoveSpeed = 5.0f, AttackPower = 12, Defense = 6, BasicAbilityId = 1, AbilityIds = [1, 20], Resource = ResourceType.Rage,   MaxResource = 100, ResourceRegenPerSec = 0f },
+            new ClassDefinition { Id = 2, Name = "Mage",    MaxHealth = 80,  MoveSpeed = 5.0f, AttackPower = 18, Defense = 2, BasicAbilityId = 2, AbilityIds = [2, 21], Resource = ResourceType.Mana,   MaxResource = 100, ResourceRegenPerSec = 8f },
+            new ClassDefinition { Id = 3, Name = "Ranger",  MaxHealth = 95,  MoveSpeed = 5.5f, AttackPower = 14, Defense = 3, BasicAbilityId = 3, AbilityIds = [3, 22], Resource = ResourceType.Energy, MaxResource = 100, ResourceRegenPerSec = 20f },
         ],
         abilities:
         [
-            // Basic attacks
+            // Basic attacks (level 1)
             new AbilityDefinition { Id = 1, Name = "Slash",    BaseDamage = 10, Range = 2.5f, CooldownTicks = 10, ResourceCost = 0 },
             new AbilityDefinition { Id = 2, Name = "Firebolt", BaseDamage = 16, Range = 12f,  CooldownTicks = 16, ResourceCost = 20 },
             new AbilityDefinition { Id = 3, Name = "Shot",     BaseDamage = 12, Range = 10f,  CooldownTicks = 12, ResourceCost = 30 },
             new AbilityDefinition { Id = 4, Name = "Claw",     BaseDamage = 6,  Range = 2.5f, CooldownTicks = 12, ResourceCost = 0 },
+            // Advanced abilities (unlock at level 3)
+            new AbilityDefinition { Id = 20, Name = "Whirlwind",  BaseDamage = 25, Range = 3f,  CooldownTicks = 40, ResourceCost = 25, UnlockLevel = 3 },
+            new AbilityDefinition { Id = 21, Name = "Frostbolt",  BaseDamage = 24, Range = 12f, CooldownTicks = 24, ResourceCost = 30, UnlockLevel = 3 },
+            new AbilityDefinition { Id = 22, Name = "Aimed Shot", BaseDamage = 22, Range = 12f, CooldownTicks = 30, ResourceCost = 50, UnlockLevel = 3 },
             // Racials (self-cast, no resource cost, long cooldown)
             new AbilityDefinition { Id = 10, Name = "Second Wind",       Range = 0f, CooldownTicks = 1200, Effect = EffectType.Heal,          EffectMagnitude = 0.25f, EffectDurationTicks = 0 },
             new AbilityDefinition { Id = 11, Name = "Stoneform",         Range = 0f, CooldownTicks = 1200, Effect = EffectType.BuffDefense,   EffectMagnitude = 0.50f, EffectDurationTicks = 160 },
@@ -128,7 +164,16 @@ public sealed class GameData
         ],
         monsters:
         [
-            new MonsterDefinition { Id = 1, Name = "Goblin Grunt", MaxHealth = 60, MoveSpeed = 4.0f, AttackPower = 8, Defense = 2, AggroRadius = 15f, BasicAbilityId = 4 },
-            new MonsterDefinition { Id = 2, Name = "Dire Wolf", MaxHealth = 90, MoveSpeed = 6.0f, AttackPower = 12, Defense = 3, AggroRadius = 20f, BasicAbilityId = 4 },
+            new MonsterDefinition { Id = 1, Name = "Goblin Grunt", MaxHealth = 60, MoveSpeed = 4.0f, AttackPower = 8, Defense = 2, AggroRadius = 15f, BasicAbilityId = 4, XpReward = 25, GoldReward = 5 },
+            new MonsterDefinition { Id = 2, Name = "Dire Wolf", MaxHealth = 90, MoveSpeed = 6.0f, AttackPower = 12, Defense = 3, AggroRadius = 20f, BasicAbilityId = 4, XpReward = 40, GoldReward = 10 },
+        ],
+        items:
+        [
+            new ItemDefinition { Id = 1,  Name = "Rusty Sword",  Type = ItemType.Weapon, Slot = EquipSlot.Weapon, AttackBonus = 3,  GoldValue = 5 },
+            new ItemDefinition { Id = 2,  Name = "Iron Sword",   Type = ItemType.Weapon, Slot = EquipSlot.Weapon, AttackBonus = 6,  GoldValue = 20 },
+            new ItemDefinition { Id = 3,  Name = "Leather Vest", Type = ItemType.Armor,  Slot = EquipSlot.Armor,  DefenseBonus = 4, HealthBonus = 10, GoldValue = 15 },
+            new ItemDefinition { Id = 10, Name = "Wolf Pelt",    Type = ItemType.Material, Stackable = true, MaxStack = 20, GoldValue = 3 },
+            new ItemDefinition { Id = 11, Name = "Goblin Ear",   Type = ItemType.Material, Stackable = true, MaxStack = 20, GoldValue = 2 },
+            new ItemDefinition { Id = 20, Name = "Minor Healing Potion", Type = ItemType.Consumable, Stackable = true, MaxStack = 10, GoldValue = 5 },
         ]);
 }

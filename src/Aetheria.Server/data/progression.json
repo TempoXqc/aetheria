@@ -1,0 +1,7 @@
+{
+  "maxLevel": 10,
+  "levelXpThresholds": [0, 100, 250, 500, 900, 1500, 2400, 3600, 5200, 7200],
+  "attackPerXp": 0.02,
+  "defensePerXp": 0.01,
+  "healthPerXp": 0.10
+}

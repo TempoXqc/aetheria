@@ -4,7 +4,14 @@ Un MMORPG fantasy hardcore, en 3D isométrique (PvE + PvP), en C#, conçu **serv
 départ** pour un monde **sans coupure**. Ce dépôt contient le cœur serveur + réseau et un client de
 test headless. Le client de rendu Unity viendra plus tard (voir la [ROADMAP](docs/ROADMAP.md)).
 
-> **Statut : M0–M2 + M3 étape A (système de personnage).** Un serveur autoritaire à pas de temps fixe
+> **Statut : M0–M2 + M3 étapes A, B & E.** En plus du système de personnage : **objets & équipement**
+> (bonus de stats), **cadavres full-loot** (à la mort, l'inventaire + l'équipement + l'or tombent au
+> sol, lootables par n'importe qui, le corps disparaît une fois vidé), **or**, et **progression** —
+> l'XP des kills fait **évoluer les stats en continu** (attaque/défense/PV max) et quelques niveaux
+> débloquent des capacités avancées. Vérifié : un chasseur monte niveau 2, ses PV max grimpent, puis
+> meurt et lâche son or sur son cadavre.
+>
+> Le socle (système de personnage) : un serveur autoritaire à pas de temps fixe
 > simule un monde continu ; les clients se connectent en UDP, choisissent **faction / race / classe /
 > genre**, se déplacent, et reçoivent des snapshots filtrés par zone d'intérêt (AoI) incluant santé,
 > faction et ressource. Le combat est autoritaire (capacités avec portée/cooldown/**coût de
@@ -74,6 +81,7 @@ monstres réapparaître après leur délai de respawn.
 | `--ability` | Id de capacité utilisée en `--attack`              | `1`         |
 | `--attack`  | Chasse et attaque le monstre visible le plus proche| (désactivé) |
 | `--racial`  | Utilise la capacité raciale (le serveur gère le CD)| (désactivé) |
+| `--loot`    | Loote le cadavre visible le plus proche (à portée) | (désactivé) |
 
 Rappel matrice classe/race : Humain→Guerrier/Mage · Nain→Guerrier/Rôdeur · Orc→Guerrier/Rôdeur ·
 Elfe→Mage/Rôdeur. Une combinaison interdite est refusée à la connexion.

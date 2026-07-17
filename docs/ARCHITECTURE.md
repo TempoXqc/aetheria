@@ -119,8 +119,13 @@ building it until a single node is actually saturated, but we never design ourse
 
 ## What is intentionally NOT here yet
 
-Inventory/items and full-loot corpses, grouping, instances/raids and world bosses, XP progression and
-the hardcore account bank, persistence (Postgres/Redis), reliable channels, client-side prediction and
-interpolation, snapshot delta-compression, authentication, richer combat (multi-ability bars, cast
-times, threat, pathfinding), and anti-cheat beyond server authority. The Unity rendering client is also
-still to come. Each has a place in the [ROADMAP](ROADMAP.md); none of them changes the shape above.
+Grouping, instances/raids and world bosses, the hardcore account bank + permadeath reset, persistence
+(Postgres/Redis), reliable channels, client-side prediction and interpolation, snapshot
+delta-compression, authentication, richer combat (multi-ability bars, cast times, threat,
+pathfinding), item-by-item loot windows / vendors / usable consumables, and anti-cheat beyond server
+authority. The Unity rendering client is also still to come. Each has a place in the
+[ROADMAP](ROADMAP.md); none of them changes the shape above.
+
+Items, full-loot corpses, and XP progression (Étapes B & E) are implemented server-side; see
+[ADR-0008](adr/0008-items-loot-progression.md). Effective stats compose as `base(class+race) +
+equipment + progression`, then buff multipliers.

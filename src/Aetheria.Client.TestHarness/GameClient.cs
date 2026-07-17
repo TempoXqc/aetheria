@@ -43,6 +43,14 @@ public sealed class GameClient
     /// <summary>How many kills we've landed (a combat event where we are the attacker and the target died).</summary>
     public int KillsByMe { get; private set; }
 
+    // --- Self status (from PlayerStatus / InventoryState) ---
+    public int Level { get; private set; } = 1;
+    public int TotalXp { get; private set; }
+    public int XpForNextLevel { get; private set; } = -1;
+    public int Gold { get; private set; }
+    public byte EquippedWeaponId { get; private set; }
+    public int InventoryStackCount { get; private set; }
+
     public void Connect(string host, int port, string name, byte raceId, byte classId, Gender gender)
     {
         _transport.Connect(host, port);
@@ -59,6 +67,36 @@ public sealed class GameClient
         => Send(new UseAbility(abilityId, targetEntityId));
 
     public void SendUseRacial() => Send(new UseRacial());
+
+    public void SendLootCorpse(int corpseEntityId) => Send(new LootCorpse(corpseEntityId));
+
+    /// <summary>Find the nearest visible corpse, or -1 if none are in view.</summary>
+    public int FindNearestCorpse()
+    {
+        if (!TryGetSelf(out EntitySnapshot self))
+        {
+            return -1;
+        }
+
+        int nearest = -1;
+        float bestDistSq = float.MaxValue;
+        foreach (EntitySnapshot e in Visible)
+        {
+            if (e.Kind != EntityKind.Corpse)
+            {
+                continue;
+            }
+
+            float d = Vec2.DistanceSquared(self.Position, e.Position);
+            if (d < bestDistSq)
+            {
+                bestDistSq = d;
+                nearest = e.Id;
+            }
+        }
+
+        return nearest;
+    }
 
     public void SendPing() => Send(new Ping(Environment.TickCount64));
 
@@ -137,6 +175,20 @@ public sealed class GameClient
                     LastRttMs = Environment.TickCount64 - pong.ClientTimeMs;
                     break;
 
+                case MessageType.PlayerStatus:
+                    PlayerStatus status = PlayerStatus.Read(ref reader);
+                    Level = status.Level;
+                    TotalXp = status.TotalXp;
+                    XpForNextLevel = status.XpForNextLevel;
+                    Gold = status.Gold;
+                    break;
+
+                case MessageType.InventoryState:
+                    InventoryState inv = InventoryState.Read(ref reader);
+                    EquippedWeaponId = inv.EquippedWeaponId;
+                    InventoryStackCount = inv.Items.Count;
+                    break;
+
                 case MessageType.CombatEvent:
                     CombatEventMessage combat = CombatEventMessage.Read(ref reader);
                     LastCombat = combat;
@@ -201,6 +253,7 @@ public sealed class GameClient
     private void Send(InputCommand msg) => SendWith(msg.Write);
     private void Send(UseAbility msg) => SendWith(msg.Write);
     private void Send(UseRacial msg) => SendWith(msg.Write);
+    private void Send(LootCorpse msg) => SendWith(msg.Write);
     private void Send(Ping msg) => SendWith(msg.Write);
     private void Send(Disconnect msg) => SendWith(msg.Write);
 

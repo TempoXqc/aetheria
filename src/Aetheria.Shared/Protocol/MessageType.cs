@@ -14,6 +14,7 @@ public enum MessageType : byte
     Disconnect = 4,
     UseAbility = 5,
     UseRacial = 6,
+    LootCorpse = 7,
 
     // --- Server -> Client ---
     ConnectAccepted = 128,
@@ -21,6 +22,8 @@ public enum MessageType : byte
     Snapshot = 130,
     Pong = 131,
     CombatEvent = 132,
+    PlayerStatus = 133,
+    InventoryState = 134,
 }
 
 /// <summary>Coarse kind of an entity, so the client knows how to represent it. Extended over time.</summary>
@@ -29,4 +32,5 @@ public enum EntityKind : byte
     Player = 0,
     Npc = 1,
     Monster = 2,
+    Corpse = 3,
 }

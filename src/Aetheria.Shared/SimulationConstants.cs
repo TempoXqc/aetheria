@@ -40,6 +40,18 @@ public static class SimulationConstants
     /// <summary>Respawn delay expressed in ticks.</summary>
     public const int RespawnDelayTicks = (int)(RespawnDelaySeconds * TickRate);
 
+    /// <summary>Number of item slots in a player's carried inventory.</summary>
+    public const int PlayerInventoryCapacity = 40;
+
+    /// <summary>Number of item slots a corpse loot pile can hold.</summary>
+    public const int CorpseLootCapacity = 64;
+
+    /// <summary>How close a looter must be to a corpse to loot it (world units).</summary>
+    public const float LootRange = 5f;
+
+    /// <summary>Gold a new character starts with.</summary>
+    public const int StartingGold = 50;
+
     /// <summary>Protocol version — bump on any wire-format change; handshake rejects mismatches.</summary>
     public const byte ProtocolVersion = 3;
 }

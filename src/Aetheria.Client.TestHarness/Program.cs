@@ -50,6 +50,15 @@ while (clock.Elapsed.TotalSeconds < options.Seconds)
             }
         }
 
+        if (options.Loot)
+        {
+            int corpse = client.FindNearestCorpse();
+            if (corpse >= 0)
+            {
+                client.SendLootCorpse(corpse); // server enforces range; harmless if too far
+            }
+        }
+
         client.SendInput(moveDir);
 
         maxVisible = System.Math.Max(maxVisible, client.Visible.Count);
@@ -90,7 +99,7 @@ client.SendDisconnect();
 bool connected = client.EntityId is not null;
 Console.WriteLine(
     $"SUMMARY name={options.Name} connected={connected} " +
-    $"entity={(client.EntityId?.ToString() ?? "none")} " +
+    $"entity={(client.EntityId?.ToString() ?? "none")} level={client.Level} xp={client.TotalXp} gold={client.Gold} " +
     $"maxVisible={maxVisible} sawOther={sawOther} combatSeen={client.CombatEventsSeen} " +
     $"killsByMe={client.KillsByMe} lastRttMs={client.LastRttMs}");
 
@@ -121,14 +130,16 @@ static void PrintStatus(GameClient client, string name)
         ? $" lastHit={c.AttackerId}->{c.TargetId} dmg={c.Damage} rem={c.TargetRemainingHealth}{(c.TargetKilled ? " KILL" : "")}"
         : string.Empty;
 
+    string xp = client.XpForNextLevel >= 0 ? $"{client.TotalXp}/{client.XpForNextLevel}" : $"{client.TotalXp}(max)";
+
     Console.WriteLine(
-        $"[{name}] tick={client.LastTick} hp={hp} res={res} self={self} " +
-        $"visible={client.Visible.Count} monsters={monsters}{combat}");
+        $"[{name}] tick={client.LastTick} lvl={client.Level} xp={xp} gold={client.Gold} " +
+        $"hp={hp} res={res} self={self} visible={client.Visible.Count} monsters={monsters}{combat}");
 }
 
 internal sealed record HarnessOptions(
     string Host, int Port, string Name, double Seconds, Vec2 Direction,
-    byte RaceId, byte ClassId, byte AbilityId, bool Attack, Gender Gender, bool Racial)
+    byte RaceId, byte ClassId, byte AbilityId, bool Attack, Gender Gender, bool Racial, bool Loot)
 {
     public static HarnessOptions Parse(string[] args)
     {
@@ -144,6 +155,7 @@ internal sealed record HarnessOptions(
         bool attack = false;
         var gender = Gender.Male;
         bool racial = false;
+        bool loot = false;
 
         for (int i = 0; i < args.Length; i++)
         {
@@ -164,11 +176,12 @@ internal sealed record HarnessOptions(
                 case "--gender" when HasNext(): gender = ParseGender(args[++i]); break;
                 case "--attack": attack = true; break;
                 case "--racial": racial = true; break;
+                case "--loot": loot = true; break;
                 default: break;
             }
         }
 
-        return new HarnessOptions(host, port, name, seconds, new Vec2(dirX, dirY), race, cls, ability, attack, gender, racial);
+        return new HarnessOptions(host, port, name, seconds, new Vec2(dirX, dirY), race, cls, ability, attack, gender, racial, loot);
     }
 
     private static Gender ParseGender(string value) => value.ToLowerInvariant() switch

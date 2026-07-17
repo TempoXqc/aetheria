@@ -1,3 +1,4 @@
+using Aetheria.Server.Items;
 using Aetheria.Shared;
 using Aetheria.Shared.Combat;
 using Aetheria.Shared.Math;
@@ -32,6 +33,7 @@ public sealed class ServerEntity
         Stats = stats;
         Health = stats.MaxHealth;
         BasicAbilityId = basicAbilityId;
+        Inventory = new Inventory(SimulationConstants.PlayerInventoryCapacity);
     }
 
     public int Id { get; }
@@ -71,10 +73,39 @@ public sealed class ServerEntity
 
     public int? AiTargetId { get; set; }
 
-    // --- Effective stats (base stats modified by any active buffs) ---
-    public int EffectiveAttackPower => (int)MathF.Round(Stats.AttackPower * (1f + SumMagnitude(EffectType.BuffAttack)));
-    public int EffectiveDefense => (int)MathF.Round(Stats.Defense * (1f + SumMagnitude(EffectType.BuffDefense)));
+    // --- Inventory, equipment & currency (players) ---
+    public Inventory Inventory { get; }
+    public byte EquippedWeaponId { get; set; }
+    public byte EquippedArmorId { get; set; }
+
+    /// <summary>Equipment stat bonuses, recomputed by the World whenever gear changes.</summary>
+    public int EquipmentAttackBonus { get; set; }
+    public int EquipmentDefenseBonus { get; set; }
+    public int EquipmentHealthBonus { get; set; }
+
+    // --- Progression (players) ---
+    public int TotalXp { get; set; }
+    public int Level { get; set; } = 1;
+
+    /// <summary>Progression stat bonuses derived from total XP, recomputed by the World.</summary>
+    public int ProgressionAttackBonus { get; set; }
+    public int ProgressionDefenseBonus { get; set; }
+    public int ProgressionHealthBonus { get; set; }
+
+    /// <summary>Loot pile for a corpse entity; null for everything else.</summary>
+    public Inventory? LootContainer { get; set; }
+
+    // --- Effective stats (base + equipment + progression, then multiplied by active buffs) ---
+    public int EffectiveAttackPower
+        => (int)MathF.Round((Stats.AttackPower + EquipmentAttackBonus + ProgressionAttackBonus) * (1f + SumMagnitude(EffectType.BuffAttack)));
+
+    public int EffectiveDefense
+        => (int)MathF.Round((Stats.Defense + EquipmentDefenseBonus + ProgressionDefenseBonus) * (1f + SumMagnitude(EffectType.BuffDefense)));
+
     public float EffectiveMoveSpeed => Stats.MoveSpeed * (1f + SumMagnitude(EffectType.BuffMoveSpeed));
+
+    /// <summary>Max health after equipment and progression bonuses.</summary>
+    public int EffectiveMaxHealth => Stats.MaxHealth + EquipmentHealthBonus + ProgressionHealthBonus;
 
     /// <summary>Initialize the resource pool for a class (rage starts empty; mana/energy start full).</summary>
     public void InitResource(ResourceType type, int max, float regenPerTick)
@@ -126,9 +157,12 @@ public sealed class ServerEntity
             return;
         }
 
-        int amount = (int)MathF.Round(Stats.MaxHealth * fractionOfMax);
-        Health = System.Math.Min(Stats.MaxHealth, Health + amount);
+        int amount = (int)MathF.Round(EffectiveMaxHealth * fractionOfMax);
+        Health = System.Math.Min(EffectiveMaxHealth, Health + amount);
     }
+
+    /// <summary>Set health to the current effective maximum (after gear/progression are applied).</summary>
+    public void RestoreToFull() => Health = EffectiveMaxHealth;
 
     /// <summary>Restore a fraction of the max resource pool (instant effect).</summary>
     public void RestoreResourceFraction(float fractionOfMax) => GainResource(MaxResource * fractionOfMax);
@@ -207,7 +241,7 @@ public sealed class ServerEntity
     public void Respawn()
     {
         IsDead = false;
-        Health = Stats.MaxHealth;
+        Health = EffectiveMaxHealth;
         Position = SpawnPosition;
         MoveIntent = Vec2.Zero;
         AiTargetId = null;

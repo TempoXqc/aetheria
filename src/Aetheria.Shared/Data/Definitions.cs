@@ -1,4 +1,5 @@
 using Aetheria.Shared.Combat;
+using Aetheria.Shared.Items;
 
 namespace Aetheria.Shared.Data;
 
@@ -33,6 +34,9 @@ public sealed class AbilityDefinition
 
     /// <summary>How long a buff effect lasts, in ticks. 0 for instant effects.</summary>
     public int EffectDurationTicks { get; init; }
+
+    /// <summary>Character level required before a player may use this ability. 1 = available immediately.</summary>
+    public int UnlockLevel { get; init; } = 1;
 }
 
 public sealed class RaceDefinition
@@ -66,8 +70,15 @@ public sealed class ClassDefinition
     public int AttackPower { get; init; }
     public int Defense { get; init; }
 
-    /// <summary>The ability used by this class's basic attack.</summary>
+    /// <summary>The ability used by this class's basic attack (available from level 1).</summary>
     public byte BasicAbilityId { get; init; }
+
+    /// <summary>Every ability this class can use (basic + advanced). Advanced ones gate on level.</summary>
+    public byte[] AbilityIds { get; init; } = [];
+
+    /// <summary>True if the ability belongs to this class's kit.</summary>
+    public bool HasAbility(byte abilityId)
+        => abilityId == BasicAbilityId || Array.IndexOf(AbilityIds, abilityId) >= 0;
 
     /// <summary>The resource this class spends on abilities.</summary>
     public ResourceType Resource { get; init; } = ResourceType.Mana;
@@ -93,6 +104,33 @@ public sealed class MonsterDefinition
     public float AggroRadius { get; init; } = 15f;
     public byte BasicAbilityId { get; init; }
 
+    /// <summary>Experience granted to the player who lands the killing blow.</summary>
+    public int XpReward { get; init; }
+
+    /// <summary>Gold granted to the killer.</summary>
+    public int GoldReward { get; init; }
+
     public StatBlock ToStats()
         => new(MaxHealth, MoveSpeed, AttackPower, Defense, AggroRadius);
+}
+
+/// <summary>A data-driven item: equippable gear (with stat bonuses) or stackable materials/consumables.</summary>
+public sealed class ItemDefinition
+{
+    public byte Id { get; init; }
+    public string Name { get; init; } = "Item";
+    public ItemType Type { get; init; } = ItemType.Material;
+    public EquipSlot Slot { get; init; } = EquipSlot.None;
+
+    public int AttackBonus { get; init; }
+    public int DefenseBonus { get; init; }
+    public int HealthBonus { get; init; }
+
+    public bool Stackable { get; init; }
+    public int MaxStack { get; init; } = 1;
+
+    /// <summary>Worth in gold (for future vendors / banking valuation).</summary>
+    public int GoldValue { get; init; }
+
+    public bool IsEquippable => Slot != EquipSlot.None;
 }

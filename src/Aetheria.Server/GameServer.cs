@@ -64,6 +64,12 @@ public sealed class GameServer
         _world.Step(dt);
         BroadcastSnapshots();
         BroadcastCombatEvents(_world.DrainCombatEvents());
+
+        // Self status (progression + inventory) changes rarely; send it a few times a second.
+        if (_world.Tick % 10 == 0)
+        {
+            BroadcastPlayerState();
+        }
     }
 
     private void SpawnStartingMonsters()
@@ -113,6 +119,11 @@ public sealed class GameServer
                     _world.TryUseRacial(session.EntityId);
                     break;
 
+                case MessageType.LootCorpse:
+                    LootCorpse loot = LootCorpse.Read(ref reader);
+                    _world.TryLootCorpse(session.EntityId, loot.CorpseEntityId);
+                    break;
+
                 case MessageType.Ping:
                     Ping ping = Ping.Read(ref reader);
                     Send(peer, new Pong(ping.ClientTimeMs, Environment.TickCount64));
@@ -155,6 +166,7 @@ public sealed class GameServer
         }
 
         ServerEntity entity = _world.SpawnPlayer(peer, request.Name, request.RaceId, request.ClassId, request.Gender);
+        _world.GrantStarterKit(entity);
         session.EntityId = entity.Id;
         session.Name = entity.Name;
         session.HandshakeComplete = true;
@@ -227,11 +239,31 @@ public sealed class GameServer
         }
     }
 
+    private void BroadcastPlayerState()
+    {
+        ProgressionConfig progression = _world.GameData.Progression;
+
+        foreach ((PeerId peer, PlayerSession session) in _sessions)
+        {
+            if (!session.HandshakeComplete ||
+                !_world.Entities.TryGetValue(session.EntityId, out ServerEntity? self))
+            {
+                continue;
+            }
+
+            Send(peer, new PlayerStatus(
+                self.Level, self.TotalXp, progression.XpForNextLevel(self.TotalXp), self.Inventory.Gold));
+            Send(peer, new InventoryState(self.EquippedWeaponId, self.EquippedArmorId, self.Inventory.Stacks));
+        }
+    }
+
     private void Send(PeerId peer, ConnectAccepted msg) => SendWith(peer, msg.Write);
     private void Send(PeerId peer, ConnectRejected msg) => SendWith(peer, msg.Write);
     private void Send(PeerId peer, Pong msg) => SendWith(peer, msg.Write);
     private void Send(PeerId peer, SnapshotMessage msg) => SendWith(peer, msg.Write);
     private void Send(PeerId peer, CombatEventMessage msg) => SendWith(peer, msg.Write);
+    private void Send(PeerId peer, PlayerStatus msg) => SendWith(peer, msg.Write);
+    private void Send(PeerId peer, InventoryState msg) => SendWith(peer, msg.Write);
 
     private void SendWith(PeerId peer, Action<PacketWriter> write)
     {
