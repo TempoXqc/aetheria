@@ -1,5 +1,7 @@
 using Aetheria.Server.World;
 using Aetheria.Shared;
+using Aetheria.Shared.Data;
+using Aetheria.Shared.Math;
 using Aetheria.Shared.Net;
 using Aetheria.Shared.Protocol;
 
@@ -8,7 +10,7 @@ namespace Aetheria.Server;
 /// <summary>
 /// Glue between the network transport and the authoritative <see cref="World.World"/>. It owns the
 /// per-peer session state, runs the handshake, validates and dispatches inbound messages, and each
-/// tick broadcasts an area-of-interest snapshot to every connected player.
+/// tick broadcasts area-of-interest snapshots and combat events to the relevant players.
 ///
 /// Everything here runs on the single simulation thread. Inbound bytes are treated as hostile:
 /// malformed packets are dropped, never trusted, never allowed to throw past the dispatch loop.
@@ -16,15 +18,18 @@ namespace Aetheria.Server;
 public sealed class GameServer
 {
     private readonly IServerTransport _transport;
-    private readonly World.World _world = new();
+    private readonly World.World _world;
     private readonly Dictionary<PeerId, PlayerSession> _sessions = new();
     private readonly PacketWriter _writer = new();
     private readonly Action<string> _log;
 
-    public GameServer(IServerTransport transport, Action<string>? log = null)
+    public GameServer(IServerTransport transport, GameData? gameData = null, Action<string>? log = null)
     {
         _transport = transport;
+        _world = new World.World(gameData);
         _log = log ?? (_ => { });
+
+        SpawnStartingMonsters();
     }
 
     public World.World World => _world;
@@ -53,23 +58,26 @@ public sealed class GameServer
         }
     }
 
-    /// <summary>Advance the world one step, then send each player their personalized snapshot.</summary>
+    /// <summary>Advance the world, then send snapshots and combat events to the relevant players.</summary>
     public void Tick(float dt)
     {
         _world.Step(dt);
         BroadcastSnapshots();
+        BroadcastCombatEvents(_world.DrainCombatEvents());
+    }
+
+    private void SpawnStartingMonsters()
+    {
+        // A small starter pack near the origin so a freshly connected player can find a fight.
+        _world.SpawnMonster(monsterId: 1, new Vec2(10f, 6f));   // Goblin Grunt
+        _world.SpawnMonster(monsterId: 1, new Vec2(12f, 9f));   // Goblin Grunt
+        _world.SpawnMonster(monsterId: 2, new Vec2(-8f, 10f));  // Dire Wolf
     }
 
     private void HandlePacket(PeerId peer, byte[] payload)
     {
-        if (payload.Length == 0)
+        if (payload.Length == 0 || !_sessions.TryGetValue(peer, out PlayerSession? session))
         {
-            return;
-        }
-
-        if (!_sessions.TryGetValue(peer, out PlayerSession? session))
-        {
-            // Packet from an endpoint we have no session for (e.g. after a kick). Ignore.
             return;
         }
 
@@ -95,6 +103,11 @@ public sealed class GameServer
                     _world.ApplyInput(session.EntityId, input.Sequence, input.MoveDirection);
                     break;
 
+                case MessageType.UseAbility:
+                    UseAbility ability = UseAbility.Read(ref reader);
+                    _world.TryUseAbility(session.EntityId, ability.AbilityId, ability.TargetEntityId);
+                    break;
+
                 case MessageType.Ping:
                     Ping ping = Ping.Read(ref reader);
                     Send(peer, new Pong(ping.ClientTimeMs, Environment.TickCount64));
@@ -105,13 +118,12 @@ public sealed class GameServer
                     break;
 
                 default:
-                    // Unknown or wrong-direction message for a handshaked peer — ignore.
-                    break;
+                    break; // Unknown or wrong-direction message — ignore.
             }
         }
         catch (MalformedPacketException)
         {
-            // A client sent us garbage. Drop the packet; do not disturb the simulation.
+            // A client sent garbage. Drop the packet; do not disturb the simulation.
         }
     }
 
@@ -127,13 +139,17 @@ public sealed class GameServer
             return;
         }
 
-        ServerEntity entity = _world.SpawnPlayer(peer);
+        ServerEntity entity = _world.SpawnPlayer(peer, request.Name, request.RaceId, request.ClassId);
         session.EntityId = entity.Id;
-        session.Name = string.IsNullOrWhiteSpace(request.Name) ? $"Player{entity.Id}" : request.Name;
+        session.Name = entity.Name;
         session.HandshakeComplete = true;
 
         Send(peer, new ConnectAccepted(entity.Id, (byte)SimulationConstants.TickRate));
-        _log($"'{session.Name}' joined as entity {entity.Id} ({peer}). Players online: {PlayerCount}.");
+
+        string race = _world.GameData.GetRace(entity.RaceId).Name;
+        string cls = _world.GameData.GetClass(entity.ClassId).Name;
+        _log($"'{session.Name}' joined as {race} {cls} (entity {entity.Id}, {peer}). " +
+             $"Players online: {PlayerCount}.");
     }
 
     private void HandleDisconnect(PeerId peer)
@@ -155,8 +171,44 @@ public sealed class GameServer
                 continue;
             }
 
+            // A dead player still gets snapshots centred on where they fell, so they can watch the
+            // world (and their killer) while waiting to respawn.
             List<EntitySnapshot> visible = _world.BuildAreaSnapshot(self.Position);
             Send(peer, new SnapshotMessage(_world.Tick, visible));
+        }
+    }
+
+    private void BroadcastCombatEvents(IReadOnlyList<CombatEventMessage> events)
+    {
+        if (events.Count == 0)
+        {
+            return;
+        }
+
+        float aoiSq = SimulationConstants.AreaOfInterestRadius * SimulationConstants.AreaOfInterestRadius;
+
+        foreach (CombatEventMessage evt in events)
+        {
+            bool haveAttacker = _world.Entities.TryGetValue(evt.AttackerId, out ServerEntity? attacker);
+            bool haveTarget = _world.Entities.TryGetValue(evt.TargetId, out ServerEntity? target);
+
+            foreach ((PeerId peer, PlayerSession session) in _sessions)
+            {
+                if (!session.HandshakeComplete ||
+                    !_world.Entities.TryGetValue(session.EntityId, out ServerEntity? self))
+                {
+                    continue;
+                }
+
+                bool near =
+                    (haveAttacker && Vec2.DistanceSquared(self.Position, attacker!.Position) <= aoiSq) ||
+                    (haveTarget && Vec2.DistanceSquared(self.Position, target!.Position) <= aoiSq);
+
+                if (near)
+                {
+                    Send(peer, evt);
+                }
+            }
         }
     }
 
@@ -164,6 +216,7 @@ public sealed class GameServer
     private void Send(PeerId peer, ConnectRejected msg) => SendWith(peer, msg.Write);
     private void Send(PeerId peer, Pong msg) => SendWith(peer, msg.Write);
     private void Send(PeerId peer, SnapshotMessage msg) => SendWith(peer, msg.Write);
+    private void Send(PeerId peer, CombatEventMessage msg) => SendWith(peer, msg.Write);
 
     private void SendWith(PeerId peer, Action<PacketWriter> write)
     {

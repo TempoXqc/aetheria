@@ -34,6 +34,12 @@ public static class SimulationConstants
     /// <summary>Drop a peer that has not sent any packet for this long (seconds).</summary>
     public const float PeerTimeoutSeconds = 10f;
 
+    /// <summary>How long a dead player or monster stays down before respawning (seconds).</summary>
+    public const float RespawnDelaySeconds = 5f;
+
+    /// <summary>Respawn delay expressed in ticks.</summary>
+    public const int RespawnDelayTicks = (int)(RespawnDelaySeconds * TickRate);
+
     /// <summary>Protocol version — bump on any wire-format change; handshake rejects mismatches.</summary>
-    public const byte ProtocolVersion = 1;
+    public const byte ProtocolVersion = 2;
 }

@@ -1,0 +1,5 @@
+[
+  { "id": 1, "name": "Human", "healthBonus": 0,   "attackBonus": 0, "defenseBonus": 0,  "moveSpeedMultiplier": 1.00 },
+  { "id": 2, "name": "Orc",   "healthBonus": 20,  "attackBonus": 3, "defenseBonus": -1, "moveSpeedMultiplier": 0.95 },
+  { "id": 3, "name": "Elf",   "healthBonus": -10, "attackBonus": 1, "defenseBonus": 0,  "moveSpeedMultiplier": 1.10 }
+]

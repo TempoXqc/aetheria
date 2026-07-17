@@ -19,16 +19,23 @@ namespace Aetheria.Shared.Protocol;
 // Client -> Server
 // ----------------------------------------------------------------------------------------------
 
-/// <summary>First packet a client sends. Carries the protocol version so mismatches are rejected.</summary>
+/// <summary>
+/// First packet a client sends. Carries the protocol version (mismatches are rejected) plus the
+/// chosen race and class ids, which the server resolves against its <see cref="Data.GameData"/>.
+/// </summary>
 public readonly struct ConnectRequest
 {
     public readonly byte ProtocolVersion;
     public readonly string Name;
+    public readonly byte RaceId;
+    public readonly byte ClassId;
 
-    public ConnectRequest(byte protocolVersion, string name)
+    public ConnectRequest(byte protocolVersion, string name, byte raceId, byte classId)
     {
         ProtocolVersion = protocolVersion;
         Name = name;
+        RaceId = raceId;
+        ClassId = classId;
     }
 
     public void Write(PacketWriter w)
@@ -36,13 +43,44 @@ public readonly struct ConnectRequest
         w.WriteByte((byte)MessageType.ConnectRequest);
         w.WriteByte(ProtocolVersion);
         w.WriteString(Name);
+        w.WriteByte(RaceId);
+        w.WriteByte(ClassId);
     }
 
     public static ConnectRequest Read(ref PacketReader r)
     {
         byte version = r.ReadByte();
         string name = r.ReadString();
-        return new ConnectRequest(version, name);
+        byte raceId = r.ReadByte();
+        byte classId = r.ReadByte();
+        return new ConnectRequest(version, name, raceId, classId);
+    }
+}
+
+/// <summary>A request to use an ability on a target entity. The server validates range and cooldown.</summary>
+public readonly struct UseAbility
+{
+    public readonly byte AbilityId;
+    public readonly int TargetEntityId;
+
+    public UseAbility(byte abilityId, int targetEntityId)
+    {
+        AbilityId = abilityId;
+        TargetEntityId = targetEntityId;
+    }
+
+    public void Write(PacketWriter w)
+    {
+        w.WriteByte((byte)MessageType.UseAbility);
+        w.WriteByte(AbilityId);
+        w.WriteInt(TargetEntityId);
+    }
+
+    public static UseAbility Read(ref PacketReader r)
+    {
+        byte abilityId = r.ReadByte();
+        int targetEntityId = r.ReadInt();
+        return new UseAbility(abilityId, targetEntityId);
     }
 }
 
@@ -152,12 +190,16 @@ public readonly struct EntitySnapshot
     public readonly int Id;
     public readonly EntityKind Kind;
     public readonly Vec2 Position;
+    public readonly int Health;
+    public readonly int MaxHealth;
 
-    public EntitySnapshot(int id, EntityKind kind, Vec2 position)
+    public EntitySnapshot(int id, EntityKind kind, Vec2 position, int health, int maxHealth)
     {
         Id = id;
         Kind = kind;
         Position = position;
+        Health = health;
+        MaxHealth = maxHealth;
     }
 
     public void Write(PacketWriter w)
@@ -166,6 +208,8 @@ public readonly struct EntitySnapshot
         w.WriteByte((byte)Kind);
         w.WriteFloat(Position.X);
         w.WriteFloat(Position.Y);
+        w.WriteInt(Health);
+        w.WriteInt(MaxHealth);
     }
 
     public static EntitySnapshot Read(ref PacketReader r)
@@ -174,7 +218,9 @@ public readonly struct EntitySnapshot
         var kind = (EntityKind)r.ReadByte();
         float x = r.ReadFloat();
         float y = r.ReadFloat();
-        return new EntitySnapshot(id, kind, new Vec2(x, y));
+        int health = r.ReadInt();
+        int maxHealth = r.ReadInt();
+        return new EntitySnapshot(id, kind, new Vec2(x, y), health, maxHealth);
     }
 }
 
@@ -242,5 +288,58 @@ public readonly struct Pong
         long clientTime = r.ReadLong();
         long serverTime = r.ReadLong();
         return new Pong(clientTime, serverTime);
+    }
+}
+
+/// <summary>
+/// A resolved combat interaction, broadcast to clients near the participants so they can play hit
+/// reactions, floating damage numbers, and death effects. The authoritative outcome (damage, whether
+/// the target died) has already been applied server-side; this is a notification, not a request.
+/// </summary>
+public readonly struct CombatEventMessage
+{
+    public readonly int AttackerId;
+    public readonly int TargetId;
+    public readonly byte AbilityId;
+    public readonly int Damage;
+    public readonly int TargetRemainingHealth;
+    public readonly bool TargetKilled;
+
+    public CombatEventMessage(
+        int attackerId,
+        int targetId,
+        byte abilityId,
+        int damage,
+        int targetRemainingHealth,
+        bool targetKilled)
+    {
+        AttackerId = attackerId;
+        TargetId = targetId;
+        AbilityId = abilityId;
+        Damage = damage;
+        TargetRemainingHealth = targetRemainingHealth;
+        TargetKilled = targetKilled;
+    }
+
+    public void Write(PacketWriter w)
+    {
+        w.WriteByte((byte)MessageType.CombatEvent);
+        w.WriteInt(AttackerId);
+        w.WriteInt(TargetId);
+        w.WriteByte(AbilityId);
+        w.WriteInt(Damage);
+        w.WriteInt(TargetRemainingHealth);
+        w.WriteBool(TargetKilled);
+    }
+
+    public static CombatEventMessage Read(ref PacketReader r)
+    {
+        int attackerId = r.ReadInt();
+        int targetId = r.ReadInt();
+        byte abilityId = r.ReadByte();
+        int damage = r.ReadInt();
+        int remaining = r.ReadInt();
+        bool killed = r.ReadBool();
+        return new CombatEventMessage(attackerId, targetId, abilityId, damage, remaining, killed);
     }
 }

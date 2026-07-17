@@ -4,11 +4,13 @@ Un MMORPG fantasy hardcore, en 3D isométrique (PvE + PvP), en C#, conçu **serv
 départ** pour un monde **sans coupure**. Ce dépôt contient le cœur serveur + réseau et un client de
 test headless. Le client de rendu Unity viendra plus tard (voir la [ROADMAP](docs/ROADMAP.md)).
 
-> **Statut : M0 — walking skeleton (tranche verticale).** Un serveur autoritaire à pas de temps fixe
-> simule un monde continu ; les clients se connectent en UDP, envoient leurs intentions de
-> déplacement, et reçoivent des snapshots filtrés par zone d'intérêt (AoI). Deux clients se voient
-> bouger en temps réel et disparaissent du champ de vision l'un de l'autre quand ils quittent le rayon
-> d'intérêt. C'est la fondation sur laquelle tout le reste se construit.
+> **Statut : M0 (walking skeleton) + systèmes de jeu serveur.** Un serveur autoritaire à pas de temps
+> fixe simule un monde continu ; les clients se connectent en UDP, choisissent une race et une classe,
+> se déplacent, et reçoivent des snapshots filtrés par zone d'intérêt (AoI) incluant la santé. Le
+> combat est autoritaire (capacités avec portée/cooldown, dégâts fonction de l'attaque et de la
+> défense), avec mort et respawn. Des monstres PvE data-driven aggrolent, poursuivent et attaquent via
+> une IA serveur. Deux clients se voient en temps réel et se culent hors du rayon d'intérêt. Le client
+> de rendu Unity reste à venir (voir la [ROADMAP](docs/ROADMAP.md)).
 
 ## Pourquoi c'est fait comme ça
 
@@ -42,24 +44,35 @@ dotnet run --project tests/Aetheria.Tests -c Release   # lance les tests unitair
 # Terminal 1 — démarre le serveur autoritaire (UDP 27015 par défaut)
 dotnet run --project src/Aetheria.Server -c Release
 
-# Terminaux 2 et 3 — connecte des clients de test headless
-dotnet run --project src/Aetheria.Client.TestHarness -c Release -- --name Aria  --dirx 1  --seconds 20
-dotnet run --project src/Aetheria.Client.TestHarness -c Release -- --name Borin --dirx -1 --seconds 20
+# Terminal 2 — un guerrier orc qui chasse et tue les monstres proches
+dotnet run --project src/Aetheria.Client.TestHarness -c Release -- --name Thakk --race 2 --class 1 --attack --seconds 20
+
+# Terminal 3 — un second joueur qui se déplace, pour voir l'AoI en action
+dotnet run --project src/Aetheria.Client.TestHarness -c Release -- --name Aria --dirx 1 --seconds 20
 ```
 
-Chaque client affiche, une fois par seconde, les entités présentes dans sa zone d'intérêt, et tu peux
-observer l'autre joueur entrer puis sortir de cet ensemble à mesure qu'ils s'éloignent.
+Chaque client affiche, une fois par seconde, sa santé et les entités présentes dans sa zone
+d'intérêt (dont les monstres), et les événements de combat reçus. Avec `--attack`, le client fonce
+sur le monstre le plus proche et utilise sa capacité — tu le vois infliger des dégâts, tuer, et les
+monstres réapparaître après leur délai de respawn.
 
 ### Options du client de test
 
-| Option      | Signification                              | Défaut      |
-|-------------|--------------------------------------------|-------------|
-| `--host`    | Hôte du serveur                            | `127.0.0.1` |
-| `--port`    | Port UDP du serveur                        | `27015`     |
-| `--name`    | Nom affiché, envoyé lors du handshake      | `tester`    |
-| `--seconds` | Durée de connexion                         | `8`         |
-| `--dirx`    | Intention de déplacement en X (-1..1)      | `0`         |
-| `--diry`    | Intention de déplacement en Y (-1..1)      | `0`         |
+| Option      | Signification                                      | Défaut      |
+|-------------|----------------------------------------------------|-------------|
+| `--host`    | Hôte du serveur                                    | `127.0.0.1` |
+| `--port`    | Port UDP du serveur                                | `27015`     |
+| `--name`    | Nom affiché, envoyé lors du handshake              | `tester`    |
+| `--seconds` | Durée de connexion                                 | `8`         |
+| `--dirx`    | Intention de déplacement en X (-1..1)              | `0`         |
+| `--diry`    | Intention de déplacement en Y (-1..1)              | `0`         |
+| `--race`    | Id de race (1=Human, 2=Orc, 3=Elf)                 | `1`         |
+| `--class`   | Id de classe (1=Warrior, 2=Mage, 3=Ranger)         | `1`         |
+| `--ability` | Id de capacité utilisée en `--attack`              | `1`         |
+| `--attack`  | Chasse et attaque le monstre visible le plus proche| (désactivé) |
+
+Le contenu (races, classes, capacités, monstres) est **data-driven** : voir les fichiers JSON dans
+`src/Aetheria.Server/data/`, éditables sans recompiler.
 
 ## Structure du projet
 
@@ -69,11 +82,14 @@ Aetheria.slnx
 │   ├── Aetheria.Shared/            # code partagé serveur & client
 │   │   ├── Math/                   #   Vec2 (vecteur sur le plan du monde)
 │   │   ├── Spatial/                #   SpatialGrid — interest management
+│   │   ├── Combat/                 #   StatBlock, modificateurs de race
+│   │   ├── Data/                   #   définitions (race/classe/capacité/monstre) + registre GameData
 │   │   ├── Protocol/               #   format réseau : PacketReader/Writer, messages
 │   │   └── Net/                    #   abstraction ITransport + implémentation UDP brute
 │   ├── Aetheria.Server/            # serveur autoritaire headless
-│   │   ├── World/                  #   World, ServerEntity (la source de vérité)
-│   │   ├── GameServer.cs           #   liaison réseau <-> monde, handshake, snapshots
+│   │   ├── World/                  #   World (combat, IA, respawn), ServerEntity (source de vérité)
+│   │   ├── data/                   #   contenu JSON (races, classes, capacités, monstres)
+│   │   ├── GameServer.cs           #   liaison réseau <-> monde, handshake, snapshots, événements
 │   │   └── FixedStepLoop.cs        #   boucle déterministe à pas de temps fixe
 │   └── Aetheria.Client.TestHarness/# client headless pour les tests (sans rendu)
 └── tests/

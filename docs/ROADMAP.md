@@ -25,10 +25,13 @@ the architecture without a rewrite. Scope is a small team / solo dev; nothing he
 
 ## M2 — The game starts to exist
 
+- [x] Classes and races as data-driven definitions (JSON via in-box System.Text.Json).
+- [x] Core combat: authoritative ability/damage resolution, cooldowns, death/respawn.
+- [x] Basic PvE: monster entities, simple aggro/chase/attack AI on the server, monster respawn.
+- [x] Health in snapshots + combat events broadcast to nearby players (AoI-gated).
 - [ ] Unity client project: isometric 3D rendering, camera, input → `InputCommand`, snapshot interp.
-- [ ] Classes and races as data-driven definitions.
-- [ ] Core combat: authoritative ability/damage resolution, cooldowns, death/respawn.
-- [ ] Basic PvE: monster entities, spawners, simple aggro/AI on the server.
+- [ ] Targeting UX, ability bar, floating damage numbers (needs the client).
+- [ ] More abilities per class (multi-ability bars, resources/mana, cast times).
 
 ## M3 — Persistence & identity
 

@@ -33,10 +33,19 @@ public sealed class GameClient
     /// <summary>Last measured round-trip time in milliseconds, or -1 if unknown.</summary>
     public long LastRttMs { get; private set; } = -1;
 
-    public void Connect(string host, int port, string name)
+    /// <summary>The most recent combat event we received, if any (for status printing).</summary>
+    public CombatEventMessage? LastCombat { get; private set; }
+
+    /// <summary>How many combat events we've been dealt, in total (attacker or target = us).</summary>
+    public int CombatEventsSeen { get; private set; }
+
+    /// <summary>How many kills we've landed (a combat event where we are the attacker and the target died).</summary>
+    public int KillsByMe { get; private set; }
+
+    public void Connect(string host, int port, string name, byte raceId, byte classId)
     {
         _transport.Connect(host, port);
-        Send(new ConnectRequest(SimulationConstants.ProtocolVersion, name));
+        Send(new ConnectRequest(SimulationConstants.ProtocolVersion, name, raceId, classId));
     }
 
     public void SendInput(Vec2 direction)
@@ -45,9 +54,40 @@ public sealed class GameClient
         Send(new InputCommand(_inputSequence, direction));
     }
 
+    public void SendUseAbility(byte abilityId, int targetEntityId)
+        => Send(new UseAbility(abilityId, targetEntityId));
+
     public void SendPing() => Send(new Ping(Environment.TickCount64));
 
     public void SendDisconnect() => Send(new Disconnect());
+
+    /// <summary>Find the nearest visible monster, or -1 if none are in view.</summary>
+    public int FindNearestMonster()
+    {
+        if (!TryGetSelf(out EntitySnapshot self))
+        {
+            return -1;
+        }
+
+        int nearest = -1;
+        float bestDistSq = float.MaxValue;
+        foreach (EntitySnapshot e in Visible)
+        {
+            if (e.Kind != EntityKind.Monster)
+            {
+                continue;
+            }
+
+            float d = Vec2.DistanceSquared(self.Position, e.Position);
+            if (d < bestDistSq)
+            {
+                bestDistSq = d;
+                nearest = e.Id;
+            }
+        }
+
+        return nearest;
+    }
 
     /// <summary>Process every datagram currently waiting from the server.</summary>
     public void Pump()
@@ -94,6 +134,21 @@ public sealed class GameClient
                     LastRttMs = Environment.TickCount64 - pong.ClientTimeMs;
                     break;
 
+                case MessageType.CombatEvent:
+                    CombatEventMessage combat = CombatEventMessage.Read(ref reader);
+                    LastCombat = combat;
+                    if (combat.AttackerId == EntityId || combat.TargetId == EntityId)
+                    {
+                        CombatEventsSeen++;
+                    }
+
+                    if (combat.AttackerId == EntityId && combat.TargetKilled)
+                    {
+                        KillsByMe++;
+                    }
+
+                    break;
+
                 default:
                     break;
             }
@@ -102,6 +157,22 @@ public sealed class GameClient
         {
             // Ignore corrupt datagrams.
         }
+    }
+
+    /// <summary>Find a visible entity by id in the latest snapshot.</summary>
+    public bool TryGetEntity(int id, out EntitySnapshot entity)
+    {
+        foreach (EntitySnapshot e in Visible)
+        {
+            if (e.Id == id)
+            {
+                entity = e;
+                return true;
+            }
+        }
+
+        entity = default;
+        return false;
     }
 
     /// <summary>Find our own entity in the latest snapshot, if present.</summary>
@@ -125,6 +196,7 @@ public sealed class GameClient
 
     private void Send(ConnectRequest msg) => SendWith(msg.Write);
     private void Send(InputCommand msg) => SendWith(msg.Write);
+    private void Send(UseAbility msg) => SendWith(msg.Write);
     private void Send(Ping msg) => SendWith(msg.Write);
     private void Send(Disconnect msg) => SendWith(msg.Write);
 

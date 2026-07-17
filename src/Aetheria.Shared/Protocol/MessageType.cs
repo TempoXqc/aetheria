@@ -12,12 +12,14 @@ public enum MessageType : byte
     InputCommand = 2,
     Ping = 3,
     Disconnect = 4,
+    UseAbility = 5,
 
     // --- Server -> Client ---
     ConnectAccepted = 128,
     ConnectRejected = 129,
     Snapshot = 130,
     Pong = 131,
+    CombatEvent = 132,
 }
 
 /// <summary>Coarse kind of an entity, so the client knows how to represent it. Extended over time.</summary>

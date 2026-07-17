@@ -9,7 +9,7 @@ public static class ProtocolTests
     public static void ConnectRequest_RoundTrips()
     {
         var writer = new PacketWriter();
-        new ConnectRequest(protocolVersion: 1, name: "Aria").Write(writer);
+        new ConnectRequest(protocolVersion: 1, name: "Aria", raceId: 3, classId: 2).Write(writer);
 
         var reader = new PacketReader(writer.WrittenSpan);
         Assert.Equal(MessageType.ConnectRequest, (MessageType)reader.ReadByte());
@@ -17,7 +17,41 @@ public static class ProtocolTests
 
         Assert.Equal((byte)1, decoded.ProtocolVersion);
         Assert.Equal("Aria", decoded.Name);
+        Assert.Equal((byte)3, decoded.RaceId);
+        Assert.Equal((byte)2, decoded.ClassId);
         Assert.Equal(0, reader.Remaining);
+    }
+
+    [Test("UseAbility survives a write/read round trip.")]
+    public static void UseAbility_RoundTrips()
+    {
+        var writer = new PacketWriter();
+        new UseAbility(abilityId: 2, targetEntityId: 77).Write(writer);
+
+        var reader = new PacketReader(writer.WrittenSpan);
+        Assert.Equal(MessageType.UseAbility, (MessageType)reader.ReadByte());
+        UseAbility decoded = UseAbility.Read(ref reader);
+
+        Assert.Equal((byte)2, decoded.AbilityId);
+        Assert.Equal(77, decoded.TargetEntityId);
+    }
+
+    [Test("CombatEvent survives a write/read round trip.")]
+    public static void CombatEvent_RoundTrips()
+    {
+        var writer = new PacketWriter();
+        new CombatEventMessage(attackerId: 1, targetId: 2, abilityId: 1, damage: 20,
+            targetRemainingHealth: 40, targetKilled: false).Write(writer);
+
+        var reader = new PacketReader(writer.WrittenSpan);
+        Assert.Equal(MessageType.CombatEvent, (MessageType)reader.ReadByte());
+        CombatEventMessage decoded = CombatEventMessage.Read(ref reader);
+
+        Assert.Equal(1, decoded.AttackerId);
+        Assert.Equal(2, decoded.TargetId);
+        Assert.Equal(20, decoded.Damage);
+        Assert.Equal(40, decoded.TargetRemainingHealth);
+        Assert.False(decoded.TargetKilled);
     }
 
     [Test("InputCommand survives a write/read round trip.")]
@@ -40,8 +74,8 @@ public static class ProtocolTests
     {
         var entities = new[]
         {
-            new EntitySnapshot(1, EntityKind.Player, new Vec2(10f, 20f)),
-            new EntitySnapshot(2, EntityKind.Monster, new Vec2(-3f, 4f)),
+            new EntitySnapshot(1, EntityKind.Player, new Vec2(10f, 20f), health: 100, maxHealth: 120),
+            new EntitySnapshot(2, EntityKind.Monster, new Vec2(-3f, 4f), health: 30, maxHealth: 60),
         };
 
         var writer = new PacketWriter();
@@ -54,8 +88,10 @@ public static class ProtocolTests
         Assert.Equal(12345u, decoded.Tick);
         Assert.Equal(2, decoded.Entities.Count);
         Assert.Equal(1, decoded.Entities[0].Id);
+        Assert.Equal(100, decoded.Entities[0].Health);
         Assert.Equal(EntityKind.Monster, decoded.Entities[1].Kind);
         Assert.Close(-3f, decoded.Entities[1].Position.X);
+        Assert.Equal(60, decoded.Entities[1].MaxHealth);
     }
 
     [Test("Pong round-trips both timestamps.")]

@@ -12,4 +12,9 @@
     <ProjectReference Include="..\Aetheria.Shared\Aetheria.Shared.csproj" />
   </ItemGroup>
 
+  <!-- Ship the content JSON next to the server binary so it can be edited without recompiling. -->
+  <ItemGroup>
+    <None Include="data\**\*.json" CopyToOutputDirectory="PreserveNewest" />
+  </ItemGroup>
+
 </Project>

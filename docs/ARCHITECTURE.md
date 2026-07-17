@@ -70,6 +70,20 @@ AoI, so a dropped one is simply superseded by the next). Anything needing reliab
 chat, trades) will move onto a transport that offers reliable channels — LiteNetLib or ENet — dropped
 in behind the same interface without touching the simulation.
 
+### Content & combat (`Data/`, `Combat/`, `World`)
+
+Content — races, classes, abilities, monsters — is **data-driven**: plain definitions held by a
+`GameData` registry, with built-in defaults plus optional JSON overrides loaded from the server's
+`data/` folder (`System.Text.Json`, in-box). A player's stats are `class base + race modifiers`;
+monster stats come from the monster definition.
+
+Combat is resolved by the authoritative `World`: a validated `UseAbility` checks liveness, cooldown,
+and range, then applies `max(1, ability.BaseDamage + attackerAttackPower - targetDefense)`. Death
+pulls the entity out of the interest grid (invisible and untargetable) and schedules a respawn;
+outcomes go out as AoI-gated `CombatEvent` messages. Monster AI runs server-side each tick: acquire
+the nearest player in aggro range, chase to ability range, attack on cooldown. See
+[ADR-0005](adr/0005-data-driven-content-and-combat.md).
+
 ### Wire protocol (`Protocol/`)
 
 Every packet is one UDP datagram: `[1-byte MessageType][payload]`, little-endian, built and parsed by
@@ -96,6 +110,7 @@ building it until a single node is actually saturated, but we never design ourse
 
 ## What is intentionally NOT here yet
 
-Combat, abilities, classes/races, persistence (Postgres/Redis), reliable channels, client-side
-prediction and interpolation, snapshot delta-compression, authentication, and anti-cheat beyond
-server authority. Each has a place in the [ROADMAP](ROADMAP.md); none of them changes the shape above.
+Persistence (Postgres/Redis), reliable channels, client-side prediction and interpolation, snapshot
+delta-compression, authentication, richer combat (multi-ability bars, resources/mana, cast times,
+threat, pathfinding), and anti-cheat beyond server authority. The Unity rendering client is also still
+to come. Each has a place in the [ROADMAP](ROADMAP.md); none of them changes the shape above.

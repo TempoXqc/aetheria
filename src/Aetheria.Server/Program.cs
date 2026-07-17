@@ -1,13 +1,22 @@
 using Aetheria.Server;
 using Aetheria.Shared;
+using Aetheria.Shared.Data;
 using Aetheria.Shared.Net;
 
 int port = ParsePort(args);
 
+// Load content from the data/ folder next to the binary, falling back to built-in defaults.
+string dataDir = Path.Combine(AppContext.BaseDirectory, "data");
+GameData gameData = GameData.LoadFromDirectoryOrDefault(dataDir);
+
 using var transport = new UdpServerTransport();
 transport.Start(port);
 
-var server = new GameServer(transport, Console.WriteLine);
+var server = new GameServer(transport, gameData, Console.WriteLine);
+
+Console.WriteLine(
+    $"Content loaded: {gameData.Races.Count} races, {gameData.Classes.Count} classes, " +
+    $"{gameData.Monsters.Count} monster types.");
 
 using var cts = new CancellationTokenSource();
 Console.CancelKeyPress += (_, e) =>
