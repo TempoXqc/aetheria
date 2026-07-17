@@ -80,7 +80,13 @@ public sealed class World
         entity.EquippedWeaponId = 1;               // Rusty Sword
         AddItem(entity, itemId: 20, quantity: 2);  // Minor Healing Potions
         RecomputeEquipment(entity);
-        entity.RestoreToFull();
+
+        // Only top up health for a living spawn. When re-kitting a corpse for permadeath the entity is
+        // still dead; Respawn() sets its health when it actually returns.
+        if (entity.IsAlive)
+        {
+            entity.RestoreToFull();
+        }
     }
 
     /// <summary>Add items to an entity's inventory, honouring the item's stacking rules.</summary>
@@ -471,8 +477,14 @@ public sealed class World
         if (victim.Kind == EntityKind.Player)
         {
             // Full loot: the player's carried inventory, equipped gear, and gold drop as a lootable
-            // corpse anyone can plunder. The player itself will respawn empty-handed.
+            // corpse anyone can plunder.
             SpawnCorpse(victim);
+
+            // Hardcore permadeath: the character resets to a fresh level-1 with a new starter kit.
+            // Their account bank (held by the GameServer, per account) is untouched — deposit before
+            // you die and you keep it. The respawn then brings the reborn character back.
+            victim.ResetForPermadeath();
+            GrantStarterKit(victim);
         }
         else if (victim.IsMonster && killer.Kind == EntityKind.Player)
         {

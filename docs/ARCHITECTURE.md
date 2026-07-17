@@ -119,13 +119,15 @@ building it until a single node is actually saturated, but we never design ourse
 
 ## What is intentionally NOT here yet
 
-Grouping, instances/raids and world bosses, the hardcore account bank + permadeath reset, persistence
-(Postgres/Redis), reliable channels, client-side prediction and interpolation, snapshot
-delta-compression, authentication, richer combat (multi-ability bars, cast times, threat,
-pathfinding), item-by-item loot windows / vendors / usable consumables, and anti-cheat beyond server
-authority. The Unity rendering client is also still to come. Each has a place in the
-[ROADMAP](ROADMAP.md); none of them changes the shape above.
+Grouping, instances/raids and world bosses, persistence (Postgres/Redis), reliable channels,
+client-side prediction and interpolation, snapshot delta-compression, authentication, richer combat
+(multi-ability bars, cast times, threat, pathfinding), item-by-item loot windows / vendors / usable
+consumables, and anti-cheat beyond server authority. The Unity rendering client is also still to come.
+Each has a place in the [ROADMAP](ROADMAP.md); none of them changes the shape above.
 
-Items, full-loot corpses, and XP progression (Étapes B & E) are implemented server-side; see
-[ADR-0008](adr/0008-items-loot-progression.md). Effective stats compose as `base(class+race) +
-equipment + progression`, then buff multipliers.
+Items, full-loot corpses, XP progression, weapon/spell proficiency, unique names, and hardcore
+permadeath + the account bank (Étapes B, E, F) are implemented server-side; see
+[ADR-0008](adr/0008-items-loot-progression.md), [ADR-0009](adr/0009-proficiency-resource-growth-names.md),
+and [ADR-0010](adr/0010-hardcore-permadeath-account-bank.md). Effective stats compose as
+`base(class+race) + equipment + progression`, then buff multipliers; on death the character resets but
+the account bank (held per account by the `GameServer`) survives.

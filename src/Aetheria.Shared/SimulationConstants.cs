@@ -52,6 +52,9 @@ public static class SimulationConstants
     /// <summary>Gold a new character starts with.</summary>
     public const int StartingGold = 50;
 
+    /// <summary>Number of item slots in an account bank.</summary>
+    public const int BankCapacity = 200;
+
     /// <summary>Protocol version — bump on any wire-format change; handshake rejects mismatches.</summary>
-    public const byte ProtocolVersion = 3;
+    public const byte ProtocolVersion = 4;
 }

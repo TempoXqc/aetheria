@@ -1,5 +1,6 @@
 using Aetheria.Shared;
 using Aetheria.Shared.Combat;
+using Aetheria.Shared.Items;
 using Aetheria.Shared.Math;
 using Aetheria.Shared.Net;
 using Aetheria.Shared.Protocol;
@@ -51,11 +52,17 @@ public sealed class GameClient
     public byte EquippedWeaponId { get; private set; }
     public int InventoryStackCount { get; private set; }
 
-    public void Connect(string host, int port, string name, byte raceId, byte classId, Gender gender)
+    // --- Account bank (from BankState) ---
+    public int BankGold { get; private set; }
+    public int BankStackCount { get; private set; }
+
+    public void Connect(string host, int port, string name, byte raceId, byte classId, Gender gender, string accountId)
     {
         _transport.Connect(host, port);
-        Send(new ConnectRequest(SimulationConstants.ProtocolVersion, name, raceId, classId, gender));
+        Send(new ConnectRequest(SimulationConstants.ProtocolVersion, name, raceId, classId, gender, accountId));
     }
+
+    public void SendBank(BankOp op, byte itemId, int amount) => Send(new BankTransaction(op, itemId, amount));
 
     public void SendInput(Vec2 direction)
     {
@@ -189,6 +196,12 @@ public sealed class GameClient
                     InventoryStackCount = inv.Items.Count;
                     break;
 
+                case MessageType.BankState:
+                    BankState bankState = BankState.Read(ref reader);
+                    BankGold = bankState.Gold;
+                    BankStackCount = bankState.Items.Count;
+                    break;
+
                 case MessageType.CombatEvent:
                     CombatEventMessage combat = CombatEventMessage.Read(ref reader);
                     LastCombat = combat;
@@ -254,6 +267,7 @@ public sealed class GameClient
     private void Send(UseAbility msg) => SendWith(msg.Write);
     private void Send(UseRacial msg) => SendWith(msg.Write);
     private void Send(LootCorpse msg) => SendWith(msg.Write);
+    private void Send(BankTransaction msg) => SendWith(msg.Write);
     private void Send(Ping msg) => SendWith(msg.Write);
     private void Send(Disconnect msg) => SendWith(msg.Write);
 

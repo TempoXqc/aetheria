@@ -93,7 +93,9 @@ public static class LootTests
         Assert.True(loot is not null && !loot.IsEmpty);
         Assert.Equal(SimulationConstants.StartingGold, loot!.Gold); // B's starting gold dropped
         Assert.True(loot.CountOf(1) >= 1, "B's Rusty Sword should be on the corpse");
-        Assert.Equal(0, b.EquippedWeaponId); // B's gear was stripped to the corpse
+        // B's original gear went to the corpse; hardcore permadeath then re-kits the reborn
+        // character with a fresh starter weapon.
+        Assert.Equal(1, b.EquippedWeaponId);
 
         // The corpse is lootable, not attackable.
         Assert.False(world.TryUseAbility(a.Id, a.BasicAbilityId, corpseId));

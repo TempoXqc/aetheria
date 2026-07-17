@@ -10,7 +10,7 @@ public static class ProtocolTests
     public static void ConnectRequest_RoundTrips()
     {
         var writer = new PacketWriter();
-        new ConnectRequest(protocolVersion: 1, name: "Aria", raceId: 3, classId: 2, gender: Gender.Female).Write(writer);
+        new ConnectRequest(protocolVersion: 1, name: "Aria", raceId: 3, classId: 2, gender: Gender.Female, accountId: "acct-42").Write(writer);
 
         var reader = new PacketReader(writer.WrittenSpan);
         Assert.Equal(MessageType.ConnectRequest, (MessageType)reader.ReadByte());
@@ -21,6 +21,7 @@ public static class ProtocolTests
         Assert.Equal((byte)3, decoded.RaceId);
         Assert.Equal((byte)2, decoded.ClassId);
         Assert.Equal(Gender.Female, decoded.Gender);
+        Assert.Equal("acct-42", decoded.AccountId);
         Assert.Equal(0, reader.Remaining);
     }
 

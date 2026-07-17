@@ -78,14 +78,17 @@ Character names are **unique server-wide across both factions**, validated at th
 (length/format + case-insensitive uniqueness), reserved on join and freed on disconnect. Durable
 uniqueness (surviving disconnect/relog) arrives with persistence (M4).
 
-### Étape F — Hardcore death & the account bank
+### Étape F — Hardcore death & the account bank ✅ (core)
 
-- [ ] **Permadeath**: when a character dies for good, it resets — you start a new character from
-      scratch.
-- [ ] A **persistent account bank** stores gold and materials/items across deaths, so a fresh start
-      begins with your stash rather than truly from zero.
-- [ ] Interaction with full-loot corpses (Étape B): gear you were carrying drops and is lootable;
-      what you deposited in the bank beforehand is safe.
+**Permadeath**: on death a character resets to a fresh level 1 — XP, level, and trained skills are
+wiped, carried inventory/gear/gold drop to the full-loot corpse, and a new starter kit is granted. A
+**persistent account bank** (keyed by account id, in-memory for the server's lifetime) holds gold and
+items **across deaths** — deposit before you die and it survives. Verified: a character banked 40 gold,
+levelled up, died (level → 1, carried gold dropped), and the 40 banked gold was untouched.
+
+- [ ] Bank access gated to a banker NPC / safe zone (currently allowed anywhere).
+- [ ] Durable, account-authenticated bank + name reservation via persistence (M4).
+- [ ] Optional: keep a character slot / "new character" flow instead of in-place reroll.
 
 ## M4 — Persistence & identity
 

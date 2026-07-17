@@ -274,6 +274,22 @@ public sealed class ServerEntity
         CurrentResource = ResourceType == ResourceType.Rage ? 0f : EffectiveMaxResource;
     }
 
+    /// <summary>
+    /// Hardcore permadeath: wipe the character's progression (XP, level, stat bonuses, and trained
+    /// skills) so it starts over from scratch. Inventory/equipment are stripped separately (to the
+    /// full-loot corpse); the account bank is account-scoped and untouched.
+    /// </summary>
+    public void ResetForPermadeath()
+    {
+        TotalXp = 0;
+        Level = 1;
+        ProgressionAttackBonus = 0;
+        ProgressionDefenseBonus = 0;
+        ProgressionHealthBonus = 0;
+        ProgressionResourceBonus = 0;
+        _skill.Clear();
+    }
+
     private float SumMagnitude(EffectType type)
     {
         float sum = 0f;

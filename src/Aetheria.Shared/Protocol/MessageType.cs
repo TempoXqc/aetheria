@@ -15,6 +15,7 @@ public enum MessageType : byte
     UseAbility = 5,
     UseRacial = 6,
     LootCorpse = 7,
+    BankTransaction = 8,
 
     // --- Server -> Client ---
     ConnectAccepted = 128,
@@ -24,6 +25,7 @@ public enum MessageType : byte
     CombatEvent = 132,
     PlayerStatus = 133,
     InventoryState = 134,
+    BankState = 135,
 }
 
 /// <summary>Coarse kind of an entity, so the client knows how to represent it. Extended over time.</summary>

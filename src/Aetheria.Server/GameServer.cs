@@ -1,6 +1,8 @@
+using Aetheria.Server.Items;
 using Aetheria.Server.World;
 using Aetheria.Shared;
 using Aetheria.Shared.Data;
+using Aetheria.Shared.Items;
 using Aetheria.Shared.Math;
 using Aetheria.Shared.Net;
 using Aetheria.Shared.Protocol;
@@ -27,6 +29,10 @@ public sealed class GameServer
     // NOTE: this is uniqueness among currently-active characters; durable uniqueness arrives with
     // persistence (M4), where names are reserved in the database.
     private readonly HashSet<string> _activeNames = new(StringComparer.OrdinalIgnoreCase);
+
+    // Account banks, keyed by account id. Persist across a character's permadeath (and reconnects)
+    // for the server's lifetime — in-memory until real persistence (M4) makes them durable.
+    private readonly Dictionary<string, Inventory> _banks = new(StringComparer.OrdinalIgnoreCase);
 
     public GameServer(IServerTransport transport, GameData? gameData = null, Action<string>? log = null)
     {
@@ -129,6 +135,11 @@ public sealed class GameServer
                     _world.TryLootCorpse(session.EntityId, loot.CorpseEntityId);
                     break;
 
+                case MessageType.BankTransaction:
+                    BankTransaction tx = BankTransaction.Read(ref reader);
+                    HandleBankTransaction(peer, session, tx);
+                    break;
+
                 case MessageType.Ping:
                     Ping ping = Ping.Read(ref reader);
                     Send(peer, new Pong(ping.ClientTimeMs, Environment.TickCount64));
@@ -170,6 +181,14 @@ public sealed class GameServer
             return;
         }
 
+        string accountId = (request.AccountId ?? string.Empty).Trim();
+        if (accountId.Length is < 1 or > 32)
+        {
+            Send(peer, new ConnectRejected("A valid account id (1-32 characters) is required."));
+            _transport.Kick(peer);
+            return;
+        }
+
         // Character name must be valid and unique on this server.
         if (!TryReserveName(request.Name, out string name, out string nameError))
         {
@@ -182,9 +201,11 @@ public sealed class GameServer
         _world.GrantStarterKit(entity);
         session.EntityId = entity.Id;
         session.Name = entity.Name;
+        session.AccountId = accountId;
         session.HandshakeComplete = true;
 
         Send(peer, new ConnectAccepted(entity.Id, (byte)SimulationConstants.TickRate));
+        SendBankState(peer, accountId); // the account bank survives permadeath and is shown on join
 
         string race = _world.GameData.GetRace(entity.RaceId).Name;
         string cls = _world.GameData.GetClass(entity.ClassId).Name;
@@ -287,6 +308,46 @@ public sealed class GameServer
         }
     }
 
+    private void HandleBankTransaction(PeerId peer, PlayerSession session, BankTransaction tx)
+    {
+        if (!_world.Entities.TryGetValue(session.EntityId, out ServerEntity? self) || self.IsDead)
+        {
+            return;
+        }
+
+        Inventory bank = GetOrCreateBank(session.AccountId);
+        Inventory inv = self.Inventory;
+
+        switch (tx.Op)
+        {
+            case BankOp.DepositGold: BankService.DepositGold(inv, bank, tx.Amount); break;
+            case BankOp.WithdrawGold: BankService.WithdrawGold(inv, bank, tx.Amount); break;
+            case BankOp.DepositItem: BankService.DepositItem(inv, bank, tx.ItemId, tx.Amount, _world.GameData); break;
+            case BankOp.WithdrawItem: BankService.WithdrawItem(inv, bank, tx.ItemId, tx.Amount, _world.GameData); break;
+            default: return;
+        }
+
+        SendBankState(peer, session.AccountId);
+        Send(peer, new InventoryState(self.EquippedWeaponId, self.EquippedArmorId, self.Inventory.Stacks));
+    }
+
+    private Inventory GetOrCreateBank(string accountId)
+    {
+        if (!_banks.TryGetValue(accountId, out Inventory? bank))
+        {
+            bank = new Inventory(SimulationConstants.BankCapacity);
+            _banks[accountId] = bank;
+        }
+
+        return bank;
+    }
+
+    private void SendBankState(PeerId peer, string accountId)
+    {
+        Inventory bank = GetOrCreateBank(accountId);
+        Send(peer, new BankState(bank.Gold, bank.Stacks));
+    }
+
     private void BroadcastPlayerState()
     {
         ProgressionConfig progression = _world.GameData.Progression;
@@ -312,6 +373,7 @@ public sealed class GameServer
     private void Send(PeerId peer, CombatEventMessage msg) => SendWith(peer, msg.Write);
     private void Send(PeerId peer, PlayerStatus msg) => SendWith(peer, msg.Write);
     private void Send(PeerId peer, InventoryState msg) => SendWith(peer, msg.Write);
+    private void Send(PeerId peer, BankState msg) => SendWith(peer, msg.Write);
 
     private void SendWith(PeerId peer, Action<PacketWriter> write)
     {
@@ -324,6 +386,7 @@ public sealed class GameServer
     {
         public int EntityId { get; set; }
         public string Name { get; set; } = string.Empty;
+        public string AccountId { get; set; } = string.Empty;
         public bool HandshakeComplete { get; set; }
     }
 }

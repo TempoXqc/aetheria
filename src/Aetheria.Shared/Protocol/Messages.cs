@@ -33,13 +33,17 @@ public readonly struct ConnectRequest
     public readonly byte ClassId;
     public readonly Gender Gender;
 
-    public ConnectRequest(byte protocolVersion, string name, byte raceId, byte classId, Gender gender)
+    /// <summary>Account identifier the character belongs to. The account bank is keyed by this.</summary>
+    public readonly string AccountId;
+
+    public ConnectRequest(byte protocolVersion, string name, byte raceId, byte classId, Gender gender, string accountId)
     {
         ProtocolVersion = protocolVersion;
         Name = name;
         RaceId = raceId;
         ClassId = classId;
         Gender = gender;
+        AccountId = accountId;
     }
 
     public void Write(PacketWriter w)
@@ -50,6 +54,7 @@ public readonly struct ConnectRequest
         w.WriteByte(RaceId);
         w.WriteByte(ClassId);
         w.WriteByte((byte)Gender);
+        w.WriteString(AccountId);
     }
 
     public static ConnectRequest Read(ref PacketReader r)
@@ -59,7 +64,39 @@ public readonly struct ConnectRequest
         byte raceId = r.ReadByte();
         byte classId = r.ReadByte();
         var gender = (Gender)r.ReadByte();
-        return new ConnectRequest(version, name, raceId, classId, gender);
+        string accountId = r.ReadString();
+        return new ConnectRequest(version, name, raceId, classId, gender, accountId);
+    }
+}
+
+/// <summary>A request to move gold or an item between the player's inventory and their account bank.</summary>
+public readonly struct BankTransaction
+{
+    public readonly BankOp Op;
+    public readonly byte ItemId; // ignored for gold ops
+    public readonly int Amount;  // gold amount, or item quantity
+
+    public BankTransaction(BankOp op, byte itemId, int amount)
+    {
+        Op = op;
+        ItemId = itemId;
+        Amount = amount;
+    }
+
+    public void Write(PacketWriter w)
+    {
+        w.WriteByte((byte)MessageType.BankTransaction);
+        w.WriteByte((byte)Op);
+        w.WriteByte(ItemId);
+        w.WriteInt(Amount);
+    }
+
+    public static BankTransaction Read(ref PacketReader r)
+    {
+        var op = (BankOp)r.ReadByte();
+        byte itemId = r.ReadByte();
+        int amount = r.ReadInt();
+        return new BankTransaction(op, itemId, amount);
     }
 }
 
@@ -466,5 +503,45 @@ public readonly struct InventoryState
         }
 
         return new InventoryState(weapon, armor, items);
+    }
+}
+
+/// <summary>The caster's account bank contents (gold + items), sent to that client after any change.</summary>
+public readonly struct BankState
+{
+    public readonly int Gold;
+    public readonly IReadOnlyList<ItemStack> Items;
+
+    public BankState(int gold, IReadOnlyList<ItemStack> items)
+    {
+        Gold = gold;
+        Items = items;
+    }
+
+    public void Write(PacketWriter w)
+    {
+        w.WriteByte((byte)MessageType.BankState);
+        w.WriteInt(Gold);
+        w.WriteUInt((uint)Items.Count);
+        for (int i = 0; i < Items.Count; i++)
+        {
+            w.WriteByte(Items[i].ItemId);
+            w.WriteInt(Items[i].Quantity);
+        }
+    }
+
+    public static BankState Read(ref PacketReader r)
+    {
+        int gold = r.ReadInt();
+        uint count = r.ReadUInt();
+        var items = new ItemStack[count];
+        for (uint i = 0; i < count; i++)
+        {
+            byte itemId = r.ReadByte();
+            int qty = r.ReadInt();
+            items[i] = new ItemStack(itemId, qty);
+        }
+
+        return new BankState(gold, items);
     }
 }

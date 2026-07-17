@@ -17,6 +17,15 @@ public enum EquipSlot : byte
     Armor = 2,
 }
 
+/// <summary>A bank transaction direction: move gold or an item between the player and their account bank.</summary>
+public enum BankOp : byte
+{
+    DepositGold = 0,
+    WithdrawGold = 1,
+    DepositItem = 2,
+    WithdrawItem = 3,
+}
+
 /// <summary>A quantity of one item id — the unit of storage in an inventory or on a corpse.</summary>
 public readonly struct ItemStack
 {

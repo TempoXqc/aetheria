@@ -10,8 +10,10 @@ test headless. Le client de rendu Unity viendra plus tard (voir la [ROADMAP](doc
 > l'XP des kills fait **évoluer les stats en continu** (attaque/défense/**PV max et mana max** ; rage
 > et énergie restent à 100), quelques niveaux débloquent des capacités avancées, et chaque style
 > d'arme/sort a une **maîtrise qui monte à l'usage** et le rend plus puissant (façon WoW d'origine).
-> Les **noms de personnage sont uniques par serveur** (les deux factions). Vérifié : un chasseur monte
-> niveau 2, ses PV max grimpent, meurt et lâche son or sur son cadavre ; un nom déjà pris est refusé.
+> Les **noms de personnage sont uniques par serveur** (les deux factions). **Hardcore** : à la mort le
+> personnage **repart de zéro** (XP/niveau/compétences remis à zéro, équipement lâché sur le cadavre),
+> mais une **banque de compte persistante** garde or et objets d'une vie à l'autre. Vérifié : un joueur
+> dépose 40 or, monte niveau 2, meurt (niveau → 1, or porté perdu), et sa banque reste à 40.
 >
 > Le socle (système de personnage) : un serveur autoritaire à pas de temps fixe
 > simule un monde continu ; les clients se connectent en UDP, choisissent **faction / race / classe /

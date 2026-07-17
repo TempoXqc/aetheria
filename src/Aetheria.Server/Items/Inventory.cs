@@ -38,6 +38,14 @@ public sealed class Inventory
         return g;
     }
 
+    /// <summary>Remove up to <paramref name="amount"/> gold; returns the amount actually removed.</summary>
+    public int RemoveGold(int amount)
+    {
+        int moved = System.Math.Clamp(amount, 0, Gold);
+        Gold -= moved;
+        return moved;
+    }
+
     /// <summary>
     /// Add up to <paramref name="quantity"/> of an item, respecting stacking rules and capacity.
     /// Returns the amount that did NOT fit (0 means everything was added).

@@ -3,6 +3,7 @@ using System.Globalization;
 using Aetheria.Client.TestHarness;
 using Aetheria.Shared;
 using Aetheria.Shared.Combat;
+using Aetheria.Shared.Items;
 using Aetheria.Shared.Math;
 using Aetheria.Shared.Net;
 using Aetheria.Shared.Protocol;
@@ -11,7 +12,8 @@ var options = HarnessOptions.Parse(args);
 
 using var transport = new UdpClientTransport();
 var client = new GameClient(transport);
-client.Connect(options.Host, options.Port, options.Name, options.RaceId, options.ClassId, options.Gender);
+client.Connect(options.Host, options.Port, options.Name, options.RaceId, options.ClassId, options.Gender, options.AccountId);
+bool deposited = false;
 
 Console.WriteLine(
     $"[{options.Name}] connecting to {options.Host}:{options.Port} " +
@@ -38,6 +40,13 @@ while (clock.Elapsed.TotalSeconds < options.Seconds)
 
     if (client.EntityId is int myId)
     {
+        // Stash gold in the account bank once, so it survives permadeath.
+        if (options.DepositGold > 0 && !deposited)
+        {
+            client.SendBank(BankOp.DepositGold, 0, options.DepositGold);
+            deposited = true;
+        }
+
         Vec2 moveDir = options.Direction;
 
         if (options.Attack)
@@ -99,7 +108,7 @@ client.SendDisconnect();
 bool connected = client.EntityId is not null;
 Console.WriteLine(
     $"SUMMARY name={options.Name} connected={connected} " +
-    $"entity={(client.EntityId?.ToString() ?? "none")} level={client.Level} xp={client.TotalXp} gold={client.Gold} " +
+    $"entity={(client.EntityId?.ToString() ?? "none")} level={client.Level} xp={client.TotalXp} gold={client.Gold} bank={client.BankGold} " +
     $"maxVisible={maxVisible} sawOther={sawOther} combatSeen={client.CombatEventsSeen} " +
     $"killsByMe={client.KillsByMe} lastRttMs={client.LastRttMs}");
 
@@ -133,13 +142,14 @@ static void PrintStatus(GameClient client, string name)
     string xp = client.XpForNextLevel >= 0 ? $"{client.TotalXp}/{client.XpForNextLevel}" : $"{client.TotalXp}(max)";
 
     Console.WriteLine(
-        $"[{name}] tick={client.LastTick} lvl={client.Level} xp={xp} gold={client.Gold} " +
+        $"[{name}] tick={client.LastTick} lvl={client.Level} xp={xp} gold={client.Gold} bank={client.BankGold} " +
         $"hp={hp} res={res} self={self} visible={client.Visible.Count} monsters={monsters}{combat}");
 }
 
 internal sealed record HarnessOptions(
     string Host, int Port, string Name, double Seconds, Vec2 Direction,
-    byte RaceId, byte ClassId, byte AbilityId, bool Attack, Gender Gender, bool Racial, bool Loot)
+    byte RaceId, byte ClassId, byte AbilityId, bool Attack, Gender Gender, bool Racial, bool Loot,
+    string AccountId, int DepositGold)
 {
     public static HarnessOptions Parse(string[] args)
     {
@@ -156,6 +166,8 @@ internal sealed record HarnessOptions(
         var gender = Gender.Male;
         bool racial = false;
         bool loot = false;
+        string account = "";
+        int depositGold = 0;
 
         for (int i = 0; i < args.Length; i++)
         {
@@ -174,6 +186,8 @@ internal sealed record HarnessOptions(
                 case "--class" when HasNext() && byte.TryParse(args[i + 1], out byte c): cls = c; i++; break;
                 case "--ability" when HasNext() && byte.TryParse(args[i + 1], out byte ab): ability = ab; i++; break;
                 case "--gender" when HasNext(): gender = ParseGender(args[++i]); break;
+                case "--account" when HasNext(): account = args[++i]; break;
+                case "--deposit" when HasNext() && int.TryParse(args[i + 1], out int dg): depositGold = dg; i++; break;
                 case "--attack": attack = true; break;
                 case "--racial": racial = true; break;
                 case "--loot": loot = true; break;
@@ -181,7 +195,13 @@ internal sealed record HarnessOptions(
             }
         }
 
-        return new HarnessOptions(host, port, name, seconds, new Vec2(dirX, dirY), race, cls, ability, attack, gender, racial, loot);
+        // Default the account id to the character name if not given, so each name has its own bank.
+        if (string.IsNullOrWhiteSpace(account))
+        {
+            account = name;
+        }
+
+        return new HarnessOptions(host, port, name, seconds, new Vec2(dirX, dirY), race, cls, ability, attack, gender, racial, loot, account, depositGold);
     }
 
     private static Gender ParseGender(string value) => value.ToLowerInvariant() switch
