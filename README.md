@@ -7,9 +7,11 @@ test headless. Le client de rendu Unity viendra plus tard (voir la [ROADMAP](doc
 > **Statut : M0–M2 + M3 étapes A, B & E.** En plus du système de personnage : **objets & équipement**
 > (bonus de stats), **cadavres full-loot** (à la mort, l'inventaire + l'équipement + l'or tombent au
 > sol, lootables par n'importe qui, le corps disparaît une fois vidé), **or**, et **progression** —
-> l'XP des kills fait **évoluer les stats en continu** (attaque/défense/PV max) et quelques niveaux
-> débloquent des capacités avancées. Vérifié : un chasseur monte niveau 2, ses PV max grimpent, puis
-> meurt et lâche son or sur son cadavre.
+> l'XP des kills fait **évoluer les stats en continu** (attaque/défense/**PV max et mana max** ; rage
+> et énergie restent à 100), quelques niveaux débloquent des capacités avancées, et chaque style
+> d'arme/sort a une **maîtrise qui monte à l'usage** et le rend plus puissant (façon WoW d'origine).
+> Les **noms de personnage sont uniques par serveur** (les deux factions). Vérifié : un chasseur monte
+> niveau 2, ses PV max grimpent, meurt et lâche son or sur son cadavre ; un nom déjà pris est refusé.
 >
 > Le socle (système de personnage) : un serveur autoritaire à pas de temps fixe
 > simule un monde continu ; les clients se connectent en UDP, choisissent **faction / race / classe /

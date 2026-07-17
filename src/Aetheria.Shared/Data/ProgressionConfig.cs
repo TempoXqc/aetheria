@@ -24,6 +24,25 @@ public sealed class ProgressionConfig
     public float DefensePerXp { get; init; } = 0.01f;
     public float HealthPerXp { get; init; } = 0.10f;
 
+    /// <summary>
+    /// Max-mana growth per point of total XP. Only the Mana resource grows with progression; Rage and
+    /// Energy keep a fixed 100 pool (they are combo-style resources, not a growing reservoir).
+    /// </summary>
+    public float ManaPerXp { get; init; } = 0.05f;
+
+    // --- Weapon/spell proficiency ("skill lines") ---
+    // Using an ability raises the character's skill in its line; higher skill = more damage for that
+    // style, so the weapons and spells you use most become progressively stronger (early-WoW style).
+
+    /// <summary>Maximum skill a character can reach in any one line.</summary>
+    public int MaxSkill { get; init; } = 100;
+
+    /// <summary>Skill points gained each time a damaging ability of that line is used.</summary>
+    public int SkillGainPerUse { get; init; } = 1;
+
+    /// <summary>Damage multiplier bonus per skill point (0.004 = +0.4% per point, +40% at skill 100).</summary>
+    public float DamagePerSkillPoint { get; init; } = 0.004f;
+
     /// <summary>The level a character with the given total XP has reached (clamped to MaxLevel).</summary>
     public int LevelForXp(int totalXp)
     {
@@ -58,4 +77,8 @@ public sealed class ProgressionConfig
     public int AttackBonusForXp(int totalXp) => (int)(totalXp * AttackPerXp);
     public int DefenseBonusForXp(int totalXp) => (int)(totalXp * DefensePerXp);
     public int HealthBonusForXp(int totalXp) => (int)(totalXp * HealthPerXp);
+    public int ManaBonusForXp(int totalXp) => (int)(totalXp * ManaPerXp);
+
+    /// <summary>Damage multiplier for an ability given the caster's skill in that ability's line.</summary>
+    public float SkillDamageMultiplier(int skill) => 1f + (System.Math.Clamp(skill, 0, MaxSkill) * DamagePerSkillPoint);
 }

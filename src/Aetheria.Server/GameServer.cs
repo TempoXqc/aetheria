@@ -23,6 +23,11 @@ public sealed class GameServer
     private readonly PacketWriter _writer = new();
     private readonly Action<string> _log;
 
+    // Character names are unique server-wide (across both factions). Case-insensitive.
+    // NOTE: this is uniqueness among currently-active characters; durable uniqueness arrives with
+    // persistence (M4), where names are reserved in the database.
+    private readonly HashSet<string> _activeNames = new(StringComparer.OrdinalIgnoreCase);
+
     public GameServer(IServerTransport transport, GameData? gameData = null, Action<string>? log = null)
     {
         _transport = transport;
@@ -165,7 +170,15 @@ public sealed class GameServer
             return;
         }
 
-        ServerEntity entity = _world.SpawnPlayer(peer, request.Name, request.RaceId, request.ClassId, request.Gender);
+        // Character name must be valid and unique on this server.
+        if (!TryReserveName(request.Name, out string name, out string nameError))
+        {
+            Send(peer, new ConnectRejected(nameError));
+            _transport.Kick(peer);
+            return;
+        }
+
+        ServerEntity entity = _world.SpawnPlayer(peer, name, request.RaceId, request.ClassId, request.Gender);
         _world.GrantStarterKit(entity);
         session.EntityId = entity.Id;
         session.Name = entity.Name;
@@ -183,9 +196,44 @@ public sealed class GameServer
     {
         if (_sessions.Remove(peer, out PlayerSession? session) && session.HandshakeComplete)
         {
+            _activeNames.Remove(session.Name); // free the name for reuse
             _world.Despawn(session.EntityId);
             _log($"'{session.Name}' left (entity {session.EntityId}). Players online: {PlayerCount}.");
         }
+    }
+
+    /// <summary>
+    /// Validate a requested character name and, if it is well-formed and free, reserve it. On success
+    /// <paramref name="display"/> holds the trimmed name to use; on failure <paramref name="error"/>
+    /// explains why (sent to the client as a rejection reason).
+    /// </summary>
+    private bool TryReserveName(string? requested, out string display, out string error)
+    {
+        display = (requested ?? string.Empty).Trim();
+        error = string.Empty;
+
+        if (display.Length is < 2 or > 16)
+        {
+            error = "Name must be between 2 and 16 characters.";
+            return false;
+        }
+
+        foreach (char c in display)
+        {
+            if (!char.IsLetterOrDigit(c))
+            {
+                error = "Name may contain only letters and digits.";
+                return false;
+            }
+        }
+
+        if (!_activeNames.Add(display)) // case-insensitive; false if already present
+        {
+            error = $"The name '{display}' is already taken on this server.";
+            return false;
+        }
+
+        return true;
     }
 
     private void BroadcastSnapshots()

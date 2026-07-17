@@ -37,6 +37,12 @@ public sealed class AbilityDefinition
 
     /// <summary>Character level required before a player may use this ability. 1 = available immediately.</summary>
     public int UnlockLevel { get; init; } = 1;
+
+    /// <summary>
+    /// The proficiency line this ability trains (e.g. Swords, Fire, Marksmanship). Using the ability
+    /// raises that skill, which raises the ability's damage. 0 = no line (racials, monster attacks).
+    /// </summary>
+    public byte SkillLineId { get; init; }
 }
 
 public sealed class RaceDefinition

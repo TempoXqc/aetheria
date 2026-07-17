@@ -63,11 +63,20 @@ gold to the killer.
 A small, fixed level cap (data-driven thresholds) whose role is to **unlock abilities** — advanced
 class abilities gate on level, deliberately NOT a WoW-style ever-inflating treadmill. Primary power
 growth is **continuous stat evolution from XP**: killing monsters grants XP that raises attack,
-defense, and max health over time (verified: a hunter's max HP grew as it levelled). Both tracks are
-data-driven.
+defense, and **max health / max mana** over time (Rage and Energy stay fixed at 100 — combo-style
+resources that don't grow). Plus **weapon/spell proficiency** (early-WoW style): each ability trains a
+**skill line** (Swords, Fire, Marksmanship) as it's used, and higher skill makes that style hit harder.
+All curves are data-driven.
 
 - [ ] Gate **event/content access** by level (needs an events system).
 - [ ] XP from **completing events**, not just kills; per-class ability unlock trees.
+- [ ] Surface skill lines to the client (currently server-side only) and cap skill by level.
+
+### Étape A addendum — unique character names ✅
+
+Character names are **unique server-wide across both factions**, validated at the handshake
+(length/format + case-insensitive uniqueness), reserved on join and freed on disconnect. Durable
+uniqueness (surviving disconnect/relog) arrives with persistence (M4).
 
 ### Étape F — Hardcore death & the account bank
 

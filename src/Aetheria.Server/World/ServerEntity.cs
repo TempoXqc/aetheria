@@ -65,6 +65,13 @@ public sealed class ServerEntity
     public float CurrentResource { get; private set; }
     public float ResourceRegenPerTick { get; set; }
 
+    /// <summary>Extra max mana from progression. Only Mana grows; Rage and Energy keep a fixed pool.</summary>
+    public int ProgressionResourceBonus { get; set; }
+
+    /// <summary>Effective max resource: mana grows with progression; rage/energy stay fixed at their base.</summary>
+    public int EffectiveMaxResource
+        => MaxResource + (ResourceType == ResourceType.Mana ? ProgressionResourceBonus : 0);
+
     public bool IsMonster => Kind == EntityKind.Monster;
     public bool IsDead { get; private set; }
     public bool IsAlive => !IsDead;
@@ -121,7 +128,7 @@ public sealed class ServerEntity
     public void SpendResource(int cost) => CurrentResource = System.Math.Max(0f, CurrentResource - cost);
 
     public void GainResource(float amount)
-        => CurrentResource = System.Math.Clamp(CurrentResource + amount, 0f, MaxResource);
+        => CurrentResource = System.Math.Clamp(CurrentResource + amount, 0f, EffectiveMaxResource);
 
     public bool IsAbilityReady(byte abilityId, uint tick)
         => !_abilityReadyTick.TryGetValue(abilityId, out uint readyAt) || tick >= readyAt;
@@ -165,7 +172,24 @@ public sealed class ServerEntity
     public void RestoreToFull() => Health = EffectiveMaxHealth;
 
     /// <summary>Restore a fraction of the max resource pool (instant effect).</summary>
-    public void RestoreResourceFraction(float fractionOfMax) => GainResource(MaxResource * fractionOfMax);
+    public void RestoreResourceFraction(float fractionOfMax) => GainResource(EffectiveMaxResource * fractionOfMax);
+
+    // --- Weapon/spell proficiency (skill lines) ---
+    private readonly Dictionary<byte, int> _skill = new();
+
+    /// <summary>Current skill in a proficiency line (0 if untrained).</summary>
+    public int GetSkill(byte skillLineId) => _skill.TryGetValue(skillLineId, out int v) ? v : 0;
+
+    /// <summary>Train a skill line by <paramref name="amount"/>, capped at <paramref name="cap"/>.</summary>
+    public void AddSkill(byte skillLineId, int amount, int cap)
+    {
+        if (skillLineId == 0 || amount <= 0)
+        {
+            return;
+        }
+
+        _skill[skillLineId] = System.Math.Min(cap, GetSkill(skillLineId) + amount);
+    }
 
     public void MarkInCombat(uint tick) => LastCombatTick = tick;
 
@@ -247,7 +271,7 @@ public sealed class ServerEntity
         AiTargetId = null;
         _effects.Clear();
         _abilityReadyTick.Clear();
-        CurrentResource = ResourceType == ResourceType.Rage ? 0f : MaxResource;
+        CurrentResource = ResourceType == ResourceType.Rage ? 0f : EffectiveMaxResource;
     }
 
     private float SumMagnitude(EffectType type)

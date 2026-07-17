@@ -112,6 +112,9 @@ public sealed class World
         entity.EquipmentHealthBonus = hp;
     }
 
+    /// <summary>Grant experience to an entity (public entry point for events, quests, and tests).</summary>
+    public void GrantExperience(ServerEntity entity, int xp) => ApplyXp(entity, xp);
+
     /// <summary>Grant experience and recompute the resulting level and progression stat bonuses.</summary>
     private void ApplyXp(ServerEntity entity, int xp)
     {
@@ -121,6 +124,7 @@ public sealed class World
         entity.ProgressionAttackBonus = p.AttackBonusForXp(entity.TotalXp);
         entity.ProgressionDefenseBonus = p.DefenseBonusForXp(entity.TotalXp);
         entity.ProgressionHealthBonus = p.HealthBonusForXp(entity.TotalXp);
+        entity.ProgressionResourceBonus = p.ManaBonusForXp(entity.TotalXp); // only mana uses it
     }
 
     /// <summary>Create a monster entity from a monster definition at a fixed spawn position.</summary>
@@ -295,7 +299,7 @@ public sealed class World
             {
                 result.Add(new EntitySnapshot(
                     e.Id, e.Kind, e.Faction, e.Position,
-                    e.Health, e.EffectiveMaxHealth, (int)e.CurrentResource, e.MaxResource));
+                    e.Health, e.EffectiveMaxHealth, (int)e.CurrentResource, e.EffectiveMaxResource));
             }
         }
 
@@ -433,12 +437,24 @@ public sealed class World
 
     private void DealDamage(ServerEntity attacker, ServerEntity target, AbilityDefinition ability)
     {
-        int raw = ability.BaseDamage + attacker.EffectiveAttackPower;
+        // Weapon/spell proficiency: a player's skill in this ability's line scales its damage up.
+        bool trainsSkill = attacker.Kind == EntityKind.Player && ability.SkillLineId != 0;
+        float skillMult = trainsSkill
+            ? _gameData.Progression.SkillDamageMultiplier(attacker.GetSkill(ability.SkillLineId))
+            : 1f;
+
+        int raw = (int)MathF.Round((ability.BaseDamage + attacker.EffectiveAttackPower) * skillMult);
         int damage = System.Math.Max(1, raw - target.EffectiveDefense);
 
         target.TakeDamage(damage, Tick);
         attacker.OnDealtDamage(Tick); // rage generation + combat timestamp (Warriors)
         target.OnTookDamage(Tick);
+
+        // Using the ability trains its skill line, so the style grows stronger the more it's used.
+        if (trainsSkill)
+        {
+            attacker.AddSkill(ability.SkillLineId, _gameData.Progression.SkillGainPerUse, _gameData.Progression.MaxSkill);
+        }
 
         if (target.IsDead)
         {
