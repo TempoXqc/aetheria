@@ -1,0 +1,15 @@
+<Project Sdk="Microsoft.NET.Sdk">
+
+  <PropertyGroup>
+    <OutputType>Exe</OutputType>
+    <RootNamespace>Aetheria.Server</RootNamespace>
+    <AssemblyName>Aetheria.Server</AssemblyName>
+    <ServerGarbageCollection>true</ServerGarbageCollection>
+    <ConcurrentGarbageCollection>false</ConcurrentGarbageCollection>
+  </PropertyGroup>
+
+  <ItemGroup>
+    <ProjectReference Include="..\Aetheria.Shared\Aetheria.Shared.csproj" />
+  </ItemGroup>
+
+</Project>

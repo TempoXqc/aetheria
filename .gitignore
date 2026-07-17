@@ -1,0 +1,47 @@
+# ---- .NET ----
+bin/
+obj/
+[Dd]ebug/
+[Rr]elease/
+x64/
+x86/
+*.user
+*.suo
+*.userprefs
+.vs/
+artifacts/
+TestResults/
+*.trx
+*.coverage
+*.coveragexml
+
+# ---- Rider / JetBrains ----
+.idea/
+*.sln.iml
+
+# ---- VS Code ----
+.vscode/*
+!.vscode/settings.json
+!.vscode/extensions.json
+!.vscode/launch.json
+
+# ---- Unity (client, added later) ----
+[Ll]ibrary/
+[Tt]emp/
+[Oo]bj/
+[Bb]uild/
+[Bb]uilds/
+[Ll]ogs/
+[Uu]serSettings/
+*.unitypackage
+*.apk
+*.aab
+
+# ---- OS ----
+.DS_Store
+Thumbs.db
+
+# ---- Local env / secrets ----
+*.env
+appsettings.Local.json
+secrets.json

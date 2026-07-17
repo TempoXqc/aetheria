@@ -1,0 +1,13 @@
+<Project Sdk="Microsoft.NET.Sdk">
+
+  <PropertyGroup>
+    <OutputType>Exe</OutputType>
+    <RootNamespace>Aetheria.Client.TestHarness</RootNamespace>
+    <AssemblyName>Aetheria.Client.TestHarness</AssemblyName>
+  </PropertyGroup>
+
+  <ItemGroup>
+    <ProjectReference Include="..\Aetheria.Shared\Aetheria.Shared.csproj" />
+  </ItemGroup>
+
+</Project>

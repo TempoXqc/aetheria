@@ -1,0 +1,10 @@
+<Solution>
+  <Folder Name="/src/">
+    <Project Path="src/Aetheria.Client.TestHarness/Aetheria.Client.TestHarness.csproj" />
+    <Project Path="src/Aetheria.Server/Aetheria.Server.csproj" />
+    <Project Path="src/Aetheria.Shared/Aetheria.Shared.csproj" />
+  </Folder>
+  <Folder Name="/tests/">
+    <Project Path="tests/Aetheria.Tests/Aetheria.Tests.csproj" />
+  </Folder>
+</Solution>

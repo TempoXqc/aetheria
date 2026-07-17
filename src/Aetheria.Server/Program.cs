@@ -1,0 +1,46 @@
+using Aetheria.Server;
+using Aetheria.Shared;
+using Aetheria.Shared.Net;
+
+int port = ParsePort(args);
+
+using var transport = new UdpServerTransport();
+transport.Start(port);
+
+var server = new GameServer(transport, Console.WriteLine);
+
+using var cts = new CancellationTokenSource();
+Console.CancelKeyPress += (_, e) =>
+{
+    e.Cancel = true; // Let the loop unwind cleanly instead of hard-killing the process.
+    cts.Cancel();
+};
+
+Console.WriteLine($"Aetheria server listening on UDP {port} at {SimulationConstants.TickRate} Hz.");
+Console.WriteLine("Press Ctrl+C to stop.");
+
+var loop = new FixedStepLoop(SimulationConstants.TickRate, dt =>
+{
+    server.ProcessNetwork();
+    server.Tick(dt);
+});
+
+loop.Run(cts.Token);
+
+Console.WriteLine("Server stopped.");
+return 0;
+
+static int ParsePort(string[] args)
+{
+    for (int i = 0; i < args.Length - 1; i++)
+    {
+        if ((args[i] == "--port" || args[i] == "-p") &&
+            int.TryParse(args[i + 1], out int parsed) &&
+            parsed is > 0 and <= 65535)
+        {
+            return parsed;
+        }
+    }
+
+    return SimulationConstants.DefaultPort;
+}

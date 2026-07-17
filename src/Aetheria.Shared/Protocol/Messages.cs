@@ -1,0 +1,246 @@
+using Aetheria.Shared.Math;
+
+namespace Aetheria.Shared.Protocol;
+
+/*
+ * Wire format
+ * -----------
+ * Every packet is a single UDP datagram laid out as:
+ *
+ *     [1 byte MessageType][payload...]
+ *
+ * Each message type below writes its own leading MessageType byte in Write(), and expects the
+ * type byte to have ALREADY been consumed before its Read() runs (the transport/dispatch layer
+ * peeks the first byte to decide which Read to call). Keeping encode/decode next to each other,
+ * per message, is what stops the client and server wire formats from silently drifting apart.
+ */
+
+// ----------------------------------------------------------------------------------------------
+// Client -> Server
+// ----------------------------------------------------------------------------------------------
+
+/// <summary>First packet a client sends. Carries the protocol version so mismatches are rejected.</summary>
+public readonly struct ConnectRequest
+{
+    public readonly byte ProtocolVersion;
+    public readonly string Name;
+
+    public ConnectRequest(byte protocolVersion, string name)
+    {
+        ProtocolVersion = protocolVersion;
+        Name = name;
+    }
+
+    public void Write(PacketWriter w)
+    {
+        w.WriteByte((byte)MessageType.ConnectRequest);
+        w.WriteByte(ProtocolVersion);
+        w.WriteString(Name);
+    }
+
+    public static ConnectRequest Read(ref PacketReader r)
+    {
+        byte version = r.ReadByte();
+        string name = r.ReadString();
+        return new ConnectRequest(version, name);
+    }
+}
+
+/// <summary>A movement intent. The server is authoritative: it decides what this input produces.</summary>
+public readonly struct InputCommand
+{
+    public readonly uint Sequence;
+    public readonly Vec2 MoveDirection;
+
+    public InputCommand(uint sequence, Vec2 moveDirection)
+    {
+        Sequence = sequence;
+        MoveDirection = moveDirection;
+    }
+
+    public void Write(PacketWriter w)
+    {
+        w.WriteByte((byte)MessageType.InputCommand);
+        w.WriteUInt(Sequence);
+        w.WriteFloat(MoveDirection.X);
+        w.WriteFloat(MoveDirection.Y);
+    }
+
+    public static InputCommand Read(ref PacketReader r)
+    {
+        uint sequence = r.ReadUInt();
+        float x = r.ReadFloat();
+        float y = r.ReadFloat();
+        return new InputCommand(sequence, new Vec2(x, y));
+    }
+}
+
+/// <summary>Liveness / round-trip-time probe. Server echoes it back as a <see cref="Pong"/>.</summary>
+public readonly struct Ping
+{
+    public readonly long ClientTimeMs;
+
+    public Ping(long clientTimeMs) => ClientTimeMs = clientTimeMs;
+
+    public void Write(PacketWriter w)
+    {
+        w.WriteByte((byte)MessageType.Ping);
+        w.WriteLong(ClientTimeMs);
+    }
+
+    public static Ping Read(ref PacketReader r) => new(r.ReadLong());
+}
+
+/// <summary>Graceful disconnect notice (no payload).</summary>
+public readonly struct Disconnect
+{
+    public void Write(PacketWriter w) => w.WriteByte((byte)MessageType.Disconnect);
+
+    public static Disconnect Read(ref PacketReader r) => default;
+}
+
+// ----------------------------------------------------------------------------------------------
+// Server -> Client
+// ----------------------------------------------------------------------------------------------
+
+/// <summary>Handshake success. Tells the client which entity is "theirs" and the server tick rate.</summary>
+public readonly struct ConnectAccepted
+{
+    public readonly int EntityId;
+    public readonly byte TickRate;
+
+    public ConnectAccepted(int entityId, byte tickRate)
+    {
+        EntityId = entityId;
+        TickRate = tickRate;
+    }
+
+    public void Write(PacketWriter w)
+    {
+        w.WriteByte((byte)MessageType.ConnectAccepted);
+        w.WriteInt(EntityId);
+        w.WriteByte(TickRate);
+    }
+
+    public static ConnectAccepted Read(ref PacketReader r)
+    {
+        int entityId = r.ReadInt();
+        byte tickRate = r.ReadByte();
+        return new ConnectAccepted(entityId, tickRate);
+    }
+}
+
+/// <summary>Handshake failure with a human-readable reason (protocol mismatch, server full, ...).</summary>
+public readonly struct ConnectRejected
+{
+    public readonly string Reason;
+
+    public ConnectRejected(string reason) => Reason = reason;
+
+    public void Write(PacketWriter w)
+    {
+        w.WriteByte((byte)MessageType.ConnectRejected);
+        w.WriteString(Reason);
+    }
+
+    public static ConnectRejected Read(ref PacketReader r) => new(r.ReadString());
+}
+
+/// <summary>Per-entity state as it appears inside a <see cref="SnapshotMessage"/>.</summary>
+public readonly struct EntitySnapshot
+{
+    public readonly int Id;
+    public readonly EntityKind Kind;
+    public readonly Vec2 Position;
+
+    public EntitySnapshot(int id, EntityKind kind, Vec2 position)
+    {
+        Id = id;
+        Kind = kind;
+        Position = position;
+    }
+
+    public void Write(PacketWriter w)
+    {
+        w.WriteInt(Id);
+        w.WriteByte((byte)Kind);
+        w.WriteFloat(Position.X);
+        w.WriteFloat(Position.Y);
+    }
+
+    public static EntitySnapshot Read(ref PacketReader r)
+    {
+        int id = r.ReadInt();
+        var kind = (EntityKind)r.ReadByte();
+        float x = r.ReadFloat();
+        float y = r.ReadFloat();
+        return new EntitySnapshot(id, kind, new Vec2(x, y));
+    }
+}
+
+/// <summary>
+/// The world as this client should see it right now: only the entities inside the client's
+/// area of interest (see <see cref="Spatial.SpatialGrid"/>). Sent every tick per connected player.
+/// </summary>
+public readonly struct SnapshotMessage
+{
+    public readonly uint Tick;
+    public readonly IReadOnlyList<EntitySnapshot> Entities;
+
+    public SnapshotMessage(uint tick, IReadOnlyList<EntitySnapshot> entities)
+    {
+        Tick = tick;
+        Entities = entities;
+    }
+
+    public void Write(PacketWriter w)
+    {
+        w.WriteByte((byte)MessageType.Snapshot);
+        w.WriteUInt(Tick);
+        w.WriteUInt((uint)Entities.Count);
+        for (int i = 0; i < Entities.Count; i++)
+        {
+            Entities[i].Write(w);
+        }
+    }
+
+    public static SnapshotMessage Read(ref PacketReader r)
+    {
+        uint tick = r.ReadUInt();
+        uint count = r.ReadUInt();
+        var entities = new EntitySnapshot[count];
+        for (uint i = 0; i < count; i++)
+        {
+            entities[i] = EntitySnapshot.Read(ref r);
+        }
+
+        return new SnapshotMessage(tick, entities);
+    }
+}
+
+/// <summary>Reply to a <see cref="Ping"/>; carries the original client time plus the server time.</summary>
+public readonly struct Pong
+{
+    public readonly long ClientTimeMs;
+    public readonly long ServerTimeMs;
+
+    public Pong(long clientTimeMs, long serverTimeMs)
+    {
+        ClientTimeMs = clientTimeMs;
+        ServerTimeMs = serverTimeMs;
+    }
+
+    public void Write(PacketWriter w)
+    {
+        w.WriteByte((byte)MessageType.Pong);
+        w.WriteLong(ClientTimeMs);
+        w.WriteLong(ServerTimeMs);
+    }
+
+    public static Pong Read(ref PacketReader r)
+    {
+        long clientTime = r.ReadLong();
+        long serverTime = r.ReadLong();
+        return new Pong(clientTime, serverTime);
+    }
+}

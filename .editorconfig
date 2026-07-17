@@ -1,0 +1,53 @@
+root = true
+
+[*]
+charset = utf-8
+insert_final_newline = true
+trim_trailing_whitespace = true
+end_of_line = lf
+indent_style = space
+indent_size = 4
+
+[*.{csproj,props,targets,config,nuspec}]
+indent_size = 2
+
+[*.{json,yml,yaml}]
+indent_size = 2
+
+[*.md]
+trim_trailing_whitespace = false
+
+[*.cs]
+# --- Language conventions ---
+dotnet_sort_system_directives_first = true
+dotnet_separate_import_directive_groups = false
+csharp_using_directive_placement = outside_namespace:warning
+csharp_style_namespace_declarations = file_scoped:warning
+csharp_prefer_braces = true:suggestion
+csharp_style_var_for_built_in_types = false:suggestion
+csharp_style_var_when_type_is_apparent = true:suggestion
+dotnet_style_qualification_for_field = false:suggestion
+dotnet_style_qualification_for_property = false:suggestion
+dotnet_style_readonly_field = true:suggestion
+csharp_style_expression_bodied_methods = when_on_single_line:suggestion
+
+# --- Naming: private fields _camelCase ---
+dotnet_naming_rule.private_fields_underscore.severity = suggestion
+dotnet_naming_rule.private_fields_underscore.symbols = private_fields
+dotnet_naming_rule.private_fields_underscore.style = underscore_prefix
+dotnet_naming_symbols.private_fields.applicable_kinds = field
+dotnet_naming_symbols.private_fields.applicable_accessibilities = private
+dotnet_naming_style.underscore_prefix.capitalization = camel_case
+dotnet_naming_style.underscore_prefix.required_prefix = _
+
+# --- Analyzer policy: deliberate team decisions ---
+# CA1852: handled by SDK; noisy for top-level-statement apps.
+dotnet_diagnostic.CA1852.severity = none
+# CA1716: "Shared"/"Net" etc. flagged as VB reserved words. We are C#-only; the names are clear.
+dotnet_diagnostic.CA1716.severity = none
+# CA1051: public readonly fields are intentional on our small data/math structs (Vec2, wire
+#         messages, transport events) — they are DTOs on hot paths, not encapsulated objects.
+dotnet_diagnostic.CA1051.severity = none
+# CA1822: our per-message Write(...) methods share one instance-call shape by design; do not
+#         force some of them static just because a given payload is constant.
+dotnet_diagnostic.CA1822.severity = none

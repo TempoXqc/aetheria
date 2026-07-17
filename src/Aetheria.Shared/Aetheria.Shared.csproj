@@ -1,0 +1,8 @@
+<Project Sdk="Microsoft.NET.Sdk">
+
+  <PropertyGroup>
+    <RootNamespace>Aetheria.Shared</RootNamespace>
+    <AssemblyName>Aetheria.Shared</AssemblyName>
+  </PropertyGroup>
+
+</Project>

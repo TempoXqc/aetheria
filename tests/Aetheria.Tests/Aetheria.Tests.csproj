@@ -1,0 +1,25 @@
+<Project Sdk="Microsoft.NET.Sdk">
+
+  <PropertyGroup>
+    <OutputType>Exe</OutputType>
+    <RootNamespace>Aetheria.Tests</RootNamespace>
+    <AssemblyName>Aetheria.Tests</AssemblyName>
+    <IsPackable>false</IsPackable>
+    <!-- Method_Under_Score is the conventional test-name style; allow it in this project only. -->
+    <NoWarn>$(NoWarn);CA1707</NoWarn>
+  </PropertyGroup>
+
+  <!--
+    The walking skeleton uses a tiny reflection-based runner (MiniTest) so the whole solution
+    builds and tests with ZERO NuGet packages. On a machine with NuGet access, migrating to xUnit
+    is a first-class roadmap item: add the xunit / Microsoft.NET.Test.Sdk versions in
+    Directory.Packages.props, reference them here, and rename [Test] methods to [Fact]. The
+    assertions below already mirror xUnit's shape to make that swap mechanical.
+  -->
+
+  <ItemGroup>
+    <ProjectReference Include="..\..\src\Aetheria.Shared\Aetheria.Shared.csproj" />
+    <ProjectReference Include="..\..\src\Aetheria.Server\Aetheria.Server.csproj" />
+  </ItemGroup>
+
+</Project>

@@ -1,0 +1,30 @@
+<Project>
+
+  <!--
+    Central Package Management (CPM).
+    All NuGet versions are declared here; projects reference packages
+    with <PackageReference Include="..." /> and NO Version attribute.
+
+    The walking skeleton intentionally has ZERO external dependencies so it
+    builds and runs with only the .NET SDK. As the project grows, add
+    versions here. Planned first additions (see docs/ROADMAP.md):
+
+      <PackageVersion Include="LiteNetLib" Version="1.3.1" />          reliable UDP behind ITransport
+      <PackageVersion Include="Microsoft.Extensions.Hosting" Version="10.0.0" />  server host / config / DI
+      <PackageVersion Include="Serilog" Version="4.2.0" />             structured logging
+      <PackageVersion Include="Npgsql" Version="9.0.2" />              PostgreSQL persistence
+      <PackageVersion Include="StackExchange.Redis" Version="2.8.16" /> hot-state cache
+      <PackageVersion Include="xunit" Version="2.9.2" />              unit tests
+      <PackageVersion Include="xunit.runner.visualstudio" Version="3.0.1" />
+      <PackageVersion Include="Microsoft.NET.Test.Sdk" Version="17.12.0" />
+  -->
+  <PropertyGroup>
+    <ManagePackageVersionsCentrally>true</ManagePackageVersionsCentrally>
+    <CentralPackageTransitivePinningEnabled>true</CentralPackageTransitivePinningEnabled>
+  </PropertyGroup>
+
+  <ItemGroup>
+    <!-- No packages yet — the skeleton runs on the BCL alone. -->
+  </ItemGroup>
+
+</Project>

@@ -1,0 +1,21 @@
+# Normalize line endings: LF in the repo, checked out native on Windows.
+* text=auto
+
+*.cs        text diff=csharp
+*.csproj    text
+*.sln       text eol=crlf
+*.props     text
+*.targets   text
+*.json      text
+*.md        text
+*.yml       text
+*.yaml      text
+*.sh        text eol=lf
+
+# Binary assets (relevant once the Unity client lands)
+*.png       binary
+*.jpg       binary
+*.fbx       binary
+*.wav       binary
+*.ogg       binary
+*.dll       binary
