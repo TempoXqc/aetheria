@@ -40,7 +40,8 @@ public sealed class World
     public IReadOnlyDictionary<int, ServerEntity> Entities => _entities;
 
     /// <summary>Create a player entity owned by <paramref name="owner"/>, with stats from race + class.</summary>
-    public ServerEntity SpawnPlayer(PeerId owner, string name = "", byte raceId = 1, byte classId = 1)
+    public ServerEntity SpawnPlayer(
+        PeerId owner, string name = "", byte raceId = 1, byte classId = 1, Gender gender = Gender.Male)
     {
         ClassDefinition cls = _gameData.GetClass(classId);
         RaceDefinition race = _gameData.GetRace(raceId);
@@ -53,7 +54,11 @@ public sealed class World
             Name = string.IsNullOrWhiteSpace(name) ? $"Player{id}" : name,
             RaceId = race.Id,
             ClassId = cls.Id,
+            Gender = gender,
+            Faction = race.Faction,
+            RacialAbilityId = race.RacialAbilityId,
         };
+        entity.InitResource(cls.Resource, cls.MaxResource, cls.ResourceRegenPerSec * SimulationConstants.TickDelta);
 
         AddAlive(entity);
         return entity;
@@ -125,20 +130,80 @@ public sealed class World
             return false;
         }
 
+        if (ability.ResourceCost > 0 && !attacker.HasResource(ability.ResourceCost))
+        {
+            return false; // Not enough rage/mana/energy.
+        }
+
         if (Vec2.DistanceSquared(attacker.Position, target.Position) > ability.Range * ability.Range)
         {
             return false;
         }
 
         attacker.StartCooldown(ability.Id, Tick + (uint)ability.CooldownTicks);
-        DealDamage(attacker, target, ability);
+        attacker.SpendResource(ability.ResourceCost);
+
+        if (ability.BaseDamage > 0)
+        {
+            DealDamage(attacker, target, ability);
+        }
+
         return true;
     }
 
-    /// <summary>Advance the simulation by one fixed step: respawns, monster AI, then movement.</summary>
+    /// <summary>
+    /// Cast the entity's racial ability on itself (heal, resource restore, or a timed self-buff).
+    /// Racials cost no resource but have a long cooldown. Returns true if it fired.
+    /// </summary>
+    public bool TryUseRacial(int entityId)
+    {
+        if (!_entities.TryGetValue(entityId, out ServerEntity? entity) ||
+            entity.IsDead || entity.RacialAbilityId == 0)
+        {
+            return false;
+        }
+
+        AbilityDefinition racial = _gameData.GetAbility(entity.RacialAbilityId);
+        if (!entity.IsAbilityReady(racial.Id, Tick))
+        {
+            return false;
+        }
+
+        entity.StartCooldown(racial.Id, Tick + (uint)racial.CooldownTicks);
+        ApplyEffectToSelf(entity, racial);
+        return true;
+    }
+
+    private void ApplyEffectToSelf(ServerEntity entity, AbilityDefinition ability)
+    {
+        switch (ability.Effect)
+        {
+            case EffectType.Heal:
+                entity.Heal(ability.EffectMagnitude);
+                break;
+            case EffectType.RestoreResource:
+                entity.RestoreResourceFraction(ability.EffectMagnitude);
+                break;
+            case EffectType.BuffAttack:
+            case EffectType.BuffDefense:
+            case EffectType.BuffMoveSpeed:
+                entity.AddEffect(ability.Effect, ability.EffectMagnitude, Tick + (uint)ability.EffectDurationTicks);
+                break;
+            case EffectType.None:
+            default:
+                break;
+        }
+    }
+
+    /// <summary>Advance the simulation by one fixed step: upkeep, respawns, monster AI, then movement.</summary>
     public void Step(float dt)
     {
         Tick++;
+
+        foreach (ServerEntity e in _entities.Values)
+        {
+            e.TickUpkeep(Tick, dt); // expire buffs, regenerate/decay resource
+        }
 
         ProcessRespawns();
         RunMonsterAi();
@@ -158,7 +223,9 @@ public sealed class World
         {
             if (_entities.TryGetValue(id, out ServerEntity? e) && e.IsAlive)
             {
-                result.Add(new EntitySnapshot(e.Id, e.Kind, e.Position, e.Health, e.Stats.MaxHealth));
+                result.Add(new EntitySnapshot(
+                    e.Id, e.Kind, e.Faction, e.Position,
+                    e.Health, e.Stats.MaxHealth, (int)e.CurrentResource, e.MaxResource));
             }
         }
 
@@ -278,17 +345,19 @@ public sealed class World
                 continue;
             }
 
-            entity.Position += entity.MoveIntent * (entity.Stats.MoveSpeed * dt);
+            entity.Position += entity.MoveIntent * (entity.EffectiveMoveSpeed * dt);
             _grid.InsertOrUpdate(entity.Id, entity.Position);
         }
     }
 
     private void DealDamage(ServerEntity attacker, ServerEntity target, AbilityDefinition ability)
     {
-        int raw = ability.BaseDamage + attacker.Stats.AttackPower;
-        int damage = System.Math.Max(1, raw - target.Stats.Defense);
+        int raw = ability.BaseDamage + attacker.EffectiveAttackPower;
+        int damage = System.Math.Max(1, raw - target.EffectiveDefense);
 
         target.TakeDamage(damage, Tick);
+        attacker.OnDealtDamage(Tick); // rage generation + combat timestamp (Warriors)
+        target.OnTookDamage(Tick);
 
         if (target.IsDead)
         {

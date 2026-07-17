@@ -4,13 +4,15 @@ Un MMORPG fantasy hardcore, en 3D isométrique (PvE + PvP), en C#, conçu **serv
 départ** pour un monde **sans coupure**. Ce dépôt contient le cœur serveur + réseau et un client de
 test headless. Le client de rendu Unity viendra plus tard (voir la [ROADMAP](docs/ROADMAP.md)).
 
-> **Statut : M0 (walking skeleton) + systèmes de jeu serveur.** Un serveur autoritaire à pas de temps
-> fixe simule un monde continu ; les clients se connectent en UDP, choisissent une race et une classe,
-> se déplacent, et reçoivent des snapshots filtrés par zone d'intérêt (AoI) incluant la santé. Le
-> combat est autoritaire (capacités avec portée/cooldown, dégâts fonction de l'attaque et de la
-> défense), avec mort et respawn. Des monstres PvE data-driven aggrolent, poursuivent et attaquent via
-> une IA serveur. Deux clients se voient en temps réel et se culent hors du rayon d'intérêt. Le client
-> de rendu Unity reste à venir (voir la [ROADMAP](docs/ROADMAP.md)).
+> **Statut : M0–M2 + M3 étape A (système de personnage).** Un serveur autoritaire à pas de temps fixe
+> simule un monde continu ; les clients se connectent en UDP, choisissent **faction / race / classe /
+> genre**, se déplacent, et reçoivent des snapshots filtrés par zone d'intérêt (AoI) incluant santé,
+> faction et ressource. Le combat est autoritaire (capacités avec portée/cooldown/**coût de
+> ressource**, dégâts fonction des stats *effectives*), avec mort et respawn. Deux **factions**
+> (Alliance : Humain, Nain · Horde : Orc, Elfe), une **matrice classe/race** validée au handshake, des
+> **ressources** par classe (Guerrier=Rage, Mage=Mana, Rôdeur=Énergie) et une **capacité raciale**
+> unique par race (soin/attaque/défense/vitesse). Des monstres PvE data-driven aggrolent, poursuivent
+> et attaquent. Le client de rendu Unity reste à venir (voir la [ROADMAP](docs/ROADMAP.md)).
 
 ## Pourquoi c'est fait comme ça
 
@@ -66,10 +68,15 @@ monstres réapparaître après leur délai de respawn.
 | `--seconds` | Durée de connexion                                 | `8`         |
 | `--dirx`    | Intention de déplacement en X (-1..1)              | `0`         |
 | `--diry`    | Intention de déplacement en Y (-1..1)              | `0`         |
-| `--race`    | Id de race (1=Human, 2=Orc, 3=Elf)                 | `1`         |
+| `--race`    | Id de race (1=Human, 4=Dwarf, 2=Orc, 3=Elf)        | `1`         |
 | `--class`   | Id de classe (1=Warrior, 2=Mage, 3=Ranger)         | `1`         |
+| `--gender`  | `male` / `female`                                  | `male`      |
 | `--ability` | Id de capacité utilisée en `--attack`              | `1`         |
 | `--attack`  | Chasse et attaque le monstre visible le plus proche| (désactivé) |
+| `--racial`  | Utilise la capacité raciale (le serveur gère le CD)| (désactivé) |
+
+Rappel matrice classe/race : Humain→Guerrier/Mage · Nain→Guerrier/Rôdeur · Orc→Guerrier/Rôdeur ·
+Elfe→Mage/Rôdeur. Une combinaison interdite est refusée à la connexion.
 
 Le contenu (races, classes, capacités, monstres) est **data-driven** : voir les fichiers JSON dans
 `src/Aetheria.Server/data/`, éditables sans recompiler.

@@ -1,3 +1,4 @@
+using Aetheria.Shared.Combat;
 using Aetheria.Shared.Math;
 using Aetheria.Shared.Protocol;
 
@@ -9,7 +10,7 @@ public static class ProtocolTests
     public static void ConnectRequest_RoundTrips()
     {
         var writer = new PacketWriter();
-        new ConnectRequest(protocolVersion: 1, name: "Aria", raceId: 3, classId: 2).Write(writer);
+        new ConnectRequest(protocolVersion: 1, name: "Aria", raceId: 3, classId: 2, gender: Gender.Female).Write(writer);
 
         var reader = new PacketReader(writer.WrittenSpan);
         Assert.Equal(MessageType.ConnectRequest, (MessageType)reader.ReadByte());
@@ -19,6 +20,7 @@ public static class ProtocolTests
         Assert.Equal("Aria", decoded.Name);
         Assert.Equal((byte)3, decoded.RaceId);
         Assert.Equal((byte)2, decoded.ClassId);
+        Assert.Equal(Gender.Female, decoded.Gender);
         Assert.Equal(0, reader.Remaining);
     }
 
@@ -74,8 +76,8 @@ public static class ProtocolTests
     {
         var entities = new[]
         {
-            new EntitySnapshot(1, EntityKind.Player, new Vec2(10f, 20f), health: 100, maxHealth: 120),
-            new EntitySnapshot(2, EntityKind.Monster, new Vec2(-3f, 4f), health: 30, maxHealth: 60),
+            new EntitySnapshot(1, EntityKind.Player, Faction.Horde, new Vec2(10f, 20f), health: 100, maxHealth: 120, resource: 40, maxResource: 100),
+            new EntitySnapshot(2, EntityKind.Monster, Faction.Neutral, new Vec2(-3f, 4f), health: 30, maxHealth: 60, resource: 0, maxResource: 0),
         };
 
         var writer = new PacketWriter();
@@ -89,6 +91,8 @@ public static class ProtocolTests
         Assert.Equal(2, decoded.Entities.Count);
         Assert.Equal(1, decoded.Entities[0].Id);
         Assert.Equal(100, decoded.Entities[0].Health);
+        Assert.Equal(Faction.Horde, decoded.Entities[0].Faction);
+        Assert.Equal(40, decoded.Entities[0].Resource);
         Assert.Equal(EntityKind.Monster, decoded.Entities[1].Kind);
         Assert.Close(-3f, decoded.Entities[1].Position.X);
         Assert.Equal(60, decoded.Entities[1].MaxHealth);

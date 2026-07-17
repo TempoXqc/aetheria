@@ -78,11 +78,20 @@ Content — races, classes, abilities, monsters — is **data-driven**: plain de
 monster stats come from the monster definition.
 
 Combat is resolved by the authoritative `World`: a validated `UseAbility` checks liveness, cooldown,
-and range, then applies `max(1, ability.BaseDamage + attackerAttackPower - targetDefense)`. Death
-pulls the entity out of the interest grid (invisible and untargetable) and schedules a respawn;
-outcomes go out as AoI-gated `CombatEvent` messages. Monster AI runs server-side each tick: acquire
-the nearest player in aggro range, chase to ability range, attack on cooldown. See
-[ADR-0005](adr/0005-data-driven-content-and-combat.md).
+resource cost, and range, then applies `max(1, ability.BaseDamage + attackerEffectiveAttack -
+targetEffectiveDefense)`. Death pulls the entity out of the interest grid (invisible and untargetable)
+and schedules a respawn; outcomes go out as AoI-gated `CombatEvent` messages. Monster AI runs
+server-side each tick: acquire the nearest player in aggro range, chase to ability range, attack on
+cooldown. See [ADR-0005](adr/0005-data-driven-content-and-combat.md).
+
+Characters have a **faction** (Alliance/Horde), a cosmetic **gender**, and a **class/race matrix**
+enforced at the handshake. Each class spends a **resource** (Warrior=Rage built in combat, Mage=Mana
+and Ranger=Energy regenerated passively); abilities cost resource. Each race has a unique **racial
+ability** built on a **timed-effect system** — buffs feed *effective* attack/defense/move-speed until
+they expire, instant effects (heal, resource restore) apply at once. See
+[ADR-0006](adr/0006-factions-resources-racials.md). The intended progression (XP-driven stat growth
+with a few unlock levels) and hardcore economy (permadeath + persistent account bank) are recorded in
+[ADR-0007](adr/0007-progression-and-hardcore-economy.md).
 
 ### Wire protocol (`Protocol/`)
 
@@ -110,7 +119,8 @@ building it until a single node is actually saturated, but we never design ourse
 
 ## What is intentionally NOT here yet
 
-Persistence (Postgres/Redis), reliable channels, client-side prediction and interpolation, snapshot
-delta-compression, authentication, richer combat (multi-ability bars, resources/mana, cast times,
-threat, pathfinding), and anti-cheat beyond server authority. The Unity rendering client is also still
-to come. Each has a place in the [ROADMAP](ROADMAP.md); none of them changes the shape above.
+Inventory/items and full-loot corpses, grouping, instances/raids and world bosses, XP progression and
+the hardcore account bank, persistence (Postgres/Redis), reliable channels, client-side prediction and
+interpolation, snapshot delta-compression, authentication, richer combat (multi-ability bars, cast
+times, threat, pathfinding), and anti-cheat beyond server authority. The Unity rendering client is also
+still to come. Each has a place in the [ROADMAP](ROADMAP.md); none of them changes the shape above.

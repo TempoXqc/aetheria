@@ -1,4 +1,5 @@
 using Aetheria.Shared;
+using Aetheria.Shared.Combat;
 using Aetheria.Shared.Math;
 using Aetheria.Shared.Net;
 using Aetheria.Shared.Protocol;
@@ -42,10 +43,10 @@ public sealed class GameClient
     /// <summary>How many kills we've landed (a combat event where we are the attacker and the target died).</summary>
     public int KillsByMe { get; private set; }
 
-    public void Connect(string host, int port, string name, byte raceId, byte classId)
+    public void Connect(string host, int port, string name, byte raceId, byte classId, Gender gender)
     {
         _transport.Connect(host, port);
-        Send(new ConnectRequest(SimulationConstants.ProtocolVersion, name, raceId, classId));
+        Send(new ConnectRequest(SimulationConstants.ProtocolVersion, name, raceId, classId, gender));
     }
 
     public void SendInput(Vec2 direction)
@@ -56,6 +57,8 @@ public sealed class GameClient
 
     public void SendUseAbility(byte abilityId, int targetEntityId)
         => Send(new UseAbility(abilityId, targetEntityId));
+
+    public void SendUseRacial() => Send(new UseRacial());
 
     public void SendPing() => Send(new Ping(Environment.TickCount64));
 
@@ -197,6 +200,7 @@ public sealed class GameClient
     private void Send(ConnectRequest msg) => SendWith(msg.Write);
     private void Send(InputCommand msg) => SendWith(msg.Write);
     private void Send(UseAbility msg) => SendWith(msg.Write);
+    private void Send(UseRacial msg) => SendWith(msg.Write);
     private void Send(Ping msg) => SendWith(msg.Write);
     private void Send(Disconnect msg) => SendWith(msg.Write);
 

@@ -1,4 +1,5 @@
 using System.Text.Json;
+using Aetheria.Shared.Combat;
 
 namespace Aetheria.Shared.Data;
 
@@ -92,26 +93,38 @@ public sealed class GameData
         }
     }
 
+    /// <summary>True if the race is allowed to play the class (the balance matrix).</summary>
+    public bool IsClassAllowedForRace(byte raceId, byte classId) => GetRace(raceId).AllowsClass(classId);
+
     /// <summary>The canonical built-in content. Mirror of the shipped JSON under the server's data/.</summary>
     public static GameData CreateDefault() => new(
         races:
         [
-            new RaceDefinition { Id = 1, Name = "Human", HealthBonus = 0, AttackBonus = 0, DefenseBonus = 0, MoveSpeedMultiplier = 1.00f },
-            new RaceDefinition { Id = 2, Name = "Orc", HealthBonus = 20, AttackBonus = 3, DefenseBonus = -1, MoveSpeedMultiplier = 0.95f },
-            new RaceDefinition { Id = 3, Name = "Elf", HealthBonus = -10, AttackBonus = 1, DefenseBonus = 0, MoveSpeedMultiplier = 1.10f },
+            // Alliance
+            new RaceDefinition { Id = 1, Name = "Human", Faction = Faction.Alliance, HealthBonus = 0,   AttackBonus = 0, DefenseBonus = 0,  MoveSpeedMultiplier = 1.00f, AllowedClassIds = [1, 2], RacialAbilityId = 10 },
+            new RaceDefinition { Id = 4, Name = "Dwarf", Faction = Faction.Alliance, HealthBonus = 15,  AttackBonus = 0, DefenseBonus = 2,  MoveSpeedMultiplier = 0.95f, AllowedClassIds = [1, 3], RacialAbilityId = 11 },
+            // Horde
+            new RaceDefinition { Id = 2, Name = "Orc",   Faction = Faction.Horde,    HealthBonus = 20,  AttackBonus = 3, DefenseBonus = -1, MoveSpeedMultiplier = 0.95f, AllowedClassIds = [1, 3], RacialAbilityId = 12 },
+            new RaceDefinition { Id = 3, Name = "Elf",   Faction = Faction.Horde,    HealthBonus = -10, AttackBonus = 1, DefenseBonus = 0,  MoveSpeedMultiplier = 1.10f, AllowedClassIds = [2, 3], RacialAbilityId = 13 },
         ],
         classes:
         [
-            new ClassDefinition { Id = 1, Name = "Warrior", MaxHealth = 120, MoveSpeed = 5.0f, AttackPower = 12, Defense = 6, BasicAbilityId = 1 },
-            new ClassDefinition { Id = 2, Name = "Mage", MaxHealth = 80, MoveSpeed = 5.0f, AttackPower = 18, Defense = 2, BasicAbilityId = 2 },
-            new ClassDefinition { Id = 3, Name = "Ranger", MaxHealth = 95, MoveSpeed = 5.5f, AttackPower = 14, Defense = 3, BasicAbilityId = 3 },
+            new ClassDefinition { Id = 1, Name = "Warrior", MaxHealth = 120, MoveSpeed = 5.0f, AttackPower = 12, Defense = 6, BasicAbilityId = 1, Resource = ResourceType.Rage,   MaxResource = 100, ResourceRegenPerSec = 0f },
+            new ClassDefinition { Id = 2, Name = "Mage",    MaxHealth = 80,  MoveSpeed = 5.0f, AttackPower = 18, Defense = 2, BasicAbilityId = 2, Resource = ResourceType.Mana,   MaxResource = 100, ResourceRegenPerSec = 8f },
+            new ClassDefinition { Id = 3, Name = "Ranger",  MaxHealth = 95,  MoveSpeed = 5.5f, AttackPower = 14, Defense = 3, BasicAbilityId = 3, Resource = ResourceType.Energy, MaxResource = 100, ResourceRegenPerSec = 20f },
         ],
         abilities:
         [
-            new AbilityDefinition { Id = 1, Name = "Slash", BaseDamage = 10, Range = 2.5f, CooldownTicks = 10 },
-            new AbilityDefinition { Id = 2, Name = "Firebolt", BaseDamage = 16, Range = 12f, CooldownTicks = 16 },
-            new AbilityDefinition { Id = 3, Name = "Shot", BaseDamage = 12, Range = 10f, CooldownTicks = 12 },
-            new AbilityDefinition { Id = 4, Name = "Claw", BaseDamage = 6, Range = 2.5f, CooldownTicks = 12 },
+            // Basic attacks
+            new AbilityDefinition { Id = 1, Name = "Slash",    BaseDamage = 10, Range = 2.5f, CooldownTicks = 10, ResourceCost = 0 },
+            new AbilityDefinition { Id = 2, Name = "Firebolt", BaseDamage = 16, Range = 12f,  CooldownTicks = 16, ResourceCost = 20 },
+            new AbilityDefinition { Id = 3, Name = "Shot",     BaseDamage = 12, Range = 10f,  CooldownTicks = 12, ResourceCost = 30 },
+            new AbilityDefinition { Id = 4, Name = "Claw",     BaseDamage = 6,  Range = 2.5f, CooldownTicks = 12, ResourceCost = 0 },
+            // Racials (self-cast, no resource cost, long cooldown)
+            new AbilityDefinition { Id = 10, Name = "Second Wind",       Range = 0f, CooldownTicks = 1200, Effect = EffectType.Heal,          EffectMagnitude = 0.25f, EffectDurationTicks = 0 },
+            new AbilityDefinition { Id = 11, Name = "Stoneform",         Range = 0f, CooldownTicks = 1200, Effect = EffectType.BuffDefense,   EffectMagnitude = 0.50f, EffectDurationTicks = 160 },
+            new AbilityDefinition { Id = 12, Name = "Blood Fury",        Range = 0f, CooldownTicks = 1200, Effect = EffectType.BuffAttack,    EffectMagnitude = 0.40f, EffectDurationTicks = 160 },
+            new AbilityDefinition { Id = 13, Name = "Nature's Swiftness", Range = 0f, CooldownTicks = 900,  Effect = EffectType.BuffMoveSpeed, EffectMagnitude = 0.40f, EffectDurationTicks = 120 },
         ],
         monsters:
         [

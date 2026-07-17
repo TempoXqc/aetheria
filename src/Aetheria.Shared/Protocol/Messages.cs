@@ -1,3 +1,4 @@
+using Aetheria.Shared.Combat;
 using Aetheria.Shared.Math;
 
 namespace Aetheria.Shared.Protocol;
@@ -29,13 +30,15 @@ public readonly struct ConnectRequest
     public readonly string Name;
     public readonly byte RaceId;
     public readonly byte ClassId;
+    public readonly Gender Gender;
 
-    public ConnectRequest(byte protocolVersion, string name, byte raceId, byte classId)
+    public ConnectRequest(byte protocolVersion, string name, byte raceId, byte classId, Gender gender)
     {
         ProtocolVersion = protocolVersion;
         Name = name;
         RaceId = raceId;
         ClassId = classId;
+        Gender = gender;
     }
 
     public void Write(PacketWriter w)
@@ -45,6 +48,7 @@ public readonly struct ConnectRequest
         w.WriteString(Name);
         w.WriteByte(RaceId);
         w.WriteByte(ClassId);
+        w.WriteByte((byte)Gender);
     }
 
     public static ConnectRequest Read(ref PacketReader r)
@@ -53,8 +57,17 @@ public readonly struct ConnectRequest
         string name = r.ReadString();
         byte raceId = r.ReadByte();
         byte classId = r.ReadByte();
-        return new ConnectRequest(version, name, raceId, classId);
+        var gender = (Gender)r.ReadByte();
+        return new ConnectRequest(version, name, raceId, classId, gender);
     }
+}
+
+/// <summary>Cast the caster's racial ability on themselves (no target, no resource cost).</summary>
+public readonly struct UseRacial
+{
+    public void Write(PacketWriter w) => w.WriteByte((byte)MessageType.UseRacial);
+
+    public static UseRacial Read(ref PacketReader r) => default;
 }
 
 /// <summary>A request to use an ability on a target entity. The server validates range and cooldown.</summary>
@@ -189,38 +202,52 @@ public readonly struct EntitySnapshot
 {
     public readonly int Id;
     public readonly EntityKind Kind;
+    public readonly Faction Faction;
     public readonly Vec2 Position;
     public readonly int Health;
     public readonly int MaxHealth;
+    public readonly int Resource;
+    public readonly int MaxResource;
 
-    public EntitySnapshot(int id, EntityKind kind, Vec2 position, int health, int maxHealth)
+    public EntitySnapshot(
+        int id, EntityKind kind, Faction faction, Vec2 position,
+        int health, int maxHealth, int resource, int maxResource)
     {
         Id = id;
         Kind = kind;
+        Faction = faction;
         Position = position;
         Health = health;
         MaxHealth = maxHealth;
+        Resource = resource;
+        MaxResource = maxResource;
     }
 
     public void Write(PacketWriter w)
     {
         w.WriteInt(Id);
         w.WriteByte((byte)Kind);
+        w.WriteByte((byte)Faction);
         w.WriteFloat(Position.X);
         w.WriteFloat(Position.Y);
         w.WriteInt(Health);
         w.WriteInt(MaxHealth);
+        w.WriteInt(Resource);
+        w.WriteInt(MaxResource);
     }
 
     public static EntitySnapshot Read(ref PacketReader r)
     {
         int id = r.ReadInt();
         var kind = (EntityKind)r.ReadByte();
+        var faction = (Faction)r.ReadByte();
         float x = r.ReadFloat();
         float y = r.ReadFloat();
         int health = r.ReadInt();
         int maxHealth = r.ReadInt();
-        return new EntitySnapshot(id, kind, new Vec2(x, y), health, maxHealth);
+        int resource = r.ReadInt();
+        int maxResource = r.ReadInt();
+        return new EntitySnapshot(id, kind, faction, new Vec2(x, y), health, maxHealth, resource, maxResource);
     }
 }
 

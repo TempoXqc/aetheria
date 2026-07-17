@@ -13,6 +13,7 @@ public enum MessageType : byte
     Ping = 3,
     Disconnect = 4,
     UseAbility = 5,
+    UseRacial = 6,
 
     // --- Server -> Client ---
     ConnectAccepted = 128,

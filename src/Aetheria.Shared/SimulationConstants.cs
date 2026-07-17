@@ -41,5 +41,5 @@ public static class SimulationConstants
     public const int RespawnDelayTicks = (int)(RespawnDelaySeconds * TickRate);
 
     /// <summary>Protocol version — bump on any wire-format change; handshake rejects mismatches.</summary>
-    public const byte ProtocolVersion = 2;
+    public const byte ProtocolVersion = 3;
 }

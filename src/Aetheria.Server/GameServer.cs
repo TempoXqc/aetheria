@@ -108,6 +108,11 @@ public sealed class GameServer
                     _world.TryUseAbility(session.EntityId, ability.AbilityId, ability.TargetEntityId);
                     break;
 
+                case MessageType.UseRacial:
+                    _ = UseRacial.Read(ref reader);
+                    _world.TryUseRacial(session.EntityId);
+                    break;
+
                 case MessageType.Ping:
                     Ping ping = Ping.Read(ref reader);
                     Send(peer, new Pong(ping.ClientTimeMs, Environment.TickCount64));
@@ -139,7 +144,17 @@ public sealed class GameServer
             return;
         }
 
-        ServerEntity entity = _world.SpawnPlayer(peer, request.Name, request.RaceId, request.ClassId);
+        // Enforce the balance matrix: a race may only play its allowed classes.
+        if (!_world.GameData.IsClassAllowedForRace(request.RaceId, request.ClassId))
+        {
+            string raceName = _world.GameData.GetRace(request.RaceId).Name;
+            string className = _world.GameData.GetClass(request.ClassId).Name;
+            Send(peer, new ConnectRejected($"{raceName} cannot play the {className} class."));
+            _transport.Kick(peer);
+            return;
+        }
+
+        ServerEntity entity = _world.SpawnPlayer(peer, request.Name, request.RaceId, request.ClassId, request.Gender);
         session.EntityId = entity.Id;
         session.Name = entity.Name;
         session.HandshakeComplete = true;
@@ -148,8 +163,8 @@ public sealed class GameServer
 
         string race = _world.GameData.GetRace(entity.RaceId).Name;
         string cls = _world.GameData.GetClass(entity.ClassId).Name;
-        _log($"'{session.Name}' joined as {race} {cls} (entity {entity.Id}, {peer}). " +
-             $"Players online: {PlayerCount}.");
+        _log($"'{session.Name}' joined as {entity.Faction} {race} {cls} ({entity.Gender}, " +
+             $"entity {entity.Id}, {peer}). Players online: {PlayerCount}.");
     }
 
     private void HandleDisconnect(PeerId peer)

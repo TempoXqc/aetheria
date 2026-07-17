@@ -7,13 +7,21 @@ using Aetheria.Shared.Protocol;
 namespace Aetheria.Server.World;
 
 /// <summary>
-/// The server's authoritative record of one entity — a player or a monster. Carries its combat stats,
-/// current health, ability cooldowns, and (for monsters) a small amount of AI state. Plain mutable
-/// class for the skeleton; the natural evolution is a data-oriented (ECS) layout as counts grow.
+/// The server's authoritative record of one entity — a player or a monster. Carries combat stats,
+/// current health and resource, ability cooldowns, temporary effects (buffs), and (for monsters) a
+/// little AI state. Plain mutable class for the skeleton; the natural evolution is a data-oriented
+/// (ECS) layout as counts grow.
 /// </summary>
 public sealed class ServerEntity
 {
+    // --- Rage tuning (Warriors): built by fighting, decays out of combat. ---
+    private const float RageOnDealDamage = 10f;
+    private const float RageOnTakeDamage = 5f;
+    private const float RageDecayPerSecond = 2f;
+    private const float OutOfCombatSeconds = 3f;
+
     private readonly Dictionary<byte, uint> _abilityReadyTick = new();
+    private readonly List<ActiveEffect> _effects = new();
 
     public ServerEntity(int id, EntityKind kind, Vec2 position, StatBlock stats, byte basicAbilityId)
     {
@@ -31,43 +39,62 @@ public sealed class ServerEntity
     public string Name { get; set; } = string.Empty;
 
     public Vec2 Position { get; set; }
-
-    /// <summary>Where this entity (re)spawns.</summary>
     public Vec2 SpawnPosition { get; set; }
-
-    /// <summary>Current movement intent (unit-ish direction), applied each tick by the simulation.</summary>
     public Vec2 MoveIntent { get; set; } = Vec2.Zero;
 
-    /// <summary>Owning peer for player entities; null for monsters.</summary>
     public PeerId? Owner { get; set; }
-
-    /// <summary>Highest input sequence accepted, so stale/reordered inputs can be dropped.</summary>
     public uint LastInputSequence { get; set; }
 
     public StatBlock Stats { get; }
     public int Health { get; private set; }
     public byte BasicAbilityId { get; }
 
-    /// <summary>Definition ids, for reference/telemetry. Zero when not applicable.</summary>
+    // --- Identity ---
+    public Faction Faction { get; set; } = Faction.Neutral;
+    public Gender Gender { get; set; } = Gender.Male;
     public byte RaceId { get; set; }
     public byte ClassId { get; set; }
     public byte MonsterId { get; set; }
+    public byte RacialAbilityId { get; set; }
+
+    // --- Resource (rage/mana/energy) ---
+    public ResourceType ResourceType { get; set; } = ResourceType.Mana;
+    public int MaxResource { get; set; }
+    public float CurrentResource { get; private set; }
+    public float ResourceRegenPerTick { get; set; }
 
     public bool IsMonster => Kind == EntityKind.Monster;
     public bool IsDead { get; private set; }
     public bool IsAlive => !IsDead;
-
-    /// <summary>Tick at which a dead entity should respawn.</summary>
     public uint RespawnAtTick { get; private set; }
+    public uint LastCombatTick { get; private set; }
 
-    /// <summary>Monster AI: the entity currently being chased/attacked, if any.</summary>
     public int? AiTargetId { get; set; }
 
-    /// <summary>True if the ability is off cooldown at the given tick.</summary>
+    // --- Effective stats (base stats modified by any active buffs) ---
+    public int EffectiveAttackPower => (int)MathF.Round(Stats.AttackPower * (1f + SumMagnitude(EffectType.BuffAttack)));
+    public int EffectiveDefense => (int)MathF.Round(Stats.Defense * (1f + SumMagnitude(EffectType.BuffDefense)));
+    public float EffectiveMoveSpeed => Stats.MoveSpeed * (1f + SumMagnitude(EffectType.BuffMoveSpeed));
+
+    /// <summary>Initialize the resource pool for a class (rage starts empty; mana/energy start full).</summary>
+    public void InitResource(ResourceType type, int max, float regenPerTick)
+    {
+        ResourceType = type;
+        MaxResource = max;
+        ResourceRegenPerTick = regenPerTick;
+        CurrentResource = type == ResourceType.Rage ? 0f : max;
+    }
+
+    public bool HasResource(int cost) => CurrentResource >= cost;
+
+    public void SpendResource(int cost) => CurrentResource = System.Math.Max(0f, CurrentResource - cost);
+
+    public void GainResource(float amount)
+        => CurrentResource = System.Math.Clamp(CurrentResource + amount, 0f, MaxResource);
+
     public bool IsAbilityReady(byte abilityId, uint tick)
         => !_abilityReadyTick.TryGetValue(abilityId, out uint readyAt) || tick >= readyAt;
 
-    /// <summary>Start an ability's cooldown so it becomes usable again at <paramref name="readyTick"/>.</summary>
     public void StartCooldown(byte abilityId, uint readyTick) => _abilityReadyTick[abilityId] = readyTick;
 
     /// <summary>Apply damage (already floored to at least 1 by the caller). Marks death at 0 HP.</summary>
@@ -78,6 +105,7 @@ public sealed class ServerEntity
             return;
         }
 
+        LastCombatTick = tick;
         Health -= amount;
         if (Health <= 0)
         {
@@ -85,11 +113,97 @@ public sealed class ServerEntity
             IsDead = true;
             MoveIntent = Vec2.Zero;
             AiTargetId = null;
+            _effects.Clear();
             RespawnAtTick = tick + (uint)SimulationConstants.RespawnDelayTicks;
         }
     }
 
-    /// <summary>Bring a dead entity back to full health at its spawn point.</summary>
+    /// <summary>Restore a fraction of max health (instant effect). No-op if dead.</summary>
+    public void Heal(float fractionOfMax)
+    {
+        if (IsDead)
+        {
+            return;
+        }
+
+        int amount = (int)MathF.Round(Stats.MaxHealth * fractionOfMax);
+        Health = System.Math.Min(Stats.MaxHealth, Health + amount);
+    }
+
+    /// <summary>Restore a fraction of the max resource pool (instant effect).</summary>
+    public void RestoreResourceFraction(float fractionOfMax) => GainResource(MaxResource * fractionOfMax);
+
+    public void MarkInCombat(uint tick) => LastCombatTick = tick;
+
+    /// <summary>Add a timed buff effect that expires at the given tick.</summary>
+    public void AddEffect(EffectType type, float magnitude, uint expiresAtTick)
+        => _effects.Add(new ActiveEffect(type, magnitude, expiresAtTick));
+
+    public bool HasEffect(EffectType type)
+    {
+        foreach (ActiveEffect e in _effects)
+        {
+            if (e.Type == type)
+            {
+                return true;
+            }
+        }
+
+        return false;
+    }
+
+    /// <summary>Per-tick upkeep: expire finished effects and regenerate/decay resource.</summary>
+    public void TickUpkeep(uint tick, float dt)
+    {
+        // Expire buffs.
+        for (int i = _effects.Count - 1; i >= 0; i--)
+        {
+            if (tick >= _effects[i].ExpiresAtTick)
+            {
+                _effects.RemoveAt(i);
+            }
+        }
+
+        if (IsDead)
+        {
+            return;
+        }
+
+        if (ResourceType == ResourceType.Rage)
+        {
+            // Rage decays once the entity has been out of combat for a while.
+            float secondsSinceCombat = (tick - LastCombatTick) * SimulationConstants.TickDelta;
+            if (secondsSinceCombat >= OutOfCombatSeconds)
+            {
+                GainResource(-RageDecayPerSecond * dt);
+            }
+        }
+        else if (ResourceRegenPerTick > 0f)
+        {
+            GainResource(ResourceRegenPerTick);
+        }
+    }
+
+    /// <summary>Rage generated by landing a hit (Warriors only).</summary>
+    public void OnDealtDamage(uint tick)
+    {
+        MarkInCombat(tick);
+        if (ResourceType == ResourceType.Rage)
+        {
+            GainResource(RageOnDealDamage);
+        }
+    }
+
+    /// <summary>Rage generated by being hit (Warriors only).</summary>
+    public void OnTookDamage(uint tick)
+    {
+        if (ResourceType == ResourceType.Rage)
+        {
+            GainResource(RageOnTakeDamage);
+        }
+    }
+
+    /// <summary>Bring a dead entity back to full health/resource at its spawn point.</summary>
     public void Respawn()
     {
         IsDead = false;
@@ -97,6 +211,22 @@ public sealed class ServerEntity
         Position = SpawnPosition;
         MoveIntent = Vec2.Zero;
         AiTargetId = null;
+        _effects.Clear();
         _abilityReadyTick.Clear();
+        CurrentResource = ResourceType == ResourceType.Rage ? 0f : MaxResource;
+    }
+
+    private float SumMagnitude(EffectType type)
+    {
+        float sum = 0f;
+        foreach (ActiveEffect e in _effects)
+        {
+            if (e.Type == type)
+            {
+                sum += e.Magnitude;
+            }
+        }
+
+        return sum;
     }
 }

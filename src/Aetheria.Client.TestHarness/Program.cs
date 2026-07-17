@@ -2,6 +2,7 @@ using System.Diagnostics;
 using System.Globalization;
 using Aetheria.Client.TestHarness;
 using Aetheria.Shared;
+using Aetheria.Shared.Combat;
 using Aetheria.Shared.Math;
 using Aetheria.Shared.Net;
 using Aetheria.Shared.Protocol;
@@ -10,7 +11,7 @@ var options = HarnessOptions.Parse(args);
 
 using var transport = new UdpClientTransport();
 var client = new GameClient(transport);
-client.Connect(options.Host, options.Port, options.Name, options.RaceId, options.ClassId);
+client.Connect(options.Host, options.Port, options.Name, options.RaceId, options.ClassId, options.Gender);
 
 Console.WriteLine(
     $"[{options.Name}] connecting to {options.Host}:{options.Port} " +
@@ -21,6 +22,7 @@ Console.WriteLine(
 var clock = Stopwatch.StartNew();
 double lastStatusAt = 0;
 double lastPingAt = 0;
+double lastRacialAt = 0;
 int maxVisible = 0;
 bool sawOther = false;
 
@@ -62,6 +64,12 @@ while (clock.Elapsed.TotalSeconds < options.Seconds)
 
     double now = clock.Elapsed.TotalSeconds;
 
+    if (options.Racial && client.EntityId is not null && now - lastRacialAt >= 1.0)
+    {
+        client.SendUseRacial(); // server enforces the racial's cooldown
+        lastRacialAt = now;
+    }
+
     if (now - lastPingAt >= 1.0 && client.EntityId is not null)
     {
         client.SendPing();
@@ -90,8 +98,15 @@ return connected ? 0 : 1;
 
 static void PrintStatus(GameClient client, string name)
 {
-    string hp = client.TryGetSelf(out var s) ? $"{s.Health}/{s.MaxHealth}" : "?";
-    string self = client.TryGetSelf(out var s2) ? s2.Position.ToString() : "(unknown)";
+    string hp = "?";
+    string res = "?";
+    string self = "(unknown)";
+    if (client.TryGetSelf(out var s))
+    {
+        hp = $"{s.Health}/{s.MaxHealth}";
+        res = $"{s.Resource}/{s.MaxResource}";
+        self = s.Position.ToString();
+    }
 
     int monsters = 0;
     foreach (var e in client.Visible)
@@ -107,13 +122,13 @@ static void PrintStatus(GameClient client, string name)
         : string.Empty;
 
     Console.WriteLine(
-        $"[{name}] tick={client.LastTick} hp={hp} self={self} " +
+        $"[{name}] tick={client.LastTick} hp={hp} res={res} self={self} " +
         $"visible={client.Visible.Count} monsters={monsters}{combat}");
 }
 
 internal sealed record HarnessOptions(
     string Host, int Port, string Name, double Seconds, Vec2 Direction,
-    byte RaceId, byte ClassId, byte AbilityId, bool Attack)
+    byte RaceId, byte ClassId, byte AbilityId, bool Attack, Gender Gender, bool Racial)
 {
     public static HarnessOptions Parse(string[] args)
     {
@@ -127,6 +142,8 @@ internal sealed record HarnessOptions(
         byte cls = 1;
         byte ability = 1;
         bool attack = false;
+        var gender = Gender.Male;
+        bool racial = false;
 
         for (int i = 0; i < args.Length; i++)
         {
@@ -144,11 +161,19 @@ internal sealed record HarnessOptions(
                 case "--race" when HasNext() && byte.TryParse(args[i + 1], out byte r): race = r; i++; break;
                 case "--class" when HasNext() && byte.TryParse(args[i + 1], out byte c): cls = c; i++; break;
                 case "--ability" when HasNext() && byte.TryParse(args[i + 1], out byte ab): ability = ab; i++; break;
+                case "--gender" when HasNext(): gender = ParseGender(args[++i]); break;
                 case "--attack": attack = true; break;
+                case "--racial": racial = true; break;
                 default: break;
             }
         }
 
-        return new HarnessOptions(host, port, name, seconds, new Vec2(dirX, dirY), race, cls, ability, attack);
+        return new HarnessOptions(host, port, name, seconds, new Vec2(dirX, dirY), race, cls, ability, attack, gender, racial);
     }
+
+    private static Gender ParseGender(string value) => value.ToLowerInvariant() switch
+    {
+        "f" or "female" or "1" => Gender.Female,
+        _ => Gender.Male,
+    };
 }
