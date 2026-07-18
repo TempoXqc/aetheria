@@ -1,4 +1,5 @@
 using Aetheria.Shared;
+using Aetheria.Shared.Data;
 using UnityEngine;
 
 namespace Aetheria.UnityClient
@@ -32,15 +33,15 @@ namespace Aetheria.UnityClient
             Block(r, "PlazaTrim", new Vector3(0f, 0.045f, 0f), new Vector3(5f, 0.04f, 5f),
                 new Color(0.55f, 0.54f, 0.50f));
 
-            const int Stones = 14;
-            for (int i = 0; i < Stones; i++)
+            // Menhirs come from the SHARED layout: they block movement exactly where they stand.
+            WorldLayout.Obstacle[] menhirs = WorldLayout.Menhirs;
+            for (int i = 0; i < menhirs.Length; i++)
             {
-                float a = i * Mathf.PI * 2f / Stones;
-                var stone = Block(r, "Menhir",
-                    new Vector3(Mathf.Cos(a) * 18f, 0.8f, Mathf.Sin(a) * 18f),
-                    new Vector3(0.7f, 1.6f + ((i % 3) * 0.3f), 0.7f),
+                float h = 1.7f + ((i % 3) * 0.3f);
+                Round(PrimitiveType.Capsule, r, "Menhir",
+                    new Vector3(menhirs[i].X, h * 0.45f, menhirs[i].Y),
+                    new Vector3(1.0f, h * 0.5f, 0.8f),
                     new Color(0.50f, 0.52f, 0.58f));
-                stone.transform.localRotation = Quaternion.Euler(0f, a * Mathf.Rad2Deg, 0f);
             }
 
             // Bank corner: a canopy over the chest (the chest itself is a server entity).
@@ -74,25 +75,36 @@ namespace Aetheria.UnityClient
             // --- WOLF FIELD to the WEST: wheat, fences, haystacks ---
             Block(r, "Wheat", new Vector3(-48f, 0.015f, 3f), new Vector3(26f, 0.03f, 24f),
                 new Color(0.72f, 0.62f, 0.28f));
-            Fence(r, new Vector3(-61f, 0f, -9f), new Vector3(-35f, 0f, -9f));
-            Fence(r, new Vector3(-61f, 0f, 15f), new Vector3(-35f, 0f, 15f));
-            Fence(r, new Vector3(-61f, 0f, -9f), new Vector3(-61f, 0f, 15f));
+
+            // Fence posts from the SHARED layout (they block); rails are pure decoration.
+            foreach (WorldLayout.Obstacle post in WorldLayout.FencePosts)
+            {
+                Round(PrimitiveType.Cylinder, r, "Post", new Vector3(post.X, 0.45f, post.Y),
+                    new Vector3(0.22f, 0.45f, 0.22f), new Color(0.36f, 0.25f, 0.14f));
+            }
+
+            Rail(r, new Vector3(-61f, 0f, -9f), new Vector3(-35f, 0f, -9f));
+            Rail(r, new Vector3(-61f, 0f, 15f), new Vector3(-35f, 0f, 15f));
+            Rail(r, new Vector3(-61f, 0f, -9f), new Vector3(-61f, 0f, 15f));
+
             Haystack(r, new Vector3(-42f, 0f, 10f));
             Haystack(r, new Vector3(-54f, 0f, -4f));
             Haystack(r, new Vector3(-47f, 0f, -6f));
 
-            // Scattered trees between the zones.
-            Tree(r, new Vector3(-20f, 0f, 22f), 1.1f);
-            Tree(r, new Vector3(-28f, 0f, -14f), 1.3f);
-            Tree(r, new Vector3(14f, 0f, -20f), 1.0f);
-            Tree(r, new Vector3(30f, 0f, 24f), 1.2f);
-            Tree(r, new Vector3(-8f, 0f, 26f), 0.9f);
-            Tree(r, new Vector3(20f, 0f, -8f), 1.15f);
+            // Trees and rocks from the SHARED layout: what you see is what blocks you.
+            float[] treeScales = { 1.1f, 1.3f, 1.0f, 1.2f, 0.9f, 1.15f };
+            WorldLayout.Obstacle[] trees = WorldLayout.Trees;
+            for (int i = 0; i < trees.Length; i++)
+            {
+                Tree(r, new Vector3(trees[i].X, 0f, trees[i].Y), treeScales[i % treeScales.Length]);
+            }
 
-            // Dungeon approach (the contested elite camp at ~40,40): rough rocks.
-            Rock(r, new Vector3(35f, 0f, 34f), 1.4f);
-            Rock(r, new Vector3(44f, 0f, 37f), 1.0f);
-            Rock(r, new Vector3(37f, 0f, 43f), 1.8f);
+            float[] rockScales = { 1.4f, 1.0f, 1.8f };
+            WorldLayout.Obstacle[] rocks = WorldLayout.Rocks;
+            for (int i = 0; i < rocks.Length; i++)
+            {
+                Rock(r, new Vector3(rocks[i].X, 0f, rocks[i].Y), rockScales[i % rockScales.Length]);
+            }
 
             // Ashmaw's scorched ground (world raid boss at 80,80).
             Block(r, "Scorch", new Vector3(80f, 0.01f, 80f), new Vector3(16f, 0.02f, 16f),
@@ -120,46 +132,58 @@ namespace Aetheria.UnityClient
             b.transform.localRotation = Quaternion.Euler(0f, 0f, -38f);
         }
 
-        private static void Fence(Transform r, Vector3 from, Vector3 to)
+        private static void Rail(Transform r, Vector3 from, Vector3 to)
         {
             Vector3 delta = to - from;
             float length = delta.magnitude;
-            int posts = Mathf.Max(2, Mathf.RoundToInt(length / 3f) + 1);
-            Vector3 dir = delta / (posts - 1);
-            Color wood = new Color(0.36f, 0.25f, 0.14f);
-
-            for (int i = 0; i < posts; i++)
-            {
-                Block(r, "Post", from + (dir * i) + new Vector3(0f, 0.45f, 0f),
-                    new Vector3(0.16f, 0.9f, 0.16f), wood);
-            }
-
-            var rail = Block(r, "Rail", from + (delta * 0.5f) + new Vector3(0f, 0.72f, 0f),
-                new Vector3(0.10f, 0.10f, 0.10f), wood);
-            rail.transform.localScale = new Vector3(
-                Mathf.Abs(delta.x) > 0.1f ? length : 0.1f, 0.1f, Mathf.Abs(delta.z) > 0.1f ? length : 0.1f);
+            var rail = Round(PrimitiveType.Cylinder, r, "Rail",
+                from + (delta * 0.5f) + new Vector3(0f, 0.72f, 0f),
+                new Vector3(0.07f, length * 0.5f, 0.07f), new Color(0.36f, 0.25f, 0.14f));
+            rail.transform.localRotation =
+                Quaternion.FromToRotation(Vector3.up, delta.normalized); // cylinder axis → fence line
         }
 
         private static void Haystack(Transform r, Vector3 at)
         {
             Color hay = new Color(0.80f, 0.68f, 0.30f);
-            Block(r, "Hay1", at + new Vector3(0f, 0.5f, 0f), new Vector3(1.6f, 1.0f, 1.6f), hay);
-            Block(r, "Hay2", at + new Vector3(0f, 1.15f, 0f), new Vector3(1.0f, 0.5f, 1.0f), hay);
+            Round(PrimitiveType.Sphere, r, "Hay1", at + new Vector3(0f, 0.55f, 0f), new Vector3(1.7f, 1.2f, 1.7f), hay);
+            Round(PrimitiveType.Sphere, r, "Hay2", at + new Vector3(0f, 1.25f, 0f), new Vector3(1.0f, 0.7f, 1.0f), hay);
         }
 
         private static void Tree(Transform r, Vector3 at, float s)
         {
-            Block(r, "Trunk", at + new Vector3(0f, 0.7f * s, 0f), new Vector3(0.3f * s, 1.4f * s, 0.3f * s),
-                new Color(0.30f, 0.20f, 0.11f));
-            Block(r, "Crown", at + new Vector3(0f, 1.9f * s, 0f), new Vector3(1.7f * s, 1.3f * s, 1.7f * s),
-                new Color(0.16f, 0.38f, 0.18f));
+            Round(PrimitiveType.Cylinder, r, "Trunk", at + new Vector3(0f, 0.7f * s, 0f),
+                new Vector3(0.3f * s, 0.7f * s, 0.3f * s), new Color(0.30f, 0.20f, 0.11f));
+            Color leaves = new Color(0.16f, 0.38f, 0.18f);
+            Round(PrimitiveType.Sphere, r, "Crown", at + new Vector3(0f, 2.0f * s, 0f),
+                new Vector3(1.9f * s, 1.5f * s, 1.9f * s), leaves);
+            Round(PrimitiveType.Sphere, r, "Crown2", at + new Vector3(0.5f * s, 2.5f * s, 0.3f * s),
+                new Vector3(1.1f * s, 0.9f * s, 1.1f * s), leaves * 1.12f);
         }
 
         private static void Rock(Transform r, Vector3 at, float s)
         {
-            var rock = Block(r, "Rock", at + new Vector3(0f, 0.4f * s, 0f),
-                new Vector3(1.2f * s, 0.8f * s, 1.0f * s), new Color(0.40f, 0.40f, 0.43f));
-            rock.transform.localRotation = Quaternion.Euler(0f, 30f * s, 0f);
+            var rock = Round(PrimitiveType.Sphere, r, "Rock", at + new Vector3(0f, 0.35f * s, 0f),
+                new Vector3(1.3f * s, 0.75f * s, 1.05f * s), new Color(0.40f, 0.40f, 0.43f));
+            rock.transform.localRotation = Quaternion.Euler(0f, 30f * s, 8f);
+        }
+
+        private static GameObject Round(PrimitiveType type, Transform parent, string name,
+            Vector3 pos, Vector3 scale, Color color)
+        {
+            GameObject go = GameObject.CreatePrimitive(type);
+            go.name = name;
+            Object.Destroy(go.GetComponent<Collider>());
+            go.transform.SetParent(parent, false);
+            go.transform.localPosition = pos;
+            go.transform.localScale = scale;
+            var renderer = go.GetComponent<Renderer>();
+            if (renderer != null)
+            {
+                renderer.material.color = color;
+            }
+
+            return go;
         }
 
         private static GameObject Block(Transform parent, string name, Vector3 pos, Vector3 scale, Color color)

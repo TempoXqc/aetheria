@@ -93,6 +93,15 @@ public sealed class ServerEntity
     /// <summary>Tick at which this entity is removed outright (0 = never). Used by monster corpses.</summary>
     public uint DespawnAtTick { get; set; }
 
+    /// <summary>Tick the current cosmetic jump started at (0 = not jumping).</summary>
+    public uint JumpStartTick { get; set; }
+
+    /// <summary>A jump lasts this many ticks (~0.6s of hang time).</summary>
+    public const int JumpDurationTicks = 12;
+
+    public bool IsJumpingAt(uint tick) =>
+        JumpStartTick != 0 && tick - JumpStartTick < JumpDurationTicks;
+
     // --- Inventory, equipment & currency (players) ---
     public Inventory Inventory { get; }
     public byte EquippedWeaponId { get; set; }

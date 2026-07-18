@@ -20,7 +20,11 @@ public sealed class WorldManager
     public WorldManager(GameData? gameData = null)
     {
         _gameData = gameData ?? GameData.CreateDefault();
-        OpenWorld = new World(_gameData, _ids) { HasSafeZone = true }; // spawn sanctuary
+        OpenWorld = new World(_gameData, _ids)
+        {
+            HasSafeZone = true,              // spawn sanctuary
+            Obstacles = WorldLayout.All,     // trees/stones/fences block movement (and match visuals)
+        };
     }
 
     /// <summary>The shared, seamless open world.</summary>

@@ -162,10 +162,10 @@ public sealed class GameClient
 
     public void SendLeaveInstance() => Send(new LeaveInstance());
 
-    public void SendInput(Vec2 direction, float facingRadians = 0f)
+    public void SendInput(Vec2 direction, float facingRadians = 0f, bool jump = false)
     {
         _inputSequence++;
-        Send(new InputCommand(_inputSequence, direction, facingRadians));
+        Send(new InputCommand(_inputSequence, direction, facingRadians, jump));
     }
 
     public void SendUseAbility(byte abilityId, int targetEntityId)

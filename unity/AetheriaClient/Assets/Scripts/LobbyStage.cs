@@ -267,12 +267,29 @@ namespace Aetheria.UnityClient
 
         private static void Pine(Transform r, Vector3 at, float s)
         {
-            Block(r, "Trunk", at + new Vector3(0f, 0.5f * s, 0f), new Vector3(0.26f * s, 1.0f * s, 0.26f * s),
-                new Color(0.28f, 0.18f, 0.10f));
+            GameObject trunk = GameObject.CreatePrimitive(PrimitiveType.Cylinder);
+            trunk.name = "Trunk";
+            Object.Destroy(trunk.GetComponent<Collider>());
+            trunk.transform.SetParent(r, false);
+            trunk.transform.localPosition = at + new Vector3(0f, 0.5f * s, 0f);
+            trunk.transform.localScale = new Vector3(0.24f * s, 0.5f * s, 0.24f * s);
+            Tint(trunk, new Color(0.28f, 0.18f, 0.10f));
+
             Color needles = new Color(0.10f, 0.30f, 0.16f);
-            Block(r, "Pine1", at + new Vector3(0f, 1.25f * s, 0f), new Vector3(1.5f * s, 0.7f * s, 1.5f * s), needles);
-            Block(r, "Pine2", at + new Vector3(0f, 1.85f * s, 0f), new Vector3(1.05f * s, 0.6f * s, 1.05f * s), needles);
-            Block(r, "Pine3", at + new Vector3(0f, 2.4f * s, 0f), new Vector3(0.6f * s, 0.55f * s, 0.6f * s), needles);
+            PineTier(r, at + new Vector3(0f, 1.25f * s, 0f), new Vector3(1.6f * s, 0.85f * s, 1.6f * s), needles);
+            PineTier(r, at + new Vector3(0f, 1.9f * s, 0f), new Vector3(1.1f * s, 0.7f * s, 1.1f * s), needles);
+            PineTier(r, at + new Vector3(0f, 2.45f * s, 0f), new Vector3(0.65f * s, 0.6f * s, 0.65f * s), needles);
+        }
+
+        private static void PineTier(Transform r, Vector3 pos, Vector3 scale, Color color)
+        {
+            GameObject tier = GameObject.CreatePrimitive(PrimitiveType.Sphere);
+            tier.name = "Pine";
+            Object.Destroy(tier.GetComponent<Collider>());
+            tier.transform.SetParent(r, false);
+            tier.transform.localPosition = pos;
+            tier.transform.localScale = scale;
+            Tint(tier, color);
         }
 
         private static void Mountain(Transform r, Vector3 at, float s)

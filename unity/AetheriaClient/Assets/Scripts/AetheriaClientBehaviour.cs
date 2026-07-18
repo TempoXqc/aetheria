@@ -63,6 +63,7 @@ namespace Aetheria.UnityClient
         private bool _wasRegistering;
         private bool _serverChosen; // the player picked this realm in the browser (creation allowed)
         private Vector3 _rightDownPos; // to tell a right-TAP (context click) from a camera drag
+        private bool _jumpQueued;      // Space pressed since the last input packet
 
         // --- Bank (a physical chest in the sanctuary) ---
         private int _nearbyBankId = -1;
@@ -258,6 +259,18 @@ namespace Aetheria.UnityClient
 
             if (!_menuOpen && _awaitingBind == null && !_chatInputActive)
             {
+                // Jump: play locally right away (snappy), and relay through the next input packet.
+                if (Input.GetKeyDown(KeyCode.Space))
+                {
+                    _jumpQueued = true;
+                    EntityView selfView;
+                    if (_client.EntityId.HasValue &&
+                        _views.TryGetValue(_client.EntityId.Value, out selfView) && selfView != null)
+                    {
+                        selfView.TriggerJump();
+                    }
+                }
+
                 HandleKeys();
                 HandleMouse();
                 AutoAttackTick();
@@ -964,7 +977,8 @@ namespace Aetheria.UnityClient
                 _lastFacing = Mathf.Atan2(dir.Y, dir.X); // face your walking direction
             }
 
-            _client.SendInput(dir, _lastFacing);
+            _client.SendInput(dir, _lastFacing, _jumpQueued);
+            _jumpQueued = false;
         }
 
         // ----------------------------------------------------------------- HUD

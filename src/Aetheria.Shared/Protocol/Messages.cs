@@ -58,11 +58,15 @@ public readonly struct InputCommand
     public readonly Vec2 MoveDirection;
     public readonly float FacingRadians;
 
-    public InputCommand(uint sequence, Vec2 moveDirection, float facingRadians = 0f)
+    /// <summary>The player pressed jump this frame (cosmetic hop, relayed to everyone).</summary>
+    public readonly bool Jump;
+
+    public InputCommand(uint sequence, Vec2 moveDirection, float facingRadians = 0f, bool jump = false)
     {
         Sequence = sequence;
         MoveDirection = moveDirection;
         FacingRadians = facingRadians;
+        Jump = jump;
     }
 
     public void Write(PacketWriter w)
@@ -72,6 +76,7 @@ public readonly struct InputCommand
         w.WriteFloat(MoveDirection.X);
         w.WriteFloat(MoveDirection.Y);
         w.WriteFloat(FacingRadians);
+        w.WriteBool(Jump);
     }
 
     public static InputCommand Read(ref PacketReader r)
@@ -80,7 +85,8 @@ public readonly struct InputCommand
         float x = r.ReadFloat();
         float y = r.ReadFloat();
         float facing = r.ReadFloat();
-        return new InputCommand(sequence, new Vec2(x, y), facing);
+        bool jump = r.ReadBool();
+        return new InputCommand(sequence, new Vec2(x, y), facing, jump);
     }
 }
 
@@ -191,11 +197,16 @@ public readonly struct EntitySnapshot
     /// <summary>Player: cosmetic customisation (skin, face, hair, beard). Zeroed for non-players.</summary>
     public readonly Appearance Appearance;
 
+    /// <summary>Animation flag bits — bit 0: currently jumping.</summary>
+    public readonly byte Flags;
+
+    public bool IsJumping => (Flags & 1) != 0;
+
     public EntitySnapshot(
         int id, EntityKind kind, Faction faction, Vec2 position,
         int health, int maxHealth, int resource, int maxResource, float facingRadians = 0f,
         byte level = 1, string name = "", byte raceId = 0, byte classId = 0, Gender gender = Gender.Male,
-        Appearance appearance = default)
+        Appearance appearance = default, byte flags = 0)
     {
         Id = id;
         Kind = kind;
@@ -212,6 +223,7 @@ public readonly struct EntitySnapshot
         ClassId = classId;
         Gender = gender;
         Appearance = appearance;
+        Flags = flags;
     }
 
     public void Write(PacketWriter w)
@@ -232,6 +244,7 @@ public readonly struct EntitySnapshot
         w.WriteByte(ClassId);
         w.WriteByte((byte)Gender);
         Appearance.Write(w);
+        w.WriteByte(Flags);
     }
 
     public static EntitySnapshot Read(ref PacketReader r)
@@ -252,9 +265,10 @@ public readonly struct EntitySnapshot
         byte classId = r.ReadByte();
         var gender = (Gender)r.ReadByte();
         Appearance appearance = Appearance.Read(ref r);
+        byte flags = r.ReadByte();
         return new EntitySnapshot(
             id, kind, faction, new Vec2(x, y), health, maxHealth, resource, maxResource, facing, level, name,
-            raceId, classId, gender, appearance);
+            raceId, classId, gender, appearance, flags);
     }
 }
 

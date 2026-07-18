@@ -15,6 +15,8 @@ namespace Aetheria.UnityClient
         private const float LerpSpeed = 12f;
         private const float AttackDuration = 0.35f;
         private const float HitFlashDuration = 0.18f;
+        private const float JumpDuration = 0.6f;
+        private const float JumpHeight = 1.1f;
 
         private Vector3 _targetPosition;
         private Quaternion _targetRotation = Quaternion.identity;
@@ -29,6 +31,9 @@ namespace Aetheria.UnityClient
         private float _walkPhase;
         private float _attackTimer;
         private float _flashTimer;
+        private float _jumpTimer;
+        private bool _wasJumpFlag;
+        private float _torsoBaseY;
 
         // Colour bookkeeping: base colour per renderer, so the hit flash can restore them.
         private Renderer[] _parts = new Renderer[0];
@@ -101,6 +106,15 @@ namespace Aetheria.UnityClient
                 }
             }
 
+            // Jump relay: when the server flags this entity as jumping, play the hop (the local
+            // player already triggered it on key-press; TriggerJump ignores double-starts).
+            if (snapshot.IsJumping && !_wasJumpFlag)
+            {
+                TriggerJump();
+            }
+
+            _wasJumpFlag = snapshot.IsJumping;
+
             // Relation tint on the tunic: you are green, allies blue, the enemy faction red.
             if (Kind == EntityKind.Player && _rig != null && _rig.TintTargets.Length > 0)
             {
@@ -140,6 +154,15 @@ namespace Aetheria.UnityClient
             _flashTimer = HitFlashDuration;
         }
 
+        /// <summary>Start the cosmetic jump arc (no-op while one is already in the air).</summary>
+        public void TriggerJump()
+        {
+            if (_jumpTimer <= 0f)
+            {
+                _jumpTimer = JumpDuration;
+            }
+        }
+
         private void Update()
         {
             float dt = Time.deltaTime;
@@ -152,6 +175,21 @@ namespace Aetheria.UnityClient
             if (_body != null && (Kind == EntityKind.Player || Kind == EntityKind.Monster))
             {
                 _body.rotation = Quaternion.Slerp(_body.rotation, _targetRotation, dt * 14f);
+            }
+
+            // Jump arc: a clean parabola lifted through the body child (position lerp stays flat).
+            if (_body != null)
+            {
+                float jumpY = 0f;
+                if (_jumpTimer > 0f)
+                {
+                    _jumpTimer -= dt;
+                    float t = 1f - Mathf.Clamp01(_jumpTimer / JumpDuration); // 0 → 1
+                    jumpY = JumpHeight * 4f * t * (1f - t);
+                }
+
+                Vector3 lp = _body.localPosition;
+                _body.localPosition = new Vector3(lp.x, jumpY, lp.z);
             }
 
             // Measure how fast the view is actually moving to drive the walk cycle.
@@ -220,9 +258,10 @@ namespace Aetheria.UnityClient
                 // Idle breathing: a subtle torso pulse when standing still.
                 if (_rig.Torso != null)
                 {
+                    if (_torsoBaseY <= 0f) { _torsoBaseY = _rig.Torso.localScale.y; }
                     float breathe = 1f + (Mathf.Sin(Time.time * 2f) * 0.015f * (1f - stride));
                     Vector3 s = _rig.Torso.localScale;
-                    _rig.Torso.localScale = new Vector3(s.x, 0.62f * breathe, s.z);
+                    _rig.Torso.localScale = new Vector3(s.x, _torsoBaseY * breathe, s.z);
                 }
             }
 

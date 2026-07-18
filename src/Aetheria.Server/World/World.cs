@@ -331,7 +331,8 @@ public sealed class World
     /// Record a movement intent for a living entity, ignoring inputs that arrive out of order and
     /// clamping the direction to unit length (so a client cannot move faster with an oversized vector).
     /// </summary>
-    public void ApplyInput(int entityId, uint sequence, Vec2 moveDirection, float facingRadians = 0f)
+    public void ApplyInput(int entityId, uint sequence, Vec2 moveDirection, float facingRadians = 0f,
+        bool jump = false)
     {
         if (!_entities.TryGetValue(entityId, out ServerEntity? entity) || entity.IsDead)
         {
@@ -346,6 +347,11 @@ public sealed class World
         entity.LastInputSequence = sequence;
         entity.MoveIntent = ClampToUnit(moveDirection);
         entity.FacingRadians = facingRadians;
+
+        if (jump && !entity.IsJumpingAt(Tick))
+        {
+            entity.JumpStartTick = Tick == 0 ? 1 : Tick; // cosmetic hop, relayed via snapshot flags
+        }
     }
 
     /// <summary>
@@ -546,11 +552,12 @@ public sealed class World
                 byte raceOrDef = e.Kind == EntityKind.Monster || e.Kind == EntityKind.MonsterCorpse
                     ? e.MonsterId
                     : e.RaceId;
+                byte flags = e.IsJumpingAt(Tick) ? (byte)1 : (byte)0;
                 result.Add(new EntitySnapshot(
                     e.Id, e.Kind, e.Faction, e.Position,
                     e.Health, e.EffectiveMaxHealth, (int)e.CurrentResource, e.EffectiveMaxResource,
                     e.FacingRadians, (byte)System.Math.Clamp(e.Level, 1, 255), e.Name,
-                    raceOrDef, e.ClassId, e.Gender, e.Appearance));
+                    raceOrDef, e.ClassId, e.Gender, e.Appearance, flags));
             }
         }
 
@@ -709,6 +716,12 @@ public sealed class World
         return best;
     }
 
+    /// <summary>Static blocking circles (trees, stones, fences…). Empty in instances.</summary>
+    public IReadOnlyList<WorldLayout.Obstacle> Obstacles { get; set; } = [];
+
+    /// <summary>How wide a walking body is for collision purposes.</summary>
+    private const float BodyRadius = 0.45f;
+
     private void IntegrateMovement(float dt)
     {
         foreach (ServerEntity entity in _entities.Values)
@@ -718,9 +731,47 @@ public sealed class World
                 continue;
             }
 
-            entity.Position += entity.MoveIntent * (entity.EffectiveMoveSpeed * dt);
+            Vec2 next = entity.Position + (entity.MoveIntent * (entity.EffectiveMoveSpeed * dt));
+            next = ResolveObstacles(next);
+            entity.Position = next;
             _grid.InsertOrUpdate(entity.Id, entity.Position);
         }
+    }
+
+    /// <summary>
+    /// Push a position out of any blocking circle it overlaps. Pushing out (rather than refusing
+    /// the move) makes bodies SLIDE along trees and walls instead of sticking to them.
+    /// </summary>
+    private Vec2 ResolveObstacles(Vec2 position)
+    {
+        IReadOnlyList<WorldLayout.Obstacle> obstacles = Obstacles;
+        for (int pass = 0; pass < 2; pass++) // two passes settle corner overlaps
+        {
+            bool touched = false;
+            for (int i = 0; i < obstacles.Count; i++)
+            {
+                WorldLayout.Obstacle o = obstacles[i];
+                float minDist = o.Radius + BodyRadius;
+                Vec2 delta = position - o.Position;
+                float distSq = delta.LengthSquared;
+                if (distSq >= minDist * minDist)
+                {
+                    continue;
+                }
+
+                // Standing dead-centre on an obstacle: pick an arbitrary push direction.
+                Vec2 push = distSq > 0.0001f ? delta.Normalized() : new Vec2(1f, 0f);
+                position = o.Position + (push * minDist);
+                touched = true;
+            }
+
+            if (!touched)
+            {
+                break;
+            }
+        }
+
+        return position;
     }
 
     private void DealDamage(ServerEntity attacker, ServerEntity target, AbilityDefinition ability)

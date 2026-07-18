@@ -260,7 +260,8 @@ public sealed class GameServer
             {
                 case MessageType.InputCommand:
                     InputCommand input = InputCommand.Read(ref reader);
-                    world.ApplyInput(session.EntityId, input.Sequence, input.MoveDirection, input.FacingRadians);
+                    world.ApplyInput(session.EntityId, input.Sequence, input.MoveDirection,
+                        input.FacingRadians, input.Jump);
                     break;
 
                 case MessageType.UseAbility:
