@@ -36,7 +36,12 @@ public readonly struct ConnectRequest
     /// <summary>Account identifier the character belongs to. The account bank is keyed by this.</summary>
     public readonly string AccountId;
 
-    public ConnectRequest(byte protocolVersion, string name, byte raceId, byte classId, Gender gender, string accountId)
+    /// <summary>Account secret: set on the account's first connect, verified on every later one.</summary>
+    public readonly string AccountSecret;
+
+    public ConnectRequest(
+        byte protocolVersion, string name, byte raceId, byte classId, Gender gender,
+        string accountId, string accountSecret)
     {
         ProtocolVersion = protocolVersion;
         Name = name;
@@ -44,6 +49,7 @@ public readonly struct ConnectRequest
         ClassId = classId;
         Gender = gender;
         AccountId = accountId;
+        AccountSecret = accountSecret;
     }
 
     public void Write(PacketWriter w)
@@ -55,6 +61,7 @@ public readonly struct ConnectRequest
         w.WriteByte(ClassId);
         w.WriteByte((byte)Gender);
         w.WriteString(AccountId);
+        w.WriteString(AccountSecret);
     }
 
     public static ConnectRequest Read(ref PacketReader r)
@@ -65,7 +72,8 @@ public readonly struct ConnectRequest
         byte classId = r.ReadByte();
         var gender = (Gender)r.ReadByte();
         string accountId = r.ReadString();
-        return new ConnectRequest(version, name, raceId, classId, gender, accountId);
+        string accountSecret = r.ReadString();
+        return new ConnectRequest(version, name, raceId, classId, gender, accountId, accountSecret);
     }
 }
 

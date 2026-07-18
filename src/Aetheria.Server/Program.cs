@@ -1,4 +1,5 @@
 using Aetheria.Server;
+using Aetheria.Server.Persistence;
 using Aetheria.Shared;
 using Aetheria.Shared.Data;
 using Aetheria.Shared.Net;
@@ -9,10 +10,15 @@ int port = ParsePort(args);
 string dataDir = Path.Combine(AppContext.BaseDirectory, "data");
 GameData gameData = GameData.LoadFromDirectoryOrDefault(dataDir);
 
+// Durable state (accounts, banks, characters, names) — a JSON file today, Postgres later.
+string statePath = ParseStatePath(args) ?? Path.Combine(AppContext.BaseDirectory, "state", "aetheria-state.json");
+var store = new JsonFilePersistenceStore(statePath);
+Console.WriteLine($"State file: {statePath}");
+
 using var transport = new UdpServerTransport();
 transport.Start(port);
 
-var server = new GameServer(transport, gameData, Console.WriteLine);
+var server = new GameServer(transport, gameData, Console.WriteLine, store);
 
 Console.WriteLine(
     $"Content loaded: {gameData.Races.Count} races, {gameData.Classes.Count} classes, " +
@@ -52,4 +58,17 @@ static int ParsePort(string[] args)
     }
 
     return SimulationConstants.DefaultPort;
+}
+
+static string? ParseStatePath(string[] args)
+{
+    for (int i = 0; i < args.Length - 1; i++)
+    {
+        if (args[i] == "--state")
+        {
+            return args[i + 1];
+        }
+    }
+
+    return null;
 }

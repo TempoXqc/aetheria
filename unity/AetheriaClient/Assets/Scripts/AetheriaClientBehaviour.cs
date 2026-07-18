@@ -26,6 +26,7 @@ namespace Aetheria.UnityClient
         private string _port = SimulationConstants.DefaultPort.ToString();
         private string _name = "Hero" + (System.DateTime.Now.Ticks % 1000);
         private string _account = "";
+        private string _secret = "";
         private int _raceIndex;
         private int _classIndex;
         private int _genderIndex;
@@ -104,12 +105,13 @@ namespace Aetheria.UnityClient
             _classId = Classes[_classIndex].id;
             Gender gender = _genderIndex == 1 ? Gender.Female : Gender.Male;
             string account = string.IsNullOrWhiteSpace(_account) ? _name : _account;
+            string secret = string.IsNullOrEmpty(_secret) ? account : _secret;
 
             try
             {
                 _transport = new UdpClientTransport();
                 _client = new GameClient(_transport);
-                _client.Connect(_host, port, _name, raceId, _classId, gender, account);
+                _client.Connect(_host, port, _name, raceId, _classId, gender, account, secret);
                 _connected = true;
                 _error = "";
             }
@@ -420,6 +422,11 @@ namespace Aetheria.UnityClient
             GUILayout.BeginHorizontal();
             GUILayout.Label("Compte", GUILayout.Width(70));
             _account = GUILayout.TextField(_account);
+            GUILayout.EndHorizontal();
+
+            GUILayout.BeginHorizontal();
+            GUILayout.Label("Secret", GUILayout.Width(70));
+            _secret = GUILayout.PasswordField(_secret, '*');
             GUILayout.EndHorizontal();
 
             GUILayout.Space(6);

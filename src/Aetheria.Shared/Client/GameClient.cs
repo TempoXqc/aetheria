@@ -63,10 +63,13 @@ public sealed class GameClient
     public string LastInstanceMessage { get; private set; } = string.Empty;
     public bool InInstance { get; private set; }
 
-    public void Connect(string host, int port, string name, byte raceId, byte classId, Gender gender, string accountId)
+    public void Connect(
+        string host, int port, string name, byte raceId, byte classId, Gender gender,
+        string accountId, string accountSecret = "")
     {
         _transport.Connect(host, port);
-        Send(new ConnectRequest(SimulationConstants.ProtocolVersion, name, raceId, classId, gender, accountId));
+        Send(new ConnectRequest(
+            SimulationConstants.ProtocolVersion, name, raceId, classId, gender, accountId, accountSecret));
     }
 
     public void SendBank(BankOp op, byte itemId, int amount) => Send(new BankTransaction(op, itemId, amount));

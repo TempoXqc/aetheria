@@ -1,4 +1,7 @@
+using System.Security.Cryptography;
+using System.Text;
 using Aetheria.Server.Items;
+using Aetheria.Server.Persistence;
 using Aetheria.Server.Social;
 using Aetheria.Server.World;
 using Aetheria.Shared;
@@ -33,15 +36,35 @@ public sealed class GameServer
     // persistence (M4), where names are reserved in the database.
     private readonly HashSet<string> _activeNames = new(StringComparer.OrdinalIgnoreCase);
 
-    // Account banks, keyed by account id. Persist across a character's permadeath (and reconnects)
-    // for the server's lifetime — in-memory until real persistence (M4) makes them durable.
+    // Live account banks, keyed by account id, hydrated from durable state at boot.
     private readonly Dictionary<string, Inventory> _banks = new(StringComparer.OrdinalIgnoreCase);
 
-    public GameServer(IServerTransport transport, GameData? gameData = null, Action<string>? log = null)
+    // Durable state (accounts, secrets, banks, characters, the server-wide name registry).
+    private readonly IPersistenceStore _store;
+    private readonly ServerState _state;
+    private const int SaveIntervalTicks = SimulationConstants.TickRate * 5; // flush every ~5s
+
+    public GameServer(
+        IServerTransport transport, GameData? gameData = null, Action<string>? log = null,
+        IPersistenceStore? store = null)
     {
         _transport = transport;
         _worlds = new WorldManager(gameData);
         _log = log ?? (_ => { });
+        _store = store ?? new InMemoryPersistenceStore();
+        _state = _store.Load();
+
+        // Hydrate live banks from durable records.
+        foreach (AccountRecord account in _state.Accounts.Values)
+        {
+            _banks[account.AccountId] =
+                CharacterMapper.RestoreBank(account, SimulationConstants.BankCapacity, _worlds.GameData);
+        }
+
+        if (_state.Accounts.Count > 0)
+        {
+            _log($"Persistence: loaded {_state.Accounts.Count} account(s), {_state.Names.Count} reserved name(s).");
+        }
 
         SpawnOpenWorldContent();
     }
@@ -85,15 +108,36 @@ public sealed class GameServer
 
         BroadcastSnapshots();
 
+        bool playerDied = false;
         foreach (World.World world in _worlds.AllWorlds.ToArray())
         {
-            BroadcastCombatEvents(world, world.DrainCombatEvents());
+            IReadOnlyList<CombatEventMessage> events = world.DrainCombatEvents();
+            BroadcastCombatEvents(world, events);
+
+            foreach (CombatEventMessage evt in events)
+            {
+                if (evt.TargetKilled && FindSessionByEntity(evt.TargetId) is not null)
+                {
+                    playerDied = true; // a player death (permadeath!) must hit disk immediately
+                }
+            }
+        }
+
+        if (playerDied)
+        {
+            PersistAll();
         }
 
         // Self status (progression + inventory) changes rarely; send it a few times a second.
         if (_worlds.OpenWorld.Tick % 10 == 0)
         {
             BroadcastPlayerState();
+        }
+
+        // Periodic durability flush: capture every online character + bank and save.
+        if (_worlds.OpenWorld.Tick % SaveIntervalTicks == 0)
+        {
+            PersistAll();
         }
     }
 
@@ -242,8 +286,23 @@ public sealed class GameServer
             return;
         }
 
-        // Character name must be valid and unique on this server.
-        if (!TryReserveName(request.Name, out string name, out string nameError))
+        // Account auth: the first connect sets the secret; later connects must match it.
+        AccountRecord account = GetOrCreateAccount(accountId);
+        string secretHash = HashSecret(request.AccountSecret);
+        if (string.IsNullOrEmpty(account.SecretHash))
+        {
+            account.SecretHash = secretHash;
+        }
+        else if (!string.Equals(account.SecretHash, secretHash, StringComparison.Ordinal))
+        {
+            Send(peer, new ConnectRejected("Wrong account secret."));
+            _transport.Kick(peer);
+            return;
+        }
+
+        // Character name: well-formed, not currently online, and durably owned (server-wide,
+        // across both factions; a name reserved by another account stays taken even offline).
+        if (!TryClaimName(request.Name, accountId, out string name, out string nameError))
         {
             Send(peer, new ConnectRejected(nameError));
             _transport.Kick(peer);
@@ -251,7 +310,18 @@ public sealed class GameServer
         }
 
         ServerEntity entity = _worlds.OpenWorld.SpawnPlayer(peer, name, request.RaceId, request.ClassId, request.Gender);
-        _worlds.OpenWorld.GrantStarterKit(entity);
+
+        // Returning character: restore its saved progression/inventory. New one: starter kit.
+        if (account.Characters.TryGetValue(name.ToLowerInvariant(), out CharacterRecord? saved))
+        {
+            CharacterMapper.Restore(_worlds.OpenWorld, entity, saved);
+        }
+        else
+        {
+            _worlds.OpenWorld.GrantStarterKit(entity);
+            account.Characters[name.ToLowerInvariant()] = CharacterMapper.Capture(entity);
+        }
+
         session.EntityId = entity.Id;
         session.Name = entity.Name;
         session.AccountId = accountId;
@@ -262,9 +332,24 @@ public sealed class GameServer
         SendBankState(peer, accountId); // the account bank survives permadeath and is shown on join
 
         _log($"'{session.Name}' joined as {entity.Faction} {data.GetRace(entity.RaceId).Name} " +
-             $"{data.GetClass(entity.ClassId).Name} ({entity.Gender}, entity {entity.Id}, {peer}). " +
-             $"Players online: {PlayerCount}.");
+             $"{data.GetClass(entity.ClassId).Name} ({entity.Gender}, entity {entity.Id}, {peer}, " +
+             $"{(saved is null ? "new" : "restored")}). Players online: {PlayerCount}.");
     }
+
+    private AccountRecord GetOrCreateAccount(string accountId)
+    {
+        string key = accountId.ToLowerInvariant();
+        if (!_state.Accounts.TryGetValue(key, out AccountRecord? account))
+        {
+            account = new AccountRecord { AccountId = accountId };
+            _state.Accounts[key] = account;
+        }
+
+        return account;
+    }
+
+    private static string HashSecret(string? secret)
+        => Convert.ToHexString(SHA256.HashData(Encoding.UTF8.GetBytes(secret ?? string.Empty)));
 
     private void HandleDisconnect(PeerId peer)
     {
@@ -279,9 +364,17 @@ public sealed class GameServer
             BroadcastPartyState(left);
         }
 
-        _activeNames.Remove(session.Name); // free the name for reuse
+        // Persist the departing character before it despawns, then flush everything.
+        if (TryGetEntity(session, out ServerEntity? departing))
+        {
+            AccountRecord account = GetOrCreateAccount(session.AccountId);
+            account.Characters[session.Name.ToLowerInvariant()] = CharacterMapper.Capture(departing!);
+        }
+
+        _activeNames.Remove(session.Name); // no longer online (the durable name claim remains)
         session.CurrentWorld.Despawn(session.EntityId);
         _worlds.DestroyInstanceIfEmpty(session.CurrentWorld);
+        PersistAll();
         _log($"'{session.Name}' left (entity {session.EntityId}). Players online: {PlayerCount}.");
     }
 
@@ -594,11 +687,12 @@ public sealed class GameServer
     }
 
     /// <summary>
-    /// Validate a requested character name and, if it is well-formed and free, reserve it. On success
-    /// <paramref name="display"/> holds the trimmed name to use; on failure <paramref name="error"/>
-    /// explains why (sent to the client as a rejection reason).
+    /// Validate a requested character name and claim it durably for <paramref name="accountId"/>.
+    /// A name is refused if malformed, currently online, or durably owned by ANOTHER account —
+    /// ownership survives disconnects and server restarts. The same account may of course log its
+    /// own character back in.
     /// </summary>
-    private bool TryReserveName(string? requested, out string display, out string error)
+    private bool TryClaimName(string? requested, string accountId, out string display, out string error)
     {
         display = (requested ?? string.Empty).Trim();
         error = string.Empty;
@@ -618,13 +712,44 @@ public sealed class GameServer
             }
         }
 
-        if (!_activeNames.Add(display)) // case-insensitive; false if already present
+        string nameKey = display.ToLowerInvariant();
+        string accountKey = accountId.ToLowerInvariant();
+
+        if (_state.Names.TryGetValue(nameKey, out string? owner) &&
+            !string.Equals(owner, accountKey, StringComparison.Ordinal))
         {
             error = $"The name '{display}' is already taken on this server.";
             return false;
         }
 
+        if (!_activeNames.Add(display)) // case-insensitive; false if currently online
+        {
+            error = $"'{display}' is already online.";
+            return false;
+        }
+
+        _state.Names[nameKey] = accountKey; // durable, server-wide, across both factions
         return true;
+    }
+
+    /// <summary>Capture every online character and bank into durable records and save.</summary>
+    private void PersistAll()
+    {
+        foreach (PlayerSession session in _sessions.Values)
+        {
+            if (session.HandshakeComplete && TryGetEntity(session, out ServerEntity? self))
+            {
+                AccountRecord account = GetOrCreateAccount(session.AccountId);
+                account.Characters[session.Name.ToLowerInvariant()] = CharacterMapper.Capture(self!);
+            }
+        }
+
+        foreach ((string accountId, Inventory bank) in _banks)
+        {
+            CharacterMapper.CaptureBank(bank, GetOrCreateAccount(accountId));
+        }
+
+        _store.Save(_state);
     }
 
     private void Send(PeerId peer, ConnectAccepted msg) => SendWith(peer, msg.Write);

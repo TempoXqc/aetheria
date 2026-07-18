@@ -111,6 +111,14 @@ public sealed class World
         return entity.Inventory.TryAdd(itemId, quantity, def.Stackable, def.MaxStack);
     }
 
+    /// <summary>Set an entity's equipped gear and recompute its equipment bonuses.</summary>
+    public void Equip(ServerEntity entity, byte weaponId, byte armorId)
+    {
+        entity.EquippedWeaponId = weaponId;
+        entity.EquippedArmorId = armorId;
+        RecomputeEquipment(entity);
+    }
+
     /// <summary>Recompute an entity's equipment stat bonuses from its currently equipped gear.</summary>
     private void RecomputeEquipment(ServerEntity entity)
     {

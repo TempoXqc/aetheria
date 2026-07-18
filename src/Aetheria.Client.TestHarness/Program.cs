@@ -12,7 +12,7 @@ var options = HarnessOptions.Parse(args);
 
 using var transport = new UdpClientTransport();
 var client = new GameClient(transport);
-client.Connect(options.Host, options.Port, options.Name, options.RaceId, options.ClassId, options.Gender, options.AccountId);
+client.Connect(options.Host, options.Port, options.Name, options.RaceId, options.ClassId, options.Gender, options.AccountId, options.Secret);
 bool deposited = false;
 
 Console.WriteLine(
@@ -165,7 +165,7 @@ static void PrintStatus(GameClient client, string name)
 internal sealed record HarnessOptions(
     string Host, int Port, string Name, double Seconds, Vec2 Direction,
     byte RaceId, byte ClassId, byte AbilityId, bool Attack, Gender Gender, bool Racial, bool Loot,
-    string AccountId, int DepositGold, byte Instance)
+    string AccountId, int DepositGold, byte Instance, string Secret)
 {
     public static HarnessOptions Parse(string[] args)
     {
@@ -185,6 +185,7 @@ internal sealed record HarnessOptions(
         string account = "";
         int depositGold = 0;
         byte instance = 0;
+        string secret = "";
 
         for (int i = 0; i < args.Length; i++)
         {
@@ -206,6 +207,7 @@ internal sealed record HarnessOptions(
                 case "--account" when HasNext(): account = args[++i]; break;
                 case "--deposit" when HasNext() && int.TryParse(args[i + 1], out int dg): depositGold = dg; i++; break;
                 case "--instance" when HasNext() && byte.TryParse(args[i + 1], out byte inst): instance = inst; i++; break;
+                case "--secret" when HasNext(): secret = args[++i]; break;
                 case "--attack": attack = true; break;
                 case "--racial": racial = true; break;
                 case "--loot": loot = true; break;
@@ -219,7 +221,12 @@ internal sealed record HarnessOptions(
             account = name;
         }
 
-        return new HarnessOptions(host, port, name, seconds, new Vec2(dirX, dirY), race, cls, ability, attack, gender, racial, loot, account, depositGold, instance);
+        if (string.IsNullOrEmpty(secret))
+        {
+            secret = account; // sensible default for scripted tests
+        }
+
+        return new HarnessOptions(host, port, name, seconds, new Vec2(dirX, dirY), race, cls, ability, attack, gender, racial, loot, account, depositGold, instance, secret);
     }
 
     private static Gender ParseGender(string value) => value.ToLowerInvariant() switch

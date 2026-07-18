@@ -96,12 +96,29 @@ levelled up, died (level → 1, carried gold dropped), and the 40 banked gold wa
 - [ ] Durable, account-authenticated bank + name reservation via persistence (M4).
 - [ ] Optional: keep a character slot / "new character" flow instead of in-place reroll.
 
-## M4 — Persistence & identity
+## M4 — Persistence & identity ✅ (core)
 
-- [ ] **Postgres** for durable state (accounts, the bank, characters, unlocks, progression) via a
-      repository layer.
-- [ ] **Redis** for hot/shared state and cross-process coordination.
-- [ ] Authentication and session tokens; move the handshake onto a reliable channel.
+Durable state behind an `IPersistenceStore` seam: a **JSON file store with atomic writes** today,
+Postgres as a drop-in implementation later. **Account auth** (secret set on first connect, SHA-256
+verified after; wrong secret rejected), **durable server-wide name ownership** (a name belongs to its
+account even offline and across restarts), **character persistence** (XP/level, gold, inventory,
+equipment, skill lines — captured on disconnect, periodically, and immediately on player death) and
+**durable banks**. Verified end-to-end: server killed and restarted — character restored (level/XP/
+gold), bank intact, wrong secret rejected, name theft rejected.
+
+- [ ] Swap file store for **Postgres**; add **Redis** for hot/shared state (multi-process).
+- [ ] Session tokens + handshake on a reliable channel (with the M1 transport swap).
+- [ ] Character-slot management (multiple characters per account UI/flow, delete/free names).
+
+## The Unity client ✅ (first playable)
+
+`unity/AetheriaClient`: isometric client consuming the **netstandard2.1 build of Aetheria.Shared**
+(same protocol code as the server — zero drift), zero-setup bootstrap (press Play in an empty scene),
+interpolated entity views, faction/boss colouring, health bars, full controls (move/target/abilities/
+racial/loot/party/instances/bank), login screen enforcing the race/class matrix. See `unity/README.md`.
+
+- [ ] Client-side prediction/reconciliation and fixed-delay interpolation (M1).
+- [ ] Real models/animations, real UI (replace OnGUI), nameplates (needs a name-sync message).
 
 ## M5 — Steam & ship
 

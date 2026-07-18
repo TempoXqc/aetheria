@@ -1,8 +1,9 @@
 # Aetheria
 
 Un MMORPG fantasy hardcore, en 3D isométrique (PvE + PvP), en C#, conçu **serveur-autoritaire dès le
-départ** pour un monde **sans coupure**. Ce dépôt contient le cœur serveur + réseau et un client de
-test headless. Le client de rendu Unity viendra plus tard (voir la [ROADMAP](docs/ROADMAP.md)).
+départ** pour un monde **sans coupure**. Ce dépôt contient le cœur serveur + réseau, un client de
+test headless, et le **client Unity isométrique jouable** (`unity/AetheriaClient` — voir
+[unity/README.md](unity/README.md) pour le lancer en 5 minutes).
 
 > **Statut : M0–M2 + M3 étapes A, B & E.** En plus du système de personnage : **objets & équipement**
 > (bonus de stats), **cadavres full-loot** (à la mort, l'inventaire + l'équipement + l'or tombent au
@@ -17,6 +18,12 @@ test headless. Le client de rendu Unity viendra plus tard (voir la [ROADMAP](doc
 > groupe**, **raids 6–40 joueurs** (instanciés, scalés), tandis que les **donjons du monde ouvert ne
 > sont PAS instanciés** (camp du Roi Gobelin) et qu'un **boss de raid mondial** (Ashmaw) rôde en monde
 > ouvert — **PvP possible** : on ne peut pas attaquer son propre camp, mais la faction adverse oui.
+> **Persistance (M4)** : comptes avec **secret** (SHA-256), **noms possédés durablement**, personnages
+> (XP, or, inventaire, équipement, maîtrises) et **banques sauvegardés sur disque** (fichier JSON
+> atomique derrière une interface — Postgres s'y branchera) ; sauvegarde périodique, à la déconnexion
+> et **immédiate à chaque mort**. Vérifié : le serveur est tué puis redémarré — personnage restauré,
+> banque intacte, mauvais secret rejeté, vol de nom rejeté. Et le **client Unity** est jouable :
+> bootstrap zéro-config, caméra iso, entités interpolées, HUD complet (voir `unity/README.md`).
 >
 > Le socle (système de personnage) : un serveur autoritaire à pas de temps fixe
 > simule un monde continu ; les clients se connectent en UDP, choisissent **faction / race / classe /
