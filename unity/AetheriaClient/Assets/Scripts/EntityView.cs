@@ -5,18 +5,37 @@ using UnityEngine;
 namespace Aetheria.UnityClient
 {
     /// <summary>
-    /// The visual for one networked entity: a primitive (capsule for characters, block for corpses)
-    /// that smoothly interpolates toward the server's authoritative position. The server ticks at
-    /// 20 Hz; interpolation makes 20 Hz look continuous.
+    /// The visual for one networked entity: a procedurally built low-poly model (see
+    /// <see cref="CharacterModelBuilder"/>) that smoothly interpolates toward the server's
+    /// authoritative position and is animated in code — walk cycle from measured velocity,
+    /// attack swings triggered by combat events, an idle breathing bob, and a hit flash.
     /// </summary>
     public sealed class EntityView : MonoBehaviour
     {
         private const float LerpSpeed = 12f;
+        private const float AttackDuration = 0.35f;
+        private const float HitFlashDuration = 0.18f;
 
-        private Renderer _renderer;
         private Vector3 _targetPosition;
         private Quaternion _targetRotation = Quaternion.identity;
         private bool _hasTarget;
+
+        private Transform _body; // rotated child, so facing doesn't fight the position lerp
+        private ModelRig _rig;
+
+        // Animation state.
+        private Vector3 _lastPosition;
+        private float _smoothedSpeed;
+        private float _walkPhase;
+        private float _attackTimer;
+        private float _flashTimer;
+
+        // Colour bookkeeping: base colour per renderer, so the hit flash can restore them.
+        private Renderer[] _parts = new Renderer[0];
+        private Color[] _baseColors = new Color[0];
+        private Color _lastTint;
+        private bool _hasTint;
+        private bool _colorsDirty;
 
         public int EntityId { get; private set; }
         public EntityKind Kind { get; private set; }
@@ -27,36 +46,26 @@ namespace Aetheria.UnityClient
         public int Level { get; private set; } = 1;
         public Faction Faction { get; private set; }
 
-        private Transform _body; // rotated child, so facing doesn't fight the position lerp
+        /// <summary>Where nameplates and prompts should anchor, above the model's head.</summary>
+        public float HeadHeight { get { return _rig != null ? _rig.HeadHeight : 2f; } }
 
-        public static EntityView Create(int entityId, EntityKind kind)
+        public static EntityView Create(EntitySnapshot snapshot)
         {
-            var go = new GameObject(kind + "#" + entityId);
+            var go = new GameObject(snapshot.Kind + "#" + snapshot.Id);
             var view = go.AddComponent<EntityView>();
-            view.EntityId = entityId;
-            view.Kind = kind;
+            view.EntityId = snapshot.Id;
+            view.Kind = snapshot.Kind;
 
-            PrimitiveType shape = kind == EntityKind.Corpse ? PrimitiveType.Cube : PrimitiveType.Capsule;
-            GameObject body = GameObject.CreatePrimitive(shape);
-            body.name = "Body";
-            Object.Destroy(body.GetComponent<Collider>()); // visuals only; the server owns physics/hits
+            var body = new GameObject("Body");
             body.transform.SetParent(go.transform, false);
             view._body = body.transform;
-            view._renderer = body.GetComponent<Renderer>();
 
-            if (kind == EntityKind.Corpse)
+            view._rig = CharacterModelBuilder.Build(body.transform, snapshot);
+            view._parts = body.GetComponentsInChildren<Renderer>();
+            view._baseColors = new Color[view._parts.Length];
+            for (int i = 0; i < view._parts.Length; i++)
             {
-                body.transform.localScale = new Vector3(0.9f, 0.25f, 0.9f);
-            }
-            else
-            {
-                // A small "nose" so the facing direction is readable at a glance.
-                GameObject nose = GameObject.CreatePrimitive(PrimitiveType.Cube);
-                nose.name = "Nose";
-                Object.Destroy(nose.GetComponent<Collider>());
-                nose.transform.SetParent(body.transform, false);
-                nose.transform.localScale = new Vector3(0.22f, 0.22f, 0.45f);
-                nose.transform.localPosition = new Vector3(0f, 0.35f, 0.5f);
+                view._baseColors[i] = view._parts[i].material.color;
             }
 
             return view;
@@ -70,13 +79,14 @@ namespace Aetheria.UnityClient
             DisplayName = snapshot.Name;
             Level = snapshot.Level;
             Faction = snapshot.Faction;
+            IsBoss = Kind == EntityKind.Monster && snapshot.MaxHealth >= 300;
 
-            // Server plane (X, Y) maps onto Unity ground plane (X, Z).
-            float y = Kind == EntityKind.Corpse ? 0.15f : 1f;
-            _targetPosition = new Vector3(snapshot.Position.X, y, snapshot.Position.Y);
+            // Server plane (X, Y) maps onto Unity ground plane (X, Z); models stand on y=0.
+            _targetPosition = new Vector3(snapshot.Position.X, 0f, snapshot.Position.Y);
             if (!_hasTarget)
             {
                 transform.position = _targetPosition; // first sight: snap, don't glide across the map
+                _lastPosition = _targetPosition;
                 _hasTarget = true;
             }
 
@@ -91,54 +101,186 @@ namespace Aetheria.UnityClient
                 }
             }
 
-            // Raid-scale monsters read as bosses: bulk them up.
-            IsBoss = Kind == EntityKind.Monster && snapshot.MaxHealth >= 300;
-            if (Kind == EntityKind.Monster)
+            // Relation tint on the tunic: you are green, allies blue, the enemy faction red.
+            if (Kind == EntityKind.Player && _rig != null && _rig.TintTargets.Length > 0)
             {
-                float s = IsBoss ? 2.2f : 1f;
-                transform.localScale = new Vector3(s, s, s);
-            }
+                Color tint = isSelf
+                    ? new Color(0.25f, 0.9f, 0.35f)
+                    : snapshot.Faction == viewerFaction
+                        ? new Color(0.30f, 0.55f, 1f)
+                        : new Color(1f, 0.25f, 0.25f);
 
-            if (_renderer != null)
-            {
-                _renderer.material.color = PickColor(snapshot, viewerFaction, isSelf);
+                if (!_hasTint || tint != _lastTint)
+                {
+                    _lastTint = tint;
+                    _hasTint = true;
+                    for (int i = 0; i < _rig.TintTargets.Length; i++)
+                    {
+                        Renderer target = _rig.TintTargets[i];
+                        for (int j = 0; j < _parts.Length; j++)
+                        {
+                            if (ReferenceEquals(_parts[j], target)) { _baseColors[j] = tint; }
+                        }
+                    }
+
+                    _colorsDirty = true;
+                }
             }
         }
 
-        private Color PickColor(EntitySnapshot snapshot, Faction viewerFaction, bool isSelf)
+        /// <summary>This entity just landed a hit: play the attack swing.</summary>
+        public void TriggerAttack()
         {
-            if (isSelf)
-            {
-                return new Color(0.25f, 0.9f, 0.35f); // you: green
-            }
+            _attackTimer = AttackDuration;
+        }
 
-            switch (Kind)
-            {
-                case EntityKind.Player:
-                    return snapshot.Faction == viewerFaction
-                        ? new Color(0.30f, 0.55f, 1f)   // ally: blue
-                        : new Color(1f, 0.25f, 0.25f);  // enemy faction: red
-                case EntityKind.Monster:
-                    return IsBoss
-                        ? new Color(0.65f, 0.10f, 0.55f) // boss: violet
-                        : new Color(1f, 0.62f, 0.15f);   // monster: orange
-                case EntityKind.Corpse:
-                    return new Color(0.45f, 0.42f, 0.40f);
-                default:
-                    return Color.white;
-            }
+        /// <summary>This entity just took a hit: flash its model red for a moment.</summary>
+        public void TriggerHit()
+        {
+            _flashTimer = HitFlashDuration;
         }
 
         private void Update()
         {
+            float dt = Time.deltaTime;
+
             if (_hasTarget)
             {
-                transform.position = Vector3.Lerp(transform.position, _targetPosition, Time.deltaTime * LerpSpeed);
+                transform.position = Vector3.Lerp(transform.position, _targetPosition, dt * LerpSpeed);
             }
 
             if (_body != null && Kind != EntityKind.Corpse)
             {
-                _body.rotation = Quaternion.Slerp(_body.rotation, _targetRotation, Time.deltaTime * 14f);
+                _body.rotation = Quaternion.Slerp(_body.rotation, _targetRotation, dt * 14f);
+            }
+
+            // Measure how fast the view is actually moving to drive the walk cycle.
+            if (dt > 0f)
+            {
+                Vector3 delta = transform.position - _lastPosition;
+                delta.y = 0f;
+                float speed = delta.magnitude / dt;
+                _smoothedSpeed = Mathf.Lerp(_smoothedSpeed, speed, dt * 10f);
+                _lastPosition = transform.position;
+            }
+
+            Animate(dt);
+            ApplyColors();
+        }
+
+        // ------------------------------------------------------------- Animation
+
+        private void Animate(float dt)
+        {
+            if (_rig == null || Kind == EntityKind.Corpse)
+            {
+                return;
+            }
+
+            // Walk cycle: stride frequency and swing amplitude scale with measured speed.
+            float stride = Mathf.Clamp01(_smoothedSpeed / 5f);
+            _walkPhase += _smoothedSpeed * 2.4f * dt;
+            float swing = Mathf.Sin(_walkPhase) * 38f * stride;
+
+            if (_rig.Quadruped)
+            {
+                // Diagonal pairs, like a trot.
+                SetPivotX(_rig.ArmL, swing);
+                SetPivotX(_rig.LegR, swing);
+                SetPivotX(_rig.ArmR, -swing);
+                SetPivotX(_rig.LegL, -swing);
+
+                if (_rig.Tail != null)
+                {
+                    float wag = Mathf.Sin(Time.time * 4f) * (8f + (14f * stride));
+                    _rig.Tail.localRotation = Quaternion.Euler(0f, wag, 0f);
+                }
+
+                // Bite: the head lunges forward and down during an attack.
+                if (_rig.Head != null)
+                {
+                    float bite = AttackCurve() * 28f;
+                    _rig.Head.localRotation = Quaternion.Euler(bite, 0f, 0f);
+                }
+            }
+            else
+            {
+                // Legs swing opposite each other; arms counter-swing.
+                SetPivotX(_rig.LegL, swing);
+                SetPivotX(_rig.LegR, -swing);
+                SetPivotX(_rig.ArmL, -swing * 0.7f);
+
+                // The weapon arm: walk counter-swing, overridden by the attack swing.
+                float atk = AttackCurve();
+                float armAngle = atk > 0f
+                    ? Mathf.Lerp(20f, -105f, atk) // wind up slightly, then strike down/forward
+                    : swing * 0.7f;
+                SetPivotX(_rig.ArmR, armAngle);
+
+                // Idle breathing: a subtle torso pulse when standing still.
+                if (_rig.Torso != null)
+                {
+                    float breathe = 1f + (Mathf.Sin(Time.time * 2f) * 0.015f * (1f - stride));
+                    Vector3 s = _rig.Torso.localScale;
+                    _rig.Torso.localScale = new Vector3(s.x, 0.62f * breathe, s.z);
+                }
+            }
+
+            if (_attackTimer > 0f)
+            {
+                _attackTimer -= dt;
+            }
+        }
+
+        /// <summary>0 when not attacking; rises to 1 mid-swing and returns to 0.</summary>
+        private float AttackCurve()
+        {
+            if (_attackTimer <= 0f)
+            {
+                return 0f;
+            }
+
+            float t = 1f - (_attackTimer / AttackDuration); // 0 → 1 over the swing
+            return Mathf.Sin(t * Mathf.PI);
+        }
+
+        private static void SetPivotX(Transform pivot, float degrees)
+        {
+            if (pivot != null)
+            {
+                pivot.localRotation = Quaternion.Euler(degrees, 0f, 0f);
+            }
+        }
+
+        // --------------------------------------------------------------- Colours
+
+        private void ApplyColors()
+        {
+            if (_flashTimer > 0f)
+            {
+                _flashTimer -= Time.deltaTime;
+                float k = Mathf.Clamp01(_flashTimer / HitFlashDuration) * 0.75f;
+                for (int i = 0; i < _parts.Length; i++)
+                {
+                    if (_parts[i] != null)
+                    {
+                        _parts[i].material.color = Color.Lerp(_baseColors[i], Color.red, k);
+                    }
+                }
+
+                _colorsDirty = true; // restore base colours once the flash fades out
+            }
+            else if (_colorsDirty)
+            {
+                for (int i = 0; i < _parts.Length; i++)
+                {
+                    if (_parts[i] != null)
+                    {
+                        _parts[i].material.color = _baseColors[i];
+                    }
+                }
+
+                _colorsDirty = false;
             }
         }
     }

@@ -176,10 +176,22 @@ public readonly struct EntitySnapshot
     /// <summary>Display name (player name or monster name), shown on nameplates.</summary>
     public readonly string Name;
 
+    /// <summary>
+    /// Player: race id. Monster: monster definition id (so the client picks the right model).
+    /// Corpse: race id of the fallen character (0 for monster corpses).
+    /// </summary>
+    public readonly byte RaceId;
+
+    /// <summary>Player: class id (drives the weapon model). 0 for non-players.</summary>
+    public readonly byte ClassId;
+
+    /// <summary>Player: cosmetic gender. Male for non-players.</summary>
+    public readonly Gender Gender;
+
     public EntitySnapshot(
         int id, EntityKind kind, Faction faction, Vec2 position,
         int health, int maxHealth, int resource, int maxResource, float facingRadians = 0f,
-        byte level = 1, string name = "")
+        byte level = 1, string name = "", byte raceId = 0, byte classId = 0, Gender gender = Gender.Male)
     {
         Id = id;
         Kind = kind;
@@ -192,6 +204,9 @@ public readonly struct EntitySnapshot
         FacingRadians = facingRadians;
         Level = level;
         Name = name;
+        RaceId = raceId;
+        ClassId = classId;
+        Gender = gender;
     }
 
     public void Write(PacketWriter w)
@@ -208,6 +223,9 @@ public readonly struct EntitySnapshot
         w.WriteFloat(FacingRadians);
         w.WriteByte(Level);
         w.WriteString(Name);
+        w.WriteByte(RaceId);
+        w.WriteByte(ClassId);
+        w.WriteByte((byte)Gender);
     }
 
     public static EntitySnapshot Read(ref PacketReader r)
@@ -224,8 +242,12 @@ public readonly struct EntitySnapshot
         float facing = r.ReadFloat();
         byte level = r.ReadByte();
         string name = r.ReadString();
+        byte raceId = r.ReadByte();
+        byte classId = r.ReadByte();
+        var gender = (Gender)r.ReadByte();
         return new EntitySnapshot(
-            id, kind, faction, new Vec2(x, y), health, maxHealth, resource, maxResource, facing, level, name);
+            id, kind, faction, new Vec2(x, y), health, maxHealth, resource, maxResource, facing, level, name,
+            raceId, classId, gender);
     }
 }
 

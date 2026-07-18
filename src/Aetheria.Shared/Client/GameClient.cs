@@ -44,6 +44,25 @@ public sealed class GameClient
     /// <summary>How many kills we've landed (a combat event where we are the attacker and the target died).</summary>
     public int KillsByMe { get; private set; }
 
+    /// <summary>
+    /// Combat events accumulated since the last <see cref="DrainCombatFeed"/> call — every event in
+    /// our area of interest, not just our own. Drives attack animations and floating damage text.
+    /// </summary>
+    private readonly List<CombatEventMessage> _combatFeed = [];
+
+    /// <summary>Return the combat events received since the last drain, then clear the feed.</summary>
+    public IReadOnlyList<CombatEventMessage> DrainCombatFeed()
+    {
+        if (_combatFeed.Count == 0)
+        {
+            return [];
+        }
+
+        var copy = _combatFeed.ToArray();
+        _combatFeed.Clear();
+        return copy;
+    }
+
     // --- Self status (from PlayerStatus / InventoryState) ---
     public int Level { get; private set; } = 1;
     public int TotalXp { get; private set; }
@@ -423,6 +442,11 @@ public sealed class GameClient
                 case MessageType.CombatEvent:
                     CombatEventMessage combat = CombatEventMessage.Read(ref reader);
                     LastCombat = combat;
+                    if (_combatFeed.Count < 256)
+                    {
+                        _combatFeed.Add(combat);
+                    }
+
                     if (combat.AttackerId == EntityId || combat.TargetId == EntityId)
                     {
                         CombatEventsSeen++;

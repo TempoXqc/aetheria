@@ -90,8 +90,10 @@ public static class ProtocolTests
     {
         var entities = new[]
         {
-            new EntitySnapshot(1, EntityKind.Player, Faction.Horde, new Vec2(10f, 20f), health: 100, maxHealth: 120, resource: 40, maxResource: 100),
-            new EntitySnapshot(2, EntityKind.Monster, Faction.Neutral, new Vec2(-3f, 4f), health: 30, maxHealth: 60, resource: 0, maxResource: 0),
+            new EntitySnapshot(1, EntityKind.Player, Faction.Horde, new Vec2(10f, 20f), health: 100, maxHealth: 120, resource: 40, maxResource: 100,
+                facingRadians: 1.5f, level: 4, name: "Zug", raceId: 2, classId: 1, gender: Gender.Female),
+            new EntitySnapshot(2, EntityKind.Monster, Faction.Neutral, new Vec2(-3f, 4f), health: 30, maxHealth: 60, resource: 0, maxResource: 0,
+                facingRadians: 0f, level: 3, name: "Loup", raceId: 2),
         };
 
         var writer = new PacketWriter();
@@ -110,6 +112,11 @@ public static class ProtocolTests
         Assert.Equal(EntityKind.Monster, decoded.Entities[1].Kind);
         Assert.Close(-3f, decoded.Entities[1].Position.X);
         Assert.Equal(60, decoded.Entities[1].MaxHealth);
+        Assert.Equal((byte)2, decoded.Entities[0].RaceId);
+        Assert.Equal((byte)1, decoded.Entities[0].ClassId);
+        Assert.Equal(Gender.Female, decoded.Entities[0].Gender);
+        Assert.Equal((byte)2, decoded.Entities[1].RaceId);
+        Assert.Equal((byte)0, decoded.Entities[1].ClassId);
     }
 
     [Test("Pong round-trips both timestamps.")]

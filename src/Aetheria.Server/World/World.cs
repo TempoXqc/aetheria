@@ -430,10 +430,14 @@ public sealed class World
         {
             if (_entities.TryGetValue(id, out ServerEntity? e) && e.IsAlive)
             {
+                // Appearance: for monsters the "race" slot carries the monster definition id so the
+                // client can pick the right model; players send their real race/class/gender.
+                byte raceOrDef = e.Kind == EntityKind.Monster ? e.MonsterId : e.RaceId;
                 result.Add(new EntitySnapshot(
                     e.Id, e.Kind, e.Faction, e.Position,
                     e.Health, e.EffectiveMaxHealth, (int)e.CurrentResource, e.EffectiveMaxResource,
-                    e.FacingRadians, (byte)System.Math.Clamp(e.Level, 1, 255), e.Name));
+                    e.FacingRadians, (byte)System.Math.Clamp(e.Level, 1, 255), e.Name,
+                    raceOrDef, e.ClassId, e.Gender));
             }
         }
 
@@ -673,6 +677,8 @@ public sealed class World
             Name = $"{dead.Name}'s Corpse",
             Faction = dead.Faction,
             LootContainer = loot,
+            RaceId = dead.RaceId,
+            Gender = dead.Gender,
         };
 
         _entities[id] = corpse;

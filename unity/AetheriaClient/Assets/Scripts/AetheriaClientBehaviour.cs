@@ -132,6 +132,7 @@ namespace Aetheria.UnityClient
             }
 
             SyncViews();
+            PlayCombatAnimations();
             FindNearbyCorpse();
             AppendCombatLog();
             TrackSocialState();
@@ -255,7 +256,7 @@ namespace Aetheria.UnityClient
                 EntityView view;
                 if (!_views.TryGetValue(snapshot.Id, out view) || view == null)
                 {
-                    view = EntityView.Create(snapshot.Id, snapshot.Kind);
+                    view = EntityView.Create(snapshot);
                     _views[snapshot.Id] = view;
                 }
 
@@ -279,6 +280,27 @@ namespace Aetheria.UnityClient
                 if (_targetId == toRemove[i]) { _targetId = -1; _autoAttack = false; }
                 if (_contextEntityId == toRemove[i]) { _contextEntityId = -1; }
                 if (_client.OpenCorpseId == toRemove[i]) { _client.CloseCorpse(); }
+            }
+        }
+
+        /// <summary>Turn this frame's combat events into attack swings and hit flashes on the models.</summary>
+        private void PlayCombatAnimations()
+        {
+            IReadOnlyList<CombatEventMessage> feed = _client.DrainCombatFeed();
+            for (int i = 0; i < feed.Count; i++)
+            {
+                CombatEventMessage evt = feed[i];
+                EntityView attacker;
+                if (_views.TryGetValue(evt.AttackerId, out attacker) && attacker != null)
+                {
+                    attacker.TriggerAttack();
+                }
+
+                EntityView target;
+                if (evt.Damage > 0 && _views.TryGetValue(evt.TargetId, out target) && target != null)
+                {
+                    target.TriggerHit();
+                }
             }
         }
 
@@ -1007,7 +1029,7 @@ namespace Aetheria.UnityClient
             {
                 if (view == null || view.Kind == EntityKind.Corpse || view.MaxHealth <= 0) { continue; }
 
-                Vector3 screen = cam.WorldToScreenPoint(view.transform.position + (Vector3.up * 1.7f));
+                Vector3 screen = cam.WorldToScreenPoint(view.transform.position + (Vector3.up * (view.HeadHeight + 0.5f)));
                 if (screen.z < 0f) { continue; }
 
                 float x = screen.x / _cfg.UiScale;
@@ -1041,7 +1063,7 @@ namespace Aetheria.UnityClient
             EntityView view;
             if (!_views.TryGetValue(_nearbyCorpseId, out view) || view == null || Camera.main == null) { return; }
 
-            Vector3 screen = Camera.main.WorldToScreenPoint(view.transform.position + (Vector3.up * 1.2f));
+            Vector3 screen = Camera.main.WorldToScreenPoint(view.transform.position + (Vector3.up * (view.HeadHeight + 0.35f)));
             if (screen.z < 0f) { return; }
 
             Rect r = new Rect((screen.x / _cfg.UiScale) - 100, ((Screen.height - screen.y) / _cfg.UiScale) - 14, 200, 24);
