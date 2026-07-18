@@ -227,8 +227,9 @@ namespace Aetheria.UnityClient
             Camera cam = Camera.main;
             if (cam != null)
             {
-                cam.orthographic = true; // the game view is always isometric/orthographic
-                cam.backgroundColor = new Color(0.09f, 0.10f, 0.13f);
+                cam.orthographic = false; // hand back to the third-person chase camera
+                cam.fieldOfView = 55f;
+                cam.backgroundColor = new Color(0.35f, 0.55f, 0.80f); // daytime sky
             }
 
             if (_rig != null)

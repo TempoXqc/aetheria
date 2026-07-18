@@ -61,6 +61,7 @@ namespace Aetheria.UnityClient
         private LobbyScreen _lobbyScreen = LobbyScreen.Auth;
         private string _secret2 = "";
         private bool _wasRegistering;
+        private bool _serverChosen; // the player picked this realm in the browser (creation allowed)
 
         // --- Bank (a physical chest in the sanctuary) ---
         private int _nearbyBankId = -1;
@@ -71,8 +72,6 @@ namespace Aetheria.UnityClient
         private string _chatInput = "";
         private bool _chatInputActive;
         private readonly List<ServerEntry> _servers = new List<ServerEntry>();
-        private string _newServerAddr = "";
-        private bool _registerMode;
         private bool _enterSent;
         private bool _lastServerSaved;
         private int _previewKey = -1;
@@ -187,8 +186,21 @@ namespace Aetheria.UnityClient
             {
                 if (_client.LoggedIn && _lobbyScreen == LobbyScreen.Connecting)
                 {
-                    // Your character (3D) with a JOUER button — or straight to creation if none.
-                    _lobbyScreen = _client.HasCharacter ? LobbyScreen.Character : LobbyScreen.Creation;
+                    if (_client.HasCharacter)
+                    {
+                        _lobbyScreen = LobbyScreen.Character; // your character (3D) + JOUER
+                    }
+                    else if (_serverChosen)
+                    {
+                        _lobbyScreen = LobbyScreen.Creation; // realm picked in the browser → create here
+                    }
+                    else
+                    {
+                        // No character anywhere obvious: FIRST pick the realm, THEN create.
+                        Disconnect();
+                        OpenServerBrowser();
+                        _error = "Choisis un serveur pour créer ton personnage.";
+                    }
                 }
                 else if (_client.LoginError.Length > 0 && _lobbyScreen == LobbyScreen.Connecting)
                 {
@@ -285,7 +297,7 @@ namespace Aetheria.UnityClient
         }
 
         /// <summary>Authenticate: sign in to the given server, or the account's last-played one.</summary>
-        private void Connect(string address, bool createAccount)
+        private void Connect(string address, bool createAccount, bool fromBrowser = false)
         {
             string account = _account.Trim();
             if (account.Length == 0)
@@ -318,6 +330,7 @@ namespace Aetheria.UnityClient
                 _enterSent = false;
                 _lastServerSaved = false;
                 _wasRegistering = createAccount;
+                _serverChosen = fromBrowser;
                 _lobbyScreen = LobbyScreen.Connecting;
             }
             catch (System.Exception ex)
@@ -376,42 +389,27 @@ namespace Aetheria.UnityClient
                 _genderIndex == 1 ? Gender.Female : Gender.Male, look, faction);
         }
 
+        /// <summary>
+        /// The OFFICIAL server list — predefined, players cannot add their own entries.
+        /// Extend this array when new realms open.
+        /// </summary>
+        private static readonly string[] PredefinedServers =
+        {
+            "127.0.0.1:27015",
+            "127.0.0.1:27016",
+        };
+
         private void LoadServerList()
         {
             if (_servers.Count > 0) { return; }
 
-            string saved = PlayerPrefs.GetString("aeth.servers", "");
-            foreach (string addr in saved.Split('|')) { AddServerEntry(addr); }
-            if (_servers.Count == 0) { AddServerEntry(_host + ":" + _port); }
-        }
-
-        private void AddServerEntry(string address)
-        {
-            if (string.IsNullOrEmpty(address) || !SplitAddress(address, out string host, out int port))
+            foreach (string address in PredefinedServers)
             {
-                return;
+                if (SplitAddress(address, out string host, out int port))
+                {
+                    _servers.Add(new ServerEntry { Host = host, Port = port });
+                }
             }
-
-            foreach (ServerEntry e in _servers)
-            {
-                if (e.Host == host && e.Port == port) { return; }
-            }
-
-            _servers.Add(new ServerEntry { Host = host, Port = port });
-            SaveServerList();
-        }
-
-        private void SaveServerList()
-        {
-            var sb = new System.Text.StringBuilder();
-            for (int i = 0; i < _servers.Count; i++)
-            {
-                if (i > 0) { sb.Append('|'); }
-                sb.Append(_servers[i].Address);
-            }
-
-            PlayerPrefs.SetString("aeth.servers", sb.ToString());
-            PlayerPrefs.Save();
         }
 
         /// <summary>(Re)query every listed server: name, population, your character there.</summary>
@@ -513,6 +511,7 @@ namespace Aetheria.UnityClient
             _client = null;
             _connected = false;
             _enterSent = false;
+            _serverChosen = false;
             _lobbyScreen = LobbyScreen.Auth;
             _previewKey = -1;
             _lobby.ClearPreview();
@@ -715,6 +714,7 @@ namespace Aetheria.UnityClient
             if (_cameraRig != null && _client.TryGetSelf(out self))
             {
                 _cameraRig.Target = new Vector3(self.Position.X, 0f, self.Position.Y);
+                _cameraRig.TargetFacingRadians = self.FacingRadians; // the camera trails your facing
             }
         }
 
@@ -1019,7 +1019,6 @@ namespace Aetheria.UnityClient
             DrawInspectWindow();
             DrawDragGhost();
             DrawVersionTag();
-            if (_cfg.ShowHelp) { DrawHelp(); }
             if (_layoutEditMode) { DrawLayoutEditor(); }
             if (_menuOpen) { DrawEscapeMenu(); }
         }
@@ -1210,8 +1209,6 @@ namespace Aetheria.UnityClient
             DrawTitledBox(out Rect box, Mathf.Min(height, VirtH * 0.8f), "Liste des serveurs", 560f);
             GUILayout.BeginArea(new Rect(box.x + 15, box.y + 48, box.width - 30, box.height - 60));
 
-            _registerMode = GUILayout.Toggle(_registerMode,
-                " Créer mon compte sur le serveur choisi (première visite)");
             GUILayout.Space(6);
 
             foreach (ServerEntry e in _servers)
@@ -1266,7 +1263,8 @@ namespace Aetheria.UnityClient
                 GUI.enabled = canJoin;
                 if (GUILayout.Button("REJOINDRE", GUILayout.Width(90), GUILayout.Height(36)))
                 {
-                    Connect(e.Address, _registerMode);
+                    // First visit on this realm: the account is created there automatically.
+                    Connect(e.Address, createAccount: !e.Info.HasAccount, fromBrowser: true);
                 }
 
                 GUI.enabled = true;
@@ -1275,15 +1273,6 @@ namespace Aetheria.UnityClient
 
             GUILayout.Space(6);
             GUILayout.BeginHorizontal();
-            GUILayout.Label("Ajouter :", GUILayout.Width(60));
-            _newServerAddr = GUILayout.TextField(_newServerAddr, GUILayout.Width(180));
-            if (GUILayout.Button("+", GUILayout.Width(28)))
-            {
-                AddServerEntry(_newServerAddr);
-                _newServerAddr = "";
-                RefreshServers();
-            }
-
             GUILayout.FlexibleSpace();
             if (GUILayout.Button("Actualiser", GUILayout.Width(90))) { RefreshServers(); }
             if (GUILayout.Button("Retour", GUILayout.Width(80))) { _lobbyScreen = LobbyScreen.Auth; }
@@ -1446,7 +1435,7 @@ namespace Aetheria.UnityClient
             }
 
             GUI.Label(new Rect(frame.x + 8, frame.y + 64, frame.width - 16, 26),
-                "Or " + _client.Gold + "   Banque " + _client.BankGold +
+                "Or " + _client.Gold +
                 (_client.InInstance ? "   [INSTANCE]" : "") +
                 (inSanctuary ? "   <color=#70d0ff>⛨ Sanctuaire</color>" : "") +
                 (_client.PartySize > 0 ? "   Groupe " + _client.PartySize : ""), Rich());
@@ -1731,21 +1720,36 @@ namespace Aetheria.UnityClient
             }
 
             y += 30f;
-            GUI.Label(new Rect(win.x + 14, y, 300, 18), "<b>Ton sac</b> <size=9>(clic : déposer)</size>", Rich());
+            GUI.Label(new Rect(win.x + 14, y, 330, 18),
+                "<b>Ton sac</b> <size=9>(clic : déposer 1 · clic droit : tout le stack)</size>", Rich());
+            if (GUI.Button(new Rect(win.x + W - 110, y - 2, 96, 22), "Tout déposer"))
+            {
+                // Everything, one stack after another (gold stays: use the gold buttons for it).
+                var stacks = new List<ItemStack>(_client.InventoryItems);
+                for (int i = 0; i < stacks.Count; i++)
+                {
+                    _client.SendBank(BankOp.DepositItem, stacks[i].ItemId, stacks[i].Quantity);
+                }
+            }
+
             y += 20f;
             y = DrawIconGrid(win.x + 14, y, Cols, Icon, _client.InventoryItems,
-                itemId => _client.SendBank(BankOp.DepositItem, itemId, 1));
+                (itemId, qty) => _client.SendBank(BankOp.DepositItem, itemId, qty));
 
             y += 8f;
-            GUI.Label(new Rect(win.x + 14, y, 300, 18), "<b>Le coffre</b> <size=9>(clic : retirer)</size>", Rich());
+            GUI.Label(new Rect(win.x + 14, y, 330, 18),
+                "<b>Le coffre</b> <size=9>(clic : retirer 1 · clic droit : tout le stack)</size>", Rich());
             y += 20f;
             DrawIconGrid(win.x + 14, y, Cols, Icon, _client.BankItems,
-                itemId => _client.SendBank(BankOp.WithdrawItem, itemId, 1));
+                (itemId, qty) => _client.SendBank(BankOp.WithdrawItem, itemId, qty));
         }
 
-        /// <summary>Lay a list of stacks out as clickable icon tiles; returns the next free y.</summary>
+        /// <summary>
+        /// Lay stacks out as clickable icon tiles. Left click acts on ONE item, right click on the
+        /// WHOLE stack (the callback receives the quantity). Returns the next free y.
+        /// </summary>
         private float DrawIconGrid(float x, float y, int cols, float icon,
-            IReadOnlyList<ItemStack> items, System.Action<byte> onClick)
+            IReadOnlyList<ItemStack> items, System.Action<byte, int> onClick)
         {
             if (items.Count == 0)
             {
@@ -1757,11 +1761,11 @@ namespace Aetheria.UnityClient
             {
                 Rect cell = new Rect(x + ((i % cols) * (icon + 4f)), y + ((i / cols) * (icon + 4f)), icon, icon);
                 DrawItemIcon(cell, items[i].ItemId, items[i].Quantity);
-                if (Event.current.type == EventType.MouseDown && Event.current.button == 0 &&
-                    cell.Contains(Event.current.mousePosition))
+                Event e = Event.current;
+                if (e.type == EventType.MouseDown && cell.Contains(e.mousePosition))
                 {
-                    onClick(items[i].ItemId);
-                    Event.current.Use();
+                    if (e.button == 0) { onClick(items[i].ItemId, 1); e.Use(); }
+                    else if (e.button == 1) { onClick(items[i].ItemId, items[i].Quantity); e.Use(); }
                 }
             }
 
@@ -2282,7 +2286,6 @@ namespace Aetheria.UnityClient
             GUILayout.Space(6);
             _cfg.ShowNameplates = GUILayout.Toggle(_cfg.ShowNameplates, " Noms et niveaux au-dessus des têtes");
             _cfg.ShowHealthBars = GUILayout.Toggle(_cfg.ShowHealthBars, " Barres de vie au-dessus des entités");
-            _cfg.ShowHelp = GUILayout.Toggle(_cfg.ShowHelp, " Ligne d'aide en bas de l'écran");
             GUILayout.Space(10);
             if (GUILayout.Button("Raccourcis…", GUILayout.Height(24))) { _optionsTab = 1; }
             if (GUILayout.Button("Déplacer l'interface…", GUILayout.Height(24))) { _optionsTab = 2; }
@@ -2443,11 +2446,6 @@ namespace Aetheria.UnityClient
                 _chatInput = GUI.TextField(new Rect(8f, VirtH - 32f, W, 24f), _chatInput, 200);
                 GUI.FocusControl("ChatInput");
             }
-            else
-            {
-                GUI.Label(new Rect(10f, VirtH - 28f, W, 18f),
-                    "<size=9><color=#9a9a9a>[Entrée] pour parler</color></size>", Rich());
-            }
         }
 
         private void DrawVersionTag()
@@ -2456,18 +2454,6 @@ namespace Aetheria.UnityClient
                 "<size=10>v" + SimulationConstants.GameVersion + " · proto " +
                 SimulationConstants.ProtocolVersion + "</size>",
                 new GUIStyle(GUI.skin.label) { richText = true, alignment = TextAnchor.UpperRight });
-        }
-
-        private void DrawHelp()
-        {
-            string help =
-                "WASD bouger · souris orienter · clic G attaquer · clic D contexte · " +
-                KeyLabel(HudConfig.Bind.NextTarget) + " cible · " +
-                KeyLabel(HudConfig.Bind.Attack1) + "/" + KeyLabel(HudConfig.Bind.Attack2) + " sorts · " +
-                KeyLabel(HudConfig.Bind.Renew) + " régén · " + KeyLabel(HudConfig.Bind.Racial) + " racial · " +
-                KeyLabel(HudConfig.Bind.Interact) + " fouiller · " + KeyLabel(HudConfig.Bind.CharSheet) + " fiche · " +
-                "Échap menu";
-            GUI.Label(new Rect(12, VirtH - 24, VirtW - 24, 20), "<size=11>" + help + "</size>", Rich());
         }
 
         private static void DrawBar(Rect rect, float fill, Color color, string caption)

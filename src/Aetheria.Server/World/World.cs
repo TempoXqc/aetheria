@@ -267,6 +267,14 @@ public sealed class World
         return entity;
     }
 
+    /// <summary>Move an entity instantly AND update the interest grid (tests, future admin tools).</summary>
+    public void Teleport(ServerEntity entity, Vec2 position)
+    {
+        ArgumentNullException.ThrowIfNull(entity);
+        entity.Position = position;
+        _grid.InsertOrUpdate(entity.Id, position);
+    }
+
     /// <summary>Spawn a friendly interactive NPC/object (bank chest, future vendors). Invulnerable.</summary>
     public ServerEntity SpawnNpc(string name, Vec2 position)
     {

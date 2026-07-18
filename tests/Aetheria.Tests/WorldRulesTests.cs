@@ -19,14 +19,14 @@ public static class WorldRulesTests
         Vec2 home = wolf.Position;
 
         // Provoke: hit it once so it targets us, and hurt it.
-        player.Position = new Vec2(9f, 0f);
+        world.Teleport(player, new Vec2(9f, 0f));
         world.TryUseAbility(player.Id, player.BasicAbilityId, wolf.Id);
         world.Step(SimulationConstants.TickDelta);
         Assert.Equal(player.Id, wolf.AiTargetId);
         Assert.True(wolf.Health < wolf.EffectiveMaxHealth);
 
         // Teleport the "kiting" player far beyond the leash range and let the AI notice.
-        player.Position = new Vec2(200f, 0f);
+        world.Teleport(player, new Vec2(200f, 0f));
         wolf.Position = new Vec2(10f + SimulationConstants.MonsterLeashRadius + 5f, 0f); // dragged out
         world.Step(SimulationConstants.TickDelta);
 
@@ -49,9 +49,8 @@ public static class WorldRulesTests
     {
         var world = new World();
         ServerEntity player = world.SpawnPlayer(new PeerId(1), "Bait", raceId: 2, classId: 1);
-        player.Position = new Vec2(20f, 0f);
-        world.Step(SimulationConstants.TickDelta); // grid update
-        ServerEntity wolf = world.SpawnMonster(2, new Vec2(10f, 0f));
+        world.Teleport(player, new Vec2(16f, 0f));
+        ServerEntity wolf = world.SpawnMonster(2, new Vec2(10f, 0f)); // 6u away: inside aggro (9)
 
         world.Step(SimulationConstants.TickDelta);
 

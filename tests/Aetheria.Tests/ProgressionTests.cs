@@ -44,7 +44,7 @@ public static class ProgressionTests
     {
         var world = new World();
         ServerEntity hunter = world.SpawnPlayer(new PeerId(1), "H", 1, 1); // Warrior, no starter kit
-        ServerEntity goblin = world.SpawnMonster(1, hunter.Position + new Vec2(1f, 0f)); // xp 25, gold 5
+        ServerEntity goblin = world.SpawnMonster(1, hunter.Position + new Vec2(1f, 0f)); // xp 35, gold 5
 
         for (int i = 0; i < 200 && goblin.IsAlive; i++)
         {
@@ -57,7 +57,7 @@ public static class ProgressionTests
         }
 
         Assert.True(goblin.IsDead, "hunter should have killed the goblin");
-        Assert.Equal(25, hunter.TotalXp);
+        Assert.Equal(35, hunter.TotalXp);
         Assert.Equal(5, hunter.Inventory.Gold);
         Assert.Equal(1, hunter.Level);
     }

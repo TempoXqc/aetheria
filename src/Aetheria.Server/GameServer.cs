@@ -171,18 +171,19 @@ public sealed class GameServer
         open.SpawnNpc("Coffre de banque",
             new Vec2(SimulationConstants.BankChestX, SimulationConstants.BankChestY));
 
-        // ZONE DE DÉPART — a goblin camp just OUTSIDE the sanctuary (radius 18), to the east.
+        // ZONE DE DÉPART — ISOLATED goblins east of the sanctuary: every early fight is a duel,
+        // one against one. Packs are endgame content (the dungeon camp below stays grouped).
         open.SpawnMonster(monsterId: 1, new Vec2(24f, 10f));
-        open.SpawnMonster(monsterId: 1, new Vec2(27f, 13f));
-        open.SpawnMonster(monsterId: 1, new Vec2(25f, 5f));
+        open.SpawnMonster(monsterId: 1, new Vec2(34f, -4f));
+        open.SpawnMonster(monsterId: 1, new Vec2(20f, 22f));
 
-        // CHAMP DES LOUPS — a wolf-infested field to the WEST. Each wolf leashes to its spot.
+        // CHAMP DES LOUPS — solitary wolves spread across the field, each leashed to its spot.
         open.SpawnMonster(monsterId: 2, new Vec2(-40f, 2f));
-        open.SpawnMonster(monsterId: 2, new Vec2(-46f, 8f));
-        open.SpawnMonster(monsterId: 2, new Vec2(-52f, -1f));
-        open.SpawnMonster(monsterId: 2, new Vec2(-44f, -7f));
-        open.SpawnMonster(monsterId: 2, new Vec2(-50f, 12f));
-        open.SpawnMonster(monsterId: 2, new Vec2(-56f, 6f));
+        open.SpawnMonster(monsterId: 2, new Vec2(-52f, 10f));
+        open.SpawnMonster(monsterId: 2, new Vec2(-46f, -8f));
+        open.SpawnMonster(monsterId: 2, new Vec2(-58f, 0f));
+        open.SpawnMonster(monsterId: 2, new Vec2(-44f, 16f));
+        open.SpawnMonster(monsterId: 2, new Vec2(-64f, -10f));
 
         // Open-world DUNGEON: a non-instanced elite camp. It lives in the shared world, so rival
         // factions can meet — and fight — over it.

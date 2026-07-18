@@ -199,7 +199,7 @@ public sealed class GameData
             // quests ("bring 10 goblin heads") are deterministic: kill 10 goblins, own 10 heads.
             new MonsterDefinition
             {
-                Id = 1, Name = "Goblin Grunt", Level = 1, MaxHealth = 60, MoveSpeed = 4.0f, AttackPower = 5, Defense = 2, AggroRadius = 15f, BasicAbilityId = 4, XpReward = 25, GoldReward = 5,
+                Id = 1, Name = "Goblin Grunt", Level = 1, MaxHealth = 130, MoveSpeed = 4.0f, AttackPower = 5, Defense = 2, AggroRadius = 8f, BasicAbilityId = 4, XpReward = 35, GoldReward = 5,
                 BodyParts =
                 [
                     new LootEntry { ItemId = 30 },                // Goblin Head
@@ -213,7 +213,7 @@ public sealed class GameData
             },
             new MonsterDefinition
             {
-                Id = 2, Name = "Dire Wolf", Level = 3, MaxHealth = 90, MoveSpeed = 6.0f, AttackPower = 8, Defense = 3, AggroRadius = 20f, BasicAbilityId = 4, XpReward = 40, GoldReward = 10,
+                Id = 2, Name = "Dire Wolf", Level = 3, MaxHealth = 200, MoveSpeed = 6.0f, AttackPower = 8, Defense = 3, AggroRadius = 9f, BasicAbilityId = 4, XpReward = 60, GoldReward = 10,
                 BodyParts =
                 [
                     new LootEntry { ItemId = 10 },                // Wolf Pelt
@@ -228,7 +228,7 @@ public sealed class GameData
             // Elite: rules the open-world "dungeon" camp (non-instanced, so PvP can erupt around it).
             new MonsterDefinition
             {
-                Id = 3, Name = "Goblin King", Level = 6, MaxHealth = 350, MoveSpeed = 4.5f, AttackPower = 16, Defense = 6, AggroRadius = 18f, BasicAbilityId = 4, XpReward = 200, GoldReward = 80,
+                Id = 3, Name = "Goblin King", Level = 6, MaxHealth = 700, MoveSpeed = 4.5f, AttackPower = 16, Defense = 6, AggroRadius = 12f, BasicAbilityId = 4, XpReward = 300, GoldReward = 80,
                 BodyParts =
                 [
                     new LootEntry { ItemId = 50 },                // Crowned Goblin Head (unique to the King)
@@ -240,7 +240,7 @@ public sealed class GameData
             // World raid boss: raid-difficulty, lives in the OPEN world — never instanced, PvP possible.
             new MonsterDefinition
             {
-                Id = 4, Name = "Ashmaw the Devourer", Level = 10, MaxHealth = 2500, MoveSpeed = 5.0f, AttackPower = 35, Defense = 12, AggroRadius = 25f, BasicAbilityId = 4, XpReward = 1500, GoldReward = 600,
+                Id = 4, Name = "Ashmaw the Devourer", Level = 10, MaxHealth = 4500, MoveSpeed = 5.0f, AttackPower = 35, Defense = 12, AggroRadius = 14f, BasicAbilityId = 4, XpReward = 2200, GoldReward = 600,
                 BodyParts =
                 [
                     new LootEntry { ItemId = 60, Quantity = 2 },  // Ashmaw Horns

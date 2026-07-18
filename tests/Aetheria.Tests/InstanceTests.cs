@@ -49,12 +49,12 @@ public static class InstanceTests
         // Solo: 1 + 0.5*(1-1) = x1 → goblin hp 60.
         World solo = manager.CreateInstance(Dungeon, groupSize: 1);
         ServerEntity soloMob = solo.Entities.Values.First(e => e.IsMonster);
-        Assert.Equal(60, soloMob.Stats.MaxHealth);
+        Assert.Equal(130, soloMob.Stats.MaxHealth);
 
         // Five players: hp x(1 + 0.5*4) = x3 → 180; atk x(1 + 0.25*4) = x2 → 10 (goblin atk 5).
         World five = manager.CreateInstance(Dungeon, groupSize: 5);
         ServerEntity fiveMob = five.Entities.Values.First(e => e.IsMonster);
-        Assert.Equal(180, fiveMob.Stats.MaxHealth);
+        Assert.Equal(390, fiveMob.Stats.MaxHealth); // 130 × (1 + 0.5×4)
         Assert.Equal(10, fiveMob.Stats.AttackPower);
     }
 

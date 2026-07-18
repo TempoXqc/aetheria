@@ -48,8 +48,8 @@ public static class MonsterAiTests
     {
         var world = new World();
         ServerEntity player = world.SpawnPlayer(new PeerId(1));
-        // 10 units away: within aggro (15), beyond melee (2.5) — so it should close the gap.
-        ServerEntity goblin = world.SpawnMonster(monsterId: 1, player.Position + new Vec2(10f, 0f));
+        // 6 units away: within aggro (8), beyond melee (2.5) — so it should close the gap.
+        ServerEntity goblin = world.SpawnMonster(monsterId: 1, player.Position + new Vec2(6f, 0f));
 
         float startDistSq = Vec2.DistanceSquared(goblin.Position, player.Position);
 

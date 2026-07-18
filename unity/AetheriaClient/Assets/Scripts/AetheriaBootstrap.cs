@@ -39,9 +39,9 @@ namespace Aetheria.UnityClient
                 camGo.AddComponent<AudioListener>();
             }
 
-            cam.orthographic = true;
-            cam.orthographicSize = 12f;
-            cam.backgroundColor = new Color(0.09f, 0.10f, 0.13f);
+            cam.orthographic = false;               // WoW-style third-person view
+            cam.fieldOfView = 55f;
+            cam.backgroundColor = new Color(0.35f, 0.55f, 0.80f); // daytime sky
             cam.clearFlags = CameraClearFlags.SolidColor;
             cam.gameObject.AddComponent<IsoCameraRig>();
 
