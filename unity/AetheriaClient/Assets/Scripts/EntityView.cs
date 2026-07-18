@@ -35,6 +35,10 @@ namespace Aetheria.UnityClient
         private bool _wasJumpFlag;
         private float _torsoBaseY;
 
+        // External (Mixamo) character: when present, its Animator replaces procedural animation.
+        private Animator _extAnimator;
+        private float _extHeadHeight;
+
         // Colour bookkeeping: base colour per renderer, so the hit flash can restore them.
         private Renderer[] _parts = new Renderer[0];
         private Color[] _baseColors = new Color[0];
@@ -52,7 +56,10 @@ namespace Aetheria.UnityClient
         public Faction Faction { get; private set; }
 
         /// <summary>Where nameplates and prompts should anchor, above the model's head.</summary>
-        public float HeadHeight { get { return _rig != null ? _rig.HeadHeight : 2f; } }
+        public float HeadHeight
+        {
+            get { return _extAnimator != null ? _extHeadHeight : _rig != null ? _rig.HeadHeight : 2f; }
+        }
 
         public static EntityView Create(EntitySnapshot snapshot)
         {
@@ -65,7 +72,23 @@ namespace Aetheria.UnityClient
             body.transform.SetParent(go.transform, false);
             view._body = body.transform;
 
-            view._rig = CharacterModelBuilder.Build(body.transform, snapshot);
+            // Players: prefer an artist-made rigged character (Mixamo) when one is installed.
+            if (snapshot.Kind == EntityKind.Player && ExternalCharacters.Available)
+            {
+                ExternalCharacterHandle ext = ExternalCharacters.Create(
+                    body.transform, snapshot.RaceId, (byte)snapshot.Gender);
+                if (ext != null)
+                {
+                    view._extAnimator = ext.Animator;
+                    view._extHeadHeight = ext.HeadHeight;
+                }
+            }
+
+            if (view._extAnimator == null)
+            {
+                view._rig = CharacterModelBuilder.Build(body.transform, snapshot);
+            }
+
             view._parts = body.GetComponentsInChildren<Renderer>();
             view._baseColors = new Color[view._parts.Length];
             for (int i = 0; i < view._parts.Length; i++)
@@ -145,6 +168,12 @@ namespace Aetheria.UnityClient
         /// <summary>This entity just landed a hit: play the attack swing.</summary>
         public void TriggerAttack()
         {
+            if (_extAnimator != null)
+            {
+                _extAnimator.SetTrigger("Attack");
+                return;
+            }
+
             _attackTimer = AttackDuration;
         }
 
@@ -157,6 +186,12 @@ namespace Aetheria.UnityClient
         /// <summary>Start the cosmetic jump arc (no-op while one is already in the air).</summary>
         public void TriggerJump()
         {
+            if (_extAnimator != null)
+            {
+                _extAnimator.SetTrigger("Jump"); // the clip carries the motion; no manual arc
+                return;
+            }
+
             if (_jumpTimer <= 0f)
             {
                 _jumpTimer = JumpDuration;
@@ -202,7 +237,16 @@ namespace Aetheria.UnityClient
                 _lastPosition = transform.position;
             }
 
-            Animate(dt);
+            // External characters: their Animator does the acting — feed it the measured speed.
+            if (_extAnimator != null)
+            {
+                _extAnimator.SetFloat("Speed", _smoothedSpeed);
+            }
+            else
+            {
+                Animate(dt);
+            }
+
             ApplyColors();
         }
 
