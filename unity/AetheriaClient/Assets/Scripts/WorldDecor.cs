@@ -28,26 +28,26 @@ namespace Aetheria.UnityClient
 
             // --- SANCTUARY (radius 18 around the origin) ---
             // Paved plaza and a ring of standing stones marking the safe border.
-            Block(r, "Plaza", new Vector3(0f, 0.02f, 0f), new Vector3(9f, 0.04f, 9f),
-                new Color(0.47f, 0.46f, 0.44f));
-            Block(r, "PlazaTrim", new Vector3(0f, 0.045f, 0f), new Vector3(5f, 0.04f, 5f),
-                new Color(0.55f, 0.54f, 0.50f));
+            Tex.Apply(Block(r, "Plaza", new Vector3(0f, 0.02f, 0f), new Vector3(9f, 0.04f, 9f),
+                new Color(0.47f, 0.46f, 0.44f)), "stone", 5f, 5f);
+            Tex.Apply(Block(r, "PlazaTrim", new Vector3(0f, 0.045f, 0f), new Vector3(5f, 0.04f, 5f),
+                new Color(0.55f, 0.54f, 0.50f)), "stone", 3f, 3f, new Color(1.0f, 1.0f, 0.95f));
 
             // Menhirs come from the SHARED layout: they block movement exactly where they stand.
             WorldLayout.Obstacle[] menhirs = WorldLayout.Menhirs;
             for (int i = 0; i < menhirs.Length; i++)
             {
                 float h = 1.7f + ((i % 3) * 0.3f);
-                Round(PrimitiveType.Capsule, r, "Menhir",
+                Tex.Apply(Round(PrimitiveType.Capsule, r, "Menhir",
                     new Vector3(menhirs[i].X, h * 0.45f, menhirs[i].Y),
                     new Vector3(1.0f, h * 0.5f, 0.8f),
-                    new Color(0.50f, 0.52f, 0.58f));
+                    new Color(0.50f, 0.52f, 0.58f)), "stone", 1.5f, 1.5f);
             }
 
             // Bank corner: a canopy over the chest (the chest itself is a server entity).
             Vector3 bank = new Vector3(SimulationConstants.BankChestX, 0f, SimulationConstants.BankChestY);
-            Block(r, "BankFloor", bank + new Vector3(0f, 0.03f, 0f), new Vector3(4.5f, 0.06f, 4f),
-                new Color(0.38f, 0.33f, 0.28f));
+            Tex.Apply(Block(r, "BankFloor", bank + new Vector3(0f, 0.03f, 0f), new Vector3(4.5f, 0.06f, 4f),
+                new Color(0.38f, 0.33f, 0.28f)), "wood", 3f, 3f);
             Block(r, "BankPost1", bank + new Vector3(-1.8f, 1.1f, -1.5f), new Vector3(0.18f, 2.2f, 0.18f),
                 new Color(0.30f, 0.20f, 0.11f));
             Block(r, "BankPost2", bank + new Vector3(1.8f, 1.1f, -1.5f), new Vector3(0.18f, 2.2f, 0.18f),
@@ -56,14 +56,14 @@ namespace Aetheria.UnityClient
                 new Color(0.30f, 0.20f, 0.11f));
             Block(r, "BankPost4", bank + new Vector3(1.8f, 1.1f, 1.5f), new Vector3(0.18f, 2.2f, 0.18f),
                 new Color(0.30f, 0.20f, 0.11f));
-            Block(r, "BankRoof", bank + new Vector3(0f, 2.35f, 0f), new Vector3(4.8f, 0.14f, 4.3f),
-                new Color(0.55f, 0.25f, 0.18f));
+            Tex.Apply(Block(r, "BankRoof", bank + new Vector3(0f, 2.35f, 0f), new Vector3(4.8f, 0.14f, 4.3f),
+                new Color(0.55f, 0.25f, 0.18f)), "wood", 3f, 3f, new Color(1f, 0.62f, 0.5f));
 
             // --- Dirt path EAST toward the goblin starter camp ---
             for (int i = 0; i < 6; i++)
             {
-                Block(r, "Path", new Vector3(6f + (i * 3.4f), 0.015f, 2f + (i * 1.4f)),
-                    new Vector3(3.0f, 0.03f, 2.2f), new Color(0.42f, 0.33f, 0.22f));
+                Tex.Apply(Block(r, "Path", new Vector3(6f + (i * 3.4f), 0.015f, 2f + (i * 1.4f)),
+                    new Vector3(3.0f, 0.03f, 2.2f), new Color(0.42f, 0.33f, 0.22f)), "dirt", 2f, 2f);
             }
 
             // Goblin camp dressing: crude tents and a totem.
@@ -73,14 +73,14 @@ namespace Aetheria.UnityClient
                 new Color(0.35f, 0.42f, 0.25f));
 
             // --- WOLF FIELD to the WEST: wheat, fences, haystacks ---
-            Block(r, "Wheat", new Vector3(-48f, 0.015f, 3f), new Vector3(26f, 0.03f, 24f),
-                new Color(0.72f, 0.62f, 0.28f));
+            Tex.Apply(Block(r, "Wheat", new Vector3(-48f, 0.015f, 3f), new Vector3(26f, 0.03f, 24f),
+                new Color(0.72f, 0.62f, 0.28f)), "wheat", 14f, 12f);
 
             // Fence posts from the SHARED layout (they block); rails are pure decoration.
             foreach (WorldLayout.Obstacle post in WorldLayout.FencePosts)
             {
-                Round(PrimitiveType.Cylinder, r, "Post", new Vector3(post.X, 0.45f, post.Y),
-                    new Vector3(0.22f, 0.45f, 0.22f), new Color(0.36f, 0.25f, 0.14f));
+                Tex.Apply(Round(PrimitiveType.Cylinder, r, "Post", new Vector3(post.X, 0.45f, post.Y),
+                    new Vector3(0.22f, 0.45f, 0.22f), new Color(0.36f, 0.25f, 0.14f)), "bark", 1f, 1f);
             }
 
             Rail(r, new Vector3(-61f, 0f, -9f), new Vector3(-35f, 0f, -9f));
@@ -126,9 +126,11 @@ namespace Aetheria.UnityClient
         {
             var a = Block(r, "TentA", at + new Vector3(-0.55f, 0.55f, 0f), new Vector3(0.12f, 1.7f, 1.6f),
                 new Color(0.45f, 0.35f, 0.22f));
+            Tex.Apply(a, "wood", 1.5f, 1.5f);
             a.transform.localRotation = Quaternion.Euler(0f, 0f, 38f);
             var b = Block(r, "TentB", at + new Vector3(0.55f, 0.55f, 0f), new Vector3(0.12f, 1.7f, 1.6f),
                 new Color(0.42f, 0.32f, 0.20f));
+            Tex.Apply(b, "wood", 1.5f, 1.5f);
             b.transform.localRotation = Quaternion.Euler(0f, 0f, -38f);
         }
 
@@ -139,6 +141,7 @@ namespace Aetheria.UnityClient
             var rail = Round(PrimitiveType.Cylinder, r, "Rail",
                 from + (delta * 0.5f) + new Vector3(0f, 0.72f, 0f),
                 new Vector3(0.07f, length * 0.5f, 0.07f), new Color(0.36f, 0.25f, 0.14f));
+            Tex.Apply(rail, "wood", 1f, 6f);
             rail.transform.localRotation =
                 Quaternion.FromToRotation(Vector3.up, delta.normalized); // cylinder axis → fence line
         }
@@ -146,25 +149,26 @@ namespace Aetheria.UnityClient
         private static void Haystack(Transform r, Vector3 at)
         {
             Color hay = new Color(0.80f, 0.68f, 0.30f);
-            Round(PrimitiveType.Sphere, r, "Hay1", at + new Vector3(0f, 0.55f, 0f), new Vector3(1.7f, 1.2f, 1.7f), hay);
-            Round(PrimitiveType.Sphere, r, "Hay2", at + new Vector3(0f, 1.25f, 0f), new Vector3(1.0f, 0.7f, 1.0f), hay);
+            Tex.Apply(Round(PrimitiveType.Sphere, r, "Hay1", at + new Vector3(0f, 0.55f, 0f), new Vector3(1.7f, 1.2f, 1.7f), hay), "straw", 2f, 2f);
+            Tex.Apply(Round(PrimitiveType.Sphere, r, "Hay2", at + new Vector3(0f, 1.25f, 0f), new Vector3(1.0f, 0.7f, 1.0f), hay), "straw", 2f, 2f);
         }
 
         private static void Tree(Transform r, Vector3 at, float s)
         {
-            Round(PrimitiveType.Cylinder, r, "Trunk", at + new Vector3(0f, 0.7f * s, 0f),
-                new Vector3(0.3f * s, 0.7f * s, 0.3f * s), new Color(0.30f, 0.20f, 0.11f));
+            Tex.Apply(Round(PrimitiveType.Cylinder, r, "Trunk", at + new Vector3(0f, 0.7f * s, 0f),
+                new Vector3(0.3f * s, 0.7f * s, 0.3f * s), new Color(0.30f, 0.20f, 0.11f)), "bark", 1.5f, 2f);
             Color leaves = new Color(0.16f, 0.38f, 0.18f);
-            Round(PrimitiveType.Sphere, r, "Crown", at + new Vector3(0f, 2.0f * s, 0f),
-                new Vector3(1.9f * s, 1.5f * s, 1.9f * s), leaves);
-            Round(PrimitiveType.Sphere, r, "Crown2", at + new Vector3(0.5f * s, 2.5f * s, 0.3f * s),
-                new Vector3(1.1f * s, 0.9f * s, 1.1f * s), leaves * 1.12f);
+            Tex.Apply(Round(PrimitiveType.Sphere, r, "Crown", at + new Vector3(0f, 2.0f * s, 0f),
+                new Vector3(1.9f * s, 1.5f * s, 1.9f * s), leaves), "leaves", 2.5f, 2.5f);
+            Tex.Apply(Round(PrimitiveType.Sphere, r, "Crown2", at + new Vector3(0.5f * s, 2.5f * s, 0.3f * s),
+                new Vector3(1.1f * s, 0.9f * s, 1.1f * s), leaves * 1.12f), "leaves", 2f, 2f);
         }
 
         private static void Rock(Transform r, Vector3 at, float s)
         {
             var rock = Round(PrimitiveType.Sphere, r, "Rock", at + new Vector3(0f, 0.35f * s, 0f),
                 new Vector3(1.3f * s, 0.75f * s, 1.05f * s), new Color(0.40f, 0.40f, 0.43f));
+            Tex.Apply(rock, "stone", 2f, 2f, new Color(0.75f, 0.75f, 0.78f));
             rock.transform.localRotation = Quaternion.Euler(0f, 30f * s, 8f);
         }
 

@@ -22,13 +22,20 @@ namespace Aetheria.UnityClient
             ground.name = "Ground";
             ground.transform.localScale = new Vector3(40f, 1f, 40f); // 400x400 units
             ground.GetComponent<Renderer>().material.color = new Color(0.22f, 0.30f, 0.20f);
+            Tex.Apply(ground, "grass", tileX: 90f, tileY: 90f); // real dirt-and-blades surface
 
-            // Light.
+            // Light: warm sun with SOFT SHADOWS, plus a cool ambient fill so shade stays readable.
             var lightGo = new GameObject("Sun");
             Light sun = lightGo.AddComponent<Light>();
             sun.type = LightType.Directional;
-            sun.intensity = 1.1f;
+            sun.intensity = 1.15f;
+            sun.color = new Color(1f, 0.96f, 0.88f);
+            sun.shadows = LightShadows.Soft;
+            sun.shadowStrength = 0.75f;
             lightGo.transform.rotation = Quaternion.Euler(55f, 30f, 0f);
+
+            RenderSettings.ambientMode = UnityEngine.Rendering.AmbientMode.Flat;
+            RenderSettings.ambientLight = new Color(0.42f, 0.45f, 0.52f);
 
             // Isometric camera rig.
             Camera cam = Camera.main;

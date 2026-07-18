@@ -966,15 +966,12 @@ namespace Aetheria.UnityClient
                 dir = new Vec2(world.x, world.z).Normalized();
             }
 
-            // WoW rules: the character faces where the CAMERA looks (mouselook via right-drag),
-            // or, when moving without touching the camera, the direction it is walking in.
-            if (_cameraRig != null && Input.GetMouseButton(1))
+            // WoW rules: the character ALWAYS faces where the camera looks. A/D therefore STRAFE
+            // (side-step) instead of turning the body, S backpedals — and right-drag mouselook
+            // turns body and camera together.
+            if (_cameraRig != null && (Input.GetMouseButton(1) || dir.LengthSquared > 0.0001f))
             {
-                _lastFacing = _cameraRig.FacingRadians; // right-drag: turn with the camera
-            }
-            else if (dir.LengthSquared > 0.0001f)
-            {
-                _lastFacing = Mathf.Atan2(dir.Y, dir.X); // face your walking direction
+                _lastFacing = _cameraRig.FacingRadians;
             }
 
             _client.SendInput(dir, _lastFacing, _jumpQueued);

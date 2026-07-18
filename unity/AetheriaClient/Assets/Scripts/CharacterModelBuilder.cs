@@ -449,13 +449,15 @@ namespace Aetheria.UnityClient
 
             Color dark = fur * 0.75f;
 
-            // ROUNDED beast: a stretched sphere body, sphere head, capsule legs.
+            // ROUNDED beast: a stretched sphere body, sphere head, capsule legs — in real FUR.
             var body = Ball(model.transform, "Body", new Vector3(0f, 0.58f, 0f), new Vector3(0.52f, 0.5f, 1.15f), fur);
+            Tex.Apply(body, "fur", 2.2f, 1.6f, Lighten(fur));
             rig.Torso = body.transform;
 
             // Head + snout on a pivot at the front, so it can lunge/bite.
             rig.Head = Pivot(model.transform, "Head", new Vector3(0f, 0.72f, 0.55f));
-            Ball(rig.Head, "Skull", new Vector3(0f, 0.05f, 0.12f), new Vector3(0.36f, 0.32f, 0.36f), fur);
+            var skull = Ball(rig.Head, "Skull", new Vector3(0f, 0.05f, 0.12f), new Vector3(0.36f, 0.32f, 0.36f), fur);
+            Tex.Apply(skull, "fur", 1.4f, 1.2f, Lighten(fur));
             Ball(rig.Head, "Snout", new Vector3(0f, -0.02f, 0.36f), new Vector3(0.20f, 0.16f, 0.32f), dark);
             Ball(rig.Head, "EyeL", new Vector3(-0.10f, 0.12f, 0.26f), new Vector3(0.055f, 0.055f, 0.03f), eyes);
             Ball(rig.Head, "EyeR", new Vector3(0.10f, 0.12f, 0.26f), new Vector3(0.055f, 0.055f, 0.03f), eyes);
@@ -519,6 +521,10 @@ namespace Aetheria.UnityClient
         }
 
         // ------------------------------------------------------------- Helpers
+
+        /// <summary>Boost a tint so "colour × texture" lands back on the intended shade.</summary>
+        private static Color Lighten(Color c) =>
+            new Color(Mathf.Min(1f, c.r * 2.1f), Mathf.Min(1f, c.g * 2.1f), Mathf.Min(1f, c.b * 2.1f));
 
         private static Transform Pivot(Transform parent, string name, Vector3 localPos)
         {
