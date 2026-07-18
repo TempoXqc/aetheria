@@ -38,6 +38,7 @@ public enum MessageType : byte
     ServerInfoRequest = 28,
     EquipItem = 29,
     ChatSend = 30,
+    AttackTarget = 31,
 
     // --- Server -> Client ---
     ConnectAccepted = 128,

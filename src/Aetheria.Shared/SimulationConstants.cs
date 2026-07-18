@@ -87,10 +87,16 @@ public static class SimulationConstants
     public const int MaxPartySize = 40;
 
     /// <summary>Protocol version — bump on any wire-format change; handshake rejects mismatches.</summary>
-    public const byte ProtocolVersion = 16;
+    public const byte ProtocolVersion = 17;
 
     /// <summary>How close two players must be to trade (world units).</summary>
     public const float TradeRange = 6f;
+
+    /// <summary>
+    /// GLOBAL COOLDOWN (WoW-style): after a player uses any manual ability, every other manual
+    /// ability is locked for this many ticks (1.5s). Server-driven auto-attacks bypass it.
+    /// </summary>
+    public const int GlobalCooldownTicks = 30;
 
     /// <summary>
     /// The open world's SANCTUARY: a circle around the spawn point where neither PvP nor PvE can
@@ -106,5 +112,5 @@ public static class SimulationConstants
     /// in the in-game HUD, and in the server startup log, so "am I up to date?" has a one-glance
     /// answer on both sides.
     /// </summary>
-    public const string GameVersion = "0.21.0";
+    public const string GameVersion = "0.22.0";
 }

@@ -365,8 +365,16 @@ public sealed class World
     /// is off cooldown, and the target is in range, then applies authoritative damage. Returns true if
     /// the ability resolved. Any resulting combat event is queued for <see cref="DrainCombatEvents"/>.
     /// </summary>
-    public bool TryUseAbility(int attackerId, byte abilityId, int targetId)
+    public bool TryUseAbility(int attackerId, byte abilityId, int targetId, bool fromAuto = false)
     {
+        // GLOBAL COOLDOWN (players, manual abilities only — server auto-attacks bypass it).
+        if (!fromAuto &&
+            _entities.TryGetValue(attackerId, out ServerEntity? gcdCheck) &&
+            gcdCheck.Kind == EntityKind.Player && Tick < gcdCheck.GcdReadyTick)
+        {
+            return false;
+        }
+
         // Self-cast abilities (range 0, e.g. Renew) ignore the target entirely.
         if (_entities.TryGetValue(attackerId, out ServerEntity? selfCaster) && selfCaster.IsAlive)
         {
@@ -391,6 +399,7 @@ public sealed class World
                 selfCaster.StartCooldown(selfDef.Id, Tick + (uint)selfDef.CooldownTicks);
                 selfCaster.SpendResource(selfDef.ResourceCost);
                 ApplyEffectToSelf(selfCaster, selfDef);
+                TouchGcd(selfCaster, fromAuto);
                 return true;
             }
         }
@@ -459,11 +468,68 @@ public sealed class World
         if (ability.CastTimeTicks > 0 && attacker.Kind == EntityKind.Player)
         {
             attacker.BeginCast(ability.Id, targetId, Tick, ability.CastTimeTicks);
+            TouchGcd(attacker, fromAuto);
             return true;
         }
 
         ExecuteAbility(attacker, target, ability);
+        TouchGcd(attacker, fromAuto);
         return true;
+    }
+
+    /// <summary>Arm the global cooldown after a MANUAL player action (auto-attacks bypass it).</summary>
+    private void TouchGcd(ServerEntity entity, bool fromAuto)
+    {
+        if (!fromAuto && entity.Kind == EntityKind.Player)
+        {
+            entity.GcdReadyTick = Tick + SimulationConstants.GlobalCooldownTicks;
+        }
+    }
+
+    /// <summary>Set (or clear, with 0) the entity this player wants to fight. The server swings.</summary>
+    public void SetAttackTarget(int playerId, int targetId)
+    {
+        if (_entities.TryGetValue(playerId, out ServerEntity? player) && player.Kind == EntityKind.Player)
+        {
+            player.AutoAttackTargetId = targetId;
+        }
+    }
+
+    /// <summary>
+    /// WoW-style auto-attack: for every player with an attack intent, swing the class's basic
+    /// attack (or start its basic incantation) whenever it is ready and in range. Clears itself
+    /// when the target dies or disappears.
+    /// </summary>
+    private void ProcessAutoAttacks()
+    {
+        _aiScratch.Clear();
+        foreach (ServerEntity e in _entities.Values)
+        {
+            if (e.Kind == EntityKind.Player && e.AutoAttackTargetId != 0 && e.IsAlive)
+            {
+                _aiScratch.Add(e);
+            }
+        }
+
+        foreach (ServerEntity player in _aiScratch)
+        {
+            if (!_entities.TryGetValue(player.AutoAttackTargetId, out ServerEntity? target) ||
+                target.IsDead || target.Kind == EntityKind.Corpse ||
+                target.Kind == EntityKind.MonsterCorpse || target.Kind == EntityKind.Npc)
+            {
+                player.AutoAttackTargetId = 0; // target gone: stand down
+                continue;
+            }
+
+            if (player.IsCasting)
+            {
+                continue; // busy incanting (possibly the auto-recast itself)
+            }
+
+            // Silent attempt: range, swing timer (the ability's own cooldown), resource and the
+            // faction/sanctuary rules are all enforced inside TryUseAbility.
+            TryUseAbility(player.Id, player.BasicAbilityId, player.AutoAttackTargetId, fromAuto: true);
+        }
     }
 
     /// <summary>Pay the costs and land the ability (shared by instant casts and finished incantations).</summary>
@@ -484,13 +550,19 @@ public sealed class World
     /// </summary>
     private void ProcessCasts()
     {
-        foreach (ServerEntity caster in _entities.Values)
+        // Snapshot the casters FIRST: resolving a lethal cast spawns corpses/remains, which
+        // mutates _entities — enumerating the live dictionary here crashed the server.
+        _aiScratch.Clear();
+        foreach (ServerEntity e in _entities.Values)
         {
-            if (!caster.IsCasting)
+            if (e.IsCasting)
             {
-                continue;
+                _aiScratch.Add(e);
             }
+        }
 
+        foreach (ServerEntity caster in _aiScratch)
+        {
             if (caster.IsDead)
             {
                 caster.CancelCast();
@@ -588,6 +660,7 @@ public sealed class World
         ProcessRespawns();
         ProcessDespawns();
         ProcessCasts();
+        ProcessAutoAttacks();
         RunMonsterAi();
         IntegrateMovement(dt);
     }

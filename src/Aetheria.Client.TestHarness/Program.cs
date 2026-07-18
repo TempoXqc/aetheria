@@ -114,15 +114,16 @@ while (clock.Elapsed.TotalSeconds < options.Seconds)
             int target = client.FindNearestMonster();
             if (target >= 0 && client.TryGetSelf(out var self) && client.TryGetEntity(target, out var mob))
             {
-                // Ranged abilities (Firebolt/Shot…) are INCANTED: stand still in range so the
-                // cast can complete (moving cancels it, WoW rules). Melee walks all the way in.
+                // Ranged basics are INCANTED: stand still in range so casts complete (moving
+                // cancels them). Melee walks all the way in. The SERVER swings once the attack
+                // intent is declared — one AttackTarget message replaces the button mashing.
                 float distSq = Vec2.DistanceSquared(self.Position, mob.Position);
                 bool ranged = options.AbilityId is 2 or 3 or 21 or 22;
                 float standAt = ranged ? 9f : 2.0f;
                 moveDir = distSq > standAt * standAt
                     ? (mob.Position - self.Position).Normalized()
                     : Vec2.Zero;
-                client.SendUseAbility(options.AbilityId, target); // server enforces range/cooldown
+                client.SendAttackTarget(target); // the server auto-swings from here
             }
         }
 

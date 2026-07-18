@@ -243,6 +243,26 @@ public readonly struct EquipItem
     }
 }
 
+/// <summary>
+/// WoW-style attack intent: "fight THIS target". The SERVER then auto-swings the class's basic
+/// attack (or auto-recasts its basic incantation) whenever ready and in range, until the target
+/// dies, becomes invalid, or the player sends 0 to stop. No more client-side button mashing.
+/// </summary>
+public readonly struct AttackTarget
+{
+    public readonly int TargetEntityId; // 0 = stop attacking
+
+    public AttackTarget(int targetEntityId) => TargetEntityId = targetEntityId;
+
+    public void Write(PacketWriter w)
+    {
+        w.WriteByte((byte)MessageType.AttackTarget);
+        w.WriteInt(TargetEntityId);
+    }
+
+    public static AttackTarget Read(ref PacketReader r) => new(r.ReadInt());
+}
+
 /// <summary>A player speaks in the world chat. The chat carries ONLY player words — no system logs.</summary>
 public readonly struct ChatSend
 {

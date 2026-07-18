@@ -189,6 +189,32 @@ namespace Aetheria.UnityClient
             _flashTimer = HitFlashDuration;
         }
 
+        private GameObject _selectionRing;
+
+        /// <summary>Show/hide the WoW-style selection ring at this entity's feet.</summary>
+        public void SetSelected(bool selected)
+        {
+            if (selected && _selectionRing == null)
+            {
+                _selectionRing = GameObject.CreatePrimitive(PrimitiveType.Cylinder);
+                _selectionRing.name = "SelectionRing";
+                Object.Destroy(_selectionRing.GetComponent<Collider>());
+                _selectionRing.transform.SetParent(transform, false);
+                _selectionRing.transform.localPosition = new Vector3(0f, 0.03f, 0f);
+                _selectionRing.transform.localScale = new Vector3(1.5f, 0.015f, 1.5f);
+                var renderer = _selectionRing.GetComponent<Renderer>();
+                if (renderer != null)
+                {
+                    renderer.material.color = new Color(0.95f, 0.35f, 0.2f);
+                }
+            }
+
+            if (_selectionRing != null)
+            {
+                _selectionRing.SetActive(selected);
+            }
+        }
+
         /// <summary>Start the cosmetic jump arc (no-op while one is already in the air).</summary>
         public void TriggerJump()
         {

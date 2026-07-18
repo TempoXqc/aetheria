@@ -18,7 +18,8 @@ public static class BodyPartLootTests
         {
             if (killer.IsAbilityReady(killer.BasicAbilityId, world.Tick))
             {
-                world.TryUseAbility(killer.Id, killer.BasicAbilityId, monster.Id);
+                // Swing as the SERVER auto-attack does (bypasses the manual-cast global cooldown).
+                world.TryUseAbility(killer.Id, killer.BasicAbilityId, monster.Id, fromAuto: true);
             }
 
             world.Step(SimulationConstants.TickDelta);

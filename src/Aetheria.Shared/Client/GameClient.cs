@@ -152,6 +152,9 @@ public sealed class GameClient
     /// <summary>Say something in the world chat.</summary>
     public void SendChat(string text) => Send(new ChatSend(text ?? string.Empty));
 
+    /// <summary>Fight this target (the server auto-swings); 0 stops attacking.</summary>
+    public void SendAttackTarget(int targetEntityId) => Send(new AttackTarget(targetEntityId));
+
     public void SendPartyInvite(int targetEntityId) => Send(new PartyInvite(targetEntityId));
 
     public void SendPartyRespond(bool accept) => Send(new PartyRespond(accept));
@@ -562,6 +565,7 @@ public sealed class GameClient
     private void Send(BankTransaction msg) => SendWith(msg.Write);
     private void Send(EquipItem msg) => SendWith(msg.Write);
     private void Send(ChatSend msg) => SendWith(msg.Write);
+    private void Send(AttackTarget msg) => SendWith(msg.Write);
     private void Send(PartyInvite msg) => SendWith(msg.Write);
     private void Send(PartyRespond msg) => SendWith(msg.Write);
     private void Send(PartyLeave msg) => SendWith(msg.Write);

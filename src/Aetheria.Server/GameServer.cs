@@ -312,6 +312,11 @@ public sealed class GameServer
                     HandleChat(session, say.Text);
                     break;
 
+                case MessageType.AttackTarget:
+                    AttackTarget intent = AttackTarget.Read(ref reader);
+                    world.SetAttackTarget(session.EntityId, intent.TargetEntityId);
+                    break;
+
                 case MessageType.Inspect:
                     Inspect inspect = Inspect.Read(ref reader);
                     HandleInspect(peer, session, inspect.TargetEntityId);

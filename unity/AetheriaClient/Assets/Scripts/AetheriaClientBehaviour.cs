@@ -63,6 +63,13 @@ namespace Aetheria.UnityClient
         private bool _wasRegistering;
         private bool _serverChosen; // the player picked this realm in the browser (creation allowed)
         private Vector3 _rightDownPos; // to tell a right-TAP (context click) from a camera drag
+        private float _gcdReadyTime;   // local mirror of the 1.5s global cooldown (display + pre-check)
+        private string _uiError = "";
+        private float _uiErrorUntil;
+        private int _ringTargetId = -1; // entity currently wearing the selection ring
+
+        private struct FloatText { public Vector3 World; public string Text; public Color Color; public float Born; }
+        private readonly List<FloatText> _floatTexts = new List<FloatText>();
         private Vector3 _leftDownPos;  // same for the left button (tap = select, drag = orbit)
         private bool _jumpQueued;      // Space pressed since the last input packet
 
@@ -112,7 +119,6 @@ namespace Aetheria.UnityClient
         private readonly HashSet<int> _seenThisFrame = new HashSet<int>();
         private IsoCameraRig _cameraRig;
         private int _targetId = -1;
-        private bool _autoAttack;
         private float _inputTimer;
         private float _lastFacing;
         private int _nearbyCorpseId = -1;
@@ -248,11 +254,13 @@ namespace Aetheria.UnityClient
                 else if (_bankOpen) { _bankOpen = false; }
                 else if (_client.OpenCorpseId >= 0) { _client.CloseCorpse(); }
                 else if (_sheetOpen) { _sheetOpen = false; }
+                else if (_targetId >= 0) { SetAttackIntent(-1); } // Escape drops the target first
                 else { _menuOpen = !_menuOpen; _optionsTab = -1; _layoutEditMode = false; }
             }
 
             SyncViews();
             PlayCombatAnimations();
+            UpdateTargetRing();
             FindNearbyCorpse();
             FindNearbyBank();
             PumpChat();
@@ -274,7 +282,6 @@ namespace Aetheria.UnityClient
 
                 HandleKeys();
                 HandleMouse();
-                AutoAttackTick();
                 SendMovement();
             }
 
@@ -531,7 +538,6 @@ namespace Aetheria.UnityClient
             _previewKey = -1;
             _lobby.ClearPreview();
             _targetId = -1;
-            _autoAttack = false;
             _menuOpen = false;
             _sheetOpen = false;
             _contextEntityId = -1;
@@ -601,15 +607,16 @@ namespace Aetheria.UnityClient
             for (int i = 0; i < toRemove.Count; i++)
             {
                 _views.Remove(toRemove[i]);
-                if (_targetId == toRemove[i]) { _targetId = -1; _autoAttack = false; }
+                if (_targetId == toRemove[i]) { _targetId = -1; }
                 if (_contextEntityId == toRemove[i]) { _contextEntityId = -1; }
                 if (_client.OpenCorpseId == toRemove[i]) { _client.CloseCorpse(); }
             }
         }
 
-        /// <summary>Turn this frame's combat events into attack swings and hit flashes on the models.</summary>
+        /// <summary>Combat events → attack swings, hit flashes, and FLOATING damage numbers.</summary>
         private void PlayCombatAnimations()
         {
+            int selfId = _client.EntityId ?? -1;
             IReadOnlyList<CombatEventMessage> feed = _client.DrainCombatFeed();
             for (int i = 0; i < feed.Count; i++)
             {
@@ -624,8 +631,42 @@ namespace Aetheria.UnityClient
                 if (evt.Damage > 0 && _views.TryGetValue(evt.TargetId, out target) && target != null)
                 {
                     target.TriggerHit();
+
+                    // WoW-style floating number: white for your hits, red when YOU take it.
+                    Color c = evt.TargetId == selfId
+                        ? new Color(1f, 0.35f, 0.3f)
+                        : evt.AttackerId == selfId ? Color.white : new Color(0.85f, 0.85f, 0.6f);
+                    _floatTexts.Add(new FloatText
+                    {
+                        World = target.transform.position + (Vector3.up * (target.HeadHeight + 0.4f)),
+                        Text = evt.Damage.ToString(),
+                        Color = c,
+                        Born = Time.time,
+                    });
                 }
             }
+
+            if (_floatTexts.Count > 60) { _floatTexts.RemoveRange(0, _floatTexts.Count - 60); }
+        }
+
+        /// <summary>Keep the SELECTION RING under the current target, WoW-style.</summary>
+        private void UpdateTargetRing()
+        {
+            if (_ringTargetId == _targetId) { return; }
+
+            EntityView oldView;
+            if (_ringTargetId >= 0 && _views.TryGetValue(_ringTargetId, out oldView) && oldView != null)
+            {
+                oldView.SetSelected(false);
+            }
+
+            EntityView newView;
+            if (_targetId >= 0 && _views.TryGetValue(_targetId, out newView) && newView != null)
+            {
+                newView.SetSelected(true);
+            }
+
+            _ringTargetId = _targetId;
         }
 
         private void FindNearbyCorpse()
@@ -801,8 +842,17 @@ namespace Aetheria.UnityClient
                  (e.Kind == EntityKind.Player && e.Faction != self.Faction) ||
                  e.Id == _client.DuelOpponentId) && e.Id != self.Id);
 
-            _targetId = picked?.Id ?? -1;
-            _autoAttack = picked != null;
+            SetAttackIntent(picked?.Id ?? -1); // tap on the ground clears the target, WoW-style
+        }
+
+        /// <summary>
+        /// Select a target and declare the attack intent: ONE message, then the SERVER swings the
+        /// class's basic attack (or recasts its incantation) until the target drops. -1 clears.
+        /// </summary>
+        private void SetAttackIntent(int targetId)
+        {
+            _targetId = targetId;
+            _client.SendAttackTarget(targetId < 0 ? 0 : targetId);
         }
 
         /// <summary>
@@ -825,13 +875,11 @@ namespace Aetheria.UnityClient
                     break;
 
                 case EntityKind.Monster:
-                    _targetId = target.Id;
-                    _autoAttack = true;
+                    SetAttackIntent(target.Id);
                     break;
 
                 case EntityKind.Player when target.Faction != self.Faction || target.Id == _client.DuelOpponentId:
-                    _targetId = target.Id;
-                    _autoAttack = true;
+                    SetAttackIntent(target.Id);
                     break;
 
                 case EntityKind.Player:
@@ -879,41 +927,64 @@ namespace Aetheria.UnityClient
 
         private void TryCastOnTarget(byte abilityId)
         {
-            if (_targetId < 0 || IsOnCooldown(abilityId)) { return; }
+            if (_targetId < 0) { ShowError("Aucune cible."); return; }
+            if (Time.time < _gcdReadyTime) { return; }
+            if (IsOnCooldown(abilityId)) { ShowError("Pas encore prêt."); return; }
+
+            AbilityDefinition def = Data.GetAbility(abilityId);
+            EntitySnapshot self;
+            EntitySnapshot target;
+            if (_client.TryGetSelf(out self) && _client.TryGetEntity(_targetId, out target))
+            {
+                if (def.ResourceCost > 0 && self.Resource < def.ResourceCost)
+                {
+                    ShowError(ResourceErrorFor(_classId));
+                    return;
+                }
+
+                if (Vec2.DistanceSquared(self.Position, target.Position) > def.Range * def.Range)
+                {
+                    ShowError("Trop loin.");
+                    return;
+                }
+            }
+
             _client.SendUseAbility(abilityId, _targetId);
             StartLocalCooldown(abilityId);
+            _gcdReadyTime = Time.time + (SimulationConstants.GlobalCooldownTicks * SimulationConstants.TickDelta);
         }
 
         private void TryCastSelf(byte abilityId)
         {
-            if (IsOnCooldown(abilityId) || !_client.EntityId.HasValue) { return; }
+            if (!_client.EntityId.HasValue || Time.time < _gcdReadyTime) { return; }
+            if (IsOnCooldown(abilityId)) { ShowError("Pas encore prêt."); return; }
             _client.SendUseAbility(abilityId, _client.EntityId.Value);
             StartLocalCooldown(abilityId);
+            _gcdReadyTime = Time.time + (SimulationConstants.GlobalCooldownTicks * SimulationConstants.TickDelta);
         }
 
         private void TryUseRacial()
         {
-            if (IsOnCooldown(_racialId)) { return; }
+            if (IsOnCooldown(_racialId)) { ShowError("Pas encore prêt."); return; }
             _client.SendUseRacial();
             StartLocalCooldown(_racialId);
         }
 
-        private void AutoAttackTick()
+        private string ResourceErrorFor(byte classId)
         {
-            if (!_autoAttack || _targetId < 0) { return; }
-
-            EntitySnapshot self;
-            EntitySnapshot target;
-            if (!_client.TryGetSelf(out self) || !_client.TryGetEntity(_targetId, out target)) { return; }
-
-            AbilityDefinition basic = Data.GetAbility(_classId);
-            float rangeSq = basic.Range * basic.Range;
-            if (Vec2.DistanceSquared(self.Position, target.Position) <= rangeSq &&
-                !IsOnCooldown(_classId) &&
-                (basic.ResourceCost <= 0 || self.Resource >= basic.ResourceCost))
+            switch (classId)
             {
-                TryCastOnTarget(_classId);
+                case 1: return "Pas assez de rage.";
+                case 2: return "Pas assez de mana.";
+                default: return "Pas assez d'énergie.";
             }
+        }
+
+        /// <summary>WoW-style red error line, centre-screen, fading after two seconds.</summary>
+        private void ShowError(string message)
+        {
+            _uiError = message;
+            _uiErrorUntil = Time.time + 2f;
         }
 
         private bool IsOnCooldown(byte abilityId)
@@ -951,14 +1022,14 @@ namespace Aetheria.UnityClient
                 if (hostile && e.Id != self.Id) { hostiles.Add(e); }
             }
 
-            if (hostiles.Count == 0) { _targetId = -1; return; }
+            if (hostiles.Count == 0) { SetAttackIntent(-1); return; }
 
             hostiles.Sort((a, b) =>
                 Vec2.DistanceSquared(self.Position, a.Position)
                     .CompareTo(Vec2.DistanceSquared(self.Position, b.Position)));
 
             int currentIndex = hostiles.FindIndex(e => e.Id == _targetId);
-            _targetId = hostiles[(currentIndex + 1) % hostiles.Count].Id;
+            SetAttackIntent(hostiles[(currentIndex + 1) % hostiles.Count].Id);
         }
 
         private void SendMovement()
@@ -1029,6 +1100,8 @@ namespace Aetheria.UnityClient
             DrawXpBar();
             DrawActionBar();
             DrawMessages();
+            DrawFloatingTexts();
+            DrawUiError();
             DrawCastBar();
             DrawChat();
             DrawLootWindow();
@@ -1529,6 +1602,10 @@ namespace Aetheria.UnityClient
                 bool locked = def.UnlockLevel > _client.Level;
                 bool tooPoor = def.ResourceCost > 0 && myResource < def.ResourceCost;
                 float cd = CooldownRemaining(abilityId);
+                if (abilityId != _racialId)
+                {
+                    cd = Mathf.Max(cd, _gcdReadyTime - Time.time); // the GCD sweeps the whole bar
+                }
                 bool usable = !locked && !tooPoor && cd <= 0f && (_targetId >= 0 || def.Range <= 0f);
 
                 GUI.enabled = usable;
@@ -2443,6 +2520,45 @@ namespace Aetheria.UnityClient
                 GUI.Label(new Rect(area.x, y, area.width, 22), _client.LastInstanceMessage);
             }
 
+        }
+
+        /// <summary>Rising, fading damage numbers above the heads they belong to.</summary>
+        private void DrawFloatingTexts()
+        {
+            Camera cam = Camera.main;
+            if (cam == null || _floatTexts.Count == 0) { return; }
+
+            const float Life = 1.1f;
+            for (int i = _floatTexts.Count - 1; i >= 0; i--)
+            {
+                FloatText ft = _floatTexts[i];
+                float age = Time.time - ft.Born;
+                if (age > Life) { _floatTexts.RemoveAt(i); continue; }
+
+                Vector3 screen = cam.WorldToScreenPoint(ft.World);
+                if (screen.z < 0f) { continue; }
+
+                float x = screen.x / _cfg.UiScale;
+                float y = ((Screen.height - screen.y) / _cfg.UiScale) - (age * 34f); // rises
+                float alpha = Mathf.Clamp01(1.2f - (age / Life));
+                Color prev = GUI.color;
+                GUI.color = new Color(ft.Color.r, ft.Color.g, ft.Color.b, alpha);
+                GUI.Label(new Rect(x - 40, y, 80, 22), "<size=15><b>" + ft.Text + "</b></size>", RichCentered());
+                GUI.color = prev;
+            }
+        }
+
+        /// <summary>The centre-screen red error line ("Trop loin.", "Pas assez de mana.").</summary>
+        private void DrawUiError()
+        {
+            if (Time.time >= _uiErrorUntil || string.IsNullOrEmpty(_uiError)) { return; }
+
+            float alpha = Mathf.Clamp01(_uiErrorUntil - Time.time);
+            Color prev = GUI.color;
+            GUI.color = new Color(1f, 0.3f, 0.25f, alpha);
+            GUI.Label(new Rect((VirtW / 2f) - 200, VirtH * 0.3f, 400, 24),
+                "<size=14><b>" + _uiError + "</b></size>", RichCentered());
+            GUI.color = prev;
         }
 
         /// <summary>Your own WoW-style cast bar: ability name + golden progress, bottom-centre.</summary>

@@ -93,6 +93,14 @@ public sealed class ServerEntity
     /// <summary>Tick at which this entity is removed outright (0 = never). Used by monster corpses.</summary>
     public uint DespawnAtTick { get; set; }
 
+    // --- Combat intent ---
+
+    /// <summary>Entity this player is auto-attacking (0 = none). The server drives the swings.</summary>
+    public int AutoAttackTargetId { get; set; }
+
+    /// <summary>Tick at which the GLOBAL COOLDOWN ends (manual abilities only).</summary>
+    public uint GcdReadyTick { get; set; }
+
     // --- Incantation (cast-time spells) ---
     public byte CastAbilityId { get; private set; }
     public int CastTargetId { get; private set; }

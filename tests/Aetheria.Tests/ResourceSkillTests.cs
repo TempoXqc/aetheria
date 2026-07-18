@@ -64,7 +64,7 @@ public static class ResourceSkillTests
         int lowSkillDamage = world.DrainCombatEvents()[0].Damage;
 
         w.AddSkill(1, 100, 100); // max out the sword line
-        for (int i = 0; i < 12; i++) // clear the cooldown
+        for (int i = 0; i < SimulationConstants.GlobalCooldownTicks + 2; i++) // clear cooldown AND the GCD
         {
             world.Step(SimulationConstants.TickDelta);
         }
