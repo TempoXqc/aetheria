@@ -18,6 +18,7 @@ public sealed class GameData
     private readonly Dictionary<byte, AbilityDefinition> _abilities;
     private readonly Dictionary<byte, MonsterDefinition> _monsters;
     private readonly Dictionary<byte, ItemDefinition> _items;
+    private readonly Dictionary<byte, InstanceDefinition> _instances;
 
     public GameData(
         IEnumerable<RaceDefinition> races,
@@ -25,13 +26,15 @@ public sealed class GameData
         IEnumerable<AbilityDefinition> abilities,
         IEnumerable<MonsterDefinition> monsters,
         IEnumerable<ItemDefinition>? items = null,
-        ProgressionConfig? progression = null)
+        ProgressionConfig? progression = null,
+        IEnumerable<InstanceDefinition>? instances = null)
     {
         _races = races.ToDictionary(r => r.Id);
         _classes = classes.ToDictionary(c => c.Id);
         _abilities = abilities.ToDictionary(a => a.Id);
         _monsters = monsters.ToDictionary(m => m.Id);
         _items = (items ?? []).ToDictionary(i => i.Id);
+        _instances = (instances ?? []).ToDictionary(i => i.Id);
         Progression = progression ?? new ProgressionConfig();
 
         if (_races.Count == 0 || _classes.Count == 0 || _abilities.Count == 0)
@@ -50,6 +53,20 @@ public sealed class GameData
         => _items.TryGetValue(id, out ItemDefinition? i) ? i : _items.Values.First();
 
     public bool HasItem(byte id) => _items.ContainsKey(id);
+
+    public IReadOnlyCollection<InstanceDefinition> Instances => _instances.Values;
+
+    public bool TryGetInstance(byte id, out InstanceDefinition definition)
+    {
+        if (_instances.TryGetValue(id, out InstanceDefinition? found))
+        {
+            definition = found;
+            return true;
+        }
+
+        definition = null!;
+        return false;
+    }
 
     public RaceDefinition GetRace(byte id)
         => _races.TryGetValue(id, out RaceDefinition? r) ? r : _races.Values.First();
@@ -78,8 +95,9 @@ public sealed class GameData
         var monsters = LoadList<MonsterDefinition>(Path.Combine(directory, "monsters.json")) ?? defaults.Monsters.ToList();
         var items = LoadList<ItemDefinition>(Path.Combine(directory, "items.json")) ?? defaults.Items.ToList();
         var progression = LoadObject<ProgressionConfig>(Path.Combine(directory, "progression.json")) ?? defaults.Progression;
+        var instances = LoadList<InstanceDefinition>(Path.Combine(directory, "instances.json")) ?? defaults.Instances.ToList();
 
-        return new GameData(races, classes, abilities, monsters, items, progression);
+        return new GameData(races, classes, abilities, monsters, items, progression, instances);
     }
 
     private static readonly JsonSerializerOptions JsonOptions = new()
@@ -166,6 +184,37 @@ public sealed class GameData
         [
             new MonsterDefinition { Id = 1, Name = "Goblin Grunt", MaxHealth = 60, MoveSpeed = 4.0f, AttackPower = 8, Defense = 2, AggroRadius = 15f, BasicAbilityId = 4, XpReward = 25, GoldReward = 5 },
             new MonsterDefinition { Id = 2, Name = "Dire Wolf", MaxHealth = 90, MoveSpeed = 6.0f, AttackPower = 12, Defense = 3, AggroRadius = 20f, BasicAbilityId = 4, XpReward = 40, GoldReward = 10 },
+            // Elite: rules the open-world "dungeon" camp (non-instanced, so PvP can erupt around it).
+            new MonsterDefinition { Id = 3, Name = "Goblin King", MaxHealth = 350, MoveSpeed = 4.5f, AttackPower = 22, Defense = 6, AggroRadius = 18f, BasicAbilityId = 4, XpReward = 200, GoldReward = 80 },
+            // World raid boss: raid-difficulty, lives in the OPEN world — never instanced, PvP possible.
+            new MonsterDefinition { Id = 4, Name = "Ashmaw the Devourer", MaxHealth = 2500, MoveSpeed = 5.0f, AttackPower = 45, Defense = 12, AggroRadius = 25f, BasicAbilityId = 4, XpReward = 1500, GoldReward = 600 },
+        ],
+        instances:
+        [
+            new InstanceDefinition
+            {
+                Id = 1, Name = "Ragefire Depths", IsRaid = false, MinPlayers = 1, MaxPlayers = 5,
+                HealthScalingPerExtraPlayer = 0.5f, DamageScalingPerExtraPlayer = 0.25f,
+                Spawns =
+                [
+                    new InstanceSpawn { MonsterId = 1, X = 8f, Y = 4f },
+                    new InstanceSpawn { MonsterId = 1, X = 12f, Y = 8f },
+                    new InstanceSpawn { MonsterId = 2, X = 16f, Y = 4f },
+                    new InstanceSpawn { MonsterId = 3, X = 24f, Y = 8f }, // end boss
+                ],
+            },
+            new InstanceDefinition
+            {
+                Id = 2, Name = "Molten Sanctum", IsRaid = true, MinPlayers = 6, MaxPlayers = 40,
+                HealthScalingPerExtraPlayer = 0.35f, DamageScalingPerExtraPlayer = 0.15f,
+                Spawns =
+                [
+                    new InstanceSpawn { MonsterId = 2, X = 10f, Y = 6f },
+                    new InstanceSpawn { MonsterId = 2, X = 14f, Y = 6f },
+                    new InstanceSpawn { MonsterId = 3, X = 20f, Y = 8f },
+                    new InstanceSpawn { MonsterId = 4, X = 30f, Y = 10f }, // raid boss (instanced copy)
+                ],
+            },
         ],
         items:
         [

@@ -56,6 +56,13 @@ public sealed class GameClient
     public int BankGold { get; private set; }
     public int BankStackCount { get; private set; }
 
+    // --- Party & instance state ---
+    public string PartyLeader { get; private set; } = string.Empty;
+    public int PartySize { get; private set; }
+    public string? PendingInviteFrom { get; private set; }
+    public string LastInstanceMessage { get; private set; } = string.Empty;
+    public bool InInstance { get; private set; }
+
     public void Connect(string host, int port, string name, byte raceId, byte classId, Gender gender, string accountId)
     {
         _transport.Connect(host, port);
@@ -63,6 +70,16 @@ public sealed class GameClient
     }
 
     public void SendBank(BankOp op, byte itemId, int amount) => Send(new BankTransaction(op, itemId, amount));
+
+    public void SendPartyInvite(int targetEntityId) => Send(new PartyInvite(targetEntityId));
+
+    public void SendPartyRespond(bool accept) => Send(new PartyRespond(accept));
+
+    public void SendPartyLeave() => Send(new PartyLeave());
+
+    public void SendEnterInstance(byte instanceDefId) => Send(new EnterInstance(instanceDefId));
+
+    public void SendLeaveInstance() => Send(new LeaveInstance());
 
     public void SendInput(Vec2 direction)
     {
@@ -202,6 +219,27 @@ public sealed class GameClient
                     BankStackCount = bankState.Items.Count;
                     break;
 
+                case MessageType.PartyState:
+                    PartyState partyState = PartyState.Read(ref reader);
+                    PartyLeader = partyState.LeaderName;
+                    PartySize = partyState.MemberNames.Count;
+                    break;
+
+                case MessageType.PartyInviteNotice:
+                    PartyInviteNotice notice = PartyInviteNotice.Read(ref reader);
+                    PendingInviteFrom = notice.InviterName;
+                    break;
+
+                case MessageType.InstanceResult:
+                    InstanceResult result = InstanceResult.Read(ref reader);
+                    LastInstanceMessage = result.Message;
+                    if (result.Ok)
+                    {
+                        InInstance = result.InstanceDefId != 0;
+                    }
+
+                    break;
+
                 case MessageType.CombatEvent:
                     CombatEventMessage combat = CombatEventMessage.Read(ref reader);
                     LastCombat = combat;
@@ -268,6 +306,11 @@ public sealed class GameClient
     private void Send(UseRacial msg) => SendWith(msg.Write);
     private void Send(LootCorpse msg) => SendWith(msg.Write);
     private void Send(BankTransaction msg) => SendWith(msg.Write);
+    private void Send(PartyInvite msg) => SendWith(msg.Write);
+    private void Send(PartyRespond msg) => SendWith(msg.Write);
+    private void Send(PartyLeave msg) => SendWith(msg.Write);
+    private void Send(EnterInstance msg) => SendWith(msg.Write);
+    private void Send(LeaveInstance msg) => SendWith(msg.Write);
     private void Send(Ping msg) => SendWith(msg.Write);
     private void Send(Disconnect msg) => SendWith(msg.Write);
 

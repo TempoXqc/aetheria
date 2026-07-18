@@ -8,21 +8,21 @@ namespace Aetheria.Tests;
 
 public static class CombatTests
 {
-    // Default content: Warrior (atk 12, def 6, hp 120) using Slash (base 10, range 2.5).
-    // Damage = max(1, baseDamage + attackerPower - targetDefense) = 10 + 12 - 6 = 16.
+    // Default content: Human Warrior (atk 12) using Slash (base 10, range 2.5) against an Orc
+    // Warrior (def 6-1=5). Damage = max(1, 10 + 12 - 5) = 17. PvP requires opposite factions.
 
     [Test("A landed ability reduces the target's health by the computed amount.")]
     public static void TryUseAbility_DealsExpectedDamage()
     {
         var world = new World();
         ServerEntity attacker = world.SpawnPlayer(new PeerId(1)); // Warrior/Human
-        ServerEntity target = world.SpawnPlayer(new PeerId(2));   // adjacent Warrior/Human
+        ServerEntity target = world.SpawnPlayer(new PeerId(2), "T", raceId: 2, classId: 1); // adjacent Orc Warrior (opposite faction)
         int maxHp = target.Stats.MaxHealth;
 
         bool used = world.TryUseAbility(attacker.Id, attacker.BasicAbilityId, target.Id);
 
         Assert.True(used, "attack should land at spawn range");
-        Assert.Equal(maxHp - 16, target.Health);
+        Assert.Equal(maxHp - 17, target.Health);
     }
 
     [Test("An ability out of range does not land.")]
@@ -30,7 +30,7 @@ public static class CombatTests
     {
         var world = new World();
         ServerEntity attacker = world.SpawnPlayer(new PeerId(1));
-        ServerEntity target = world.SpawnPlayer(new PeerId(2));
+        ServerEntity target = world.SpawnPlayer(new PeerId(2), "T", raceId: 2, classId: 1);
         target.Position = new Vec2(1000, 0); // well beyond Slash's 2.5 range
         int hp = target.Health;
 
@@ -45,7 +45,7 @@ public static class CombatTests
     {
         var world = new World();
         ServerEntity attacker = world.SpawnPlayer(new PeerId(1));
-        ServerEntity target = world.SpawnPlayer(new PeerId(2));
+        ServerEntity target = world.SpawnPlayer(new PeerId(2), "T", raceId: 2, classId: 1);
 
         Assert.True(world.TryUseAbility(attacker.Id, attacker.BasicAbilityId, target.Id));
         int hpAfterFirst = target.Health;
@@ -69,7 +69,7 @@ public static class CombatTests
     {
         var world = new World();
         ServerEntity attacker = world.SpawnPlayer(new PeerId(1)); // Warrior
-        ServerEntity target = world.SpawnPlayer(new PeerId(2));   // passive target (players have no AI)
+        ServerEntity target = world.SpawnPlayer(new PeerId(2), "T", raceId: 2, classId: 1); // passive Orc target
 
         bool observedKillEvent = false;
         uint deathTick = 0;

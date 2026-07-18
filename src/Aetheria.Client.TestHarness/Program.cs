@@ -47,6 +47,18 @@ while (clock.Elapsed.TotalSeconds < options.Seconds)
             deposited = true;
         }
 
+        // Enter the requested instance once (solo, or as party leader).
+        if (options.Instance != 0 && !client.InInstance && string.IsNullOrEmpty(client.LastInstanceMessage))
+        {
+            client.SendEnterInstance(options.Instance);
+        }
+
+        // Auto-accept any party invite (handy for scripted multi-client tests).
+        if (client.PendingInviteFrom is not null)
+        {
+            client.SendPartyRespond(accept: true);
+        }
+
         Vec2 moveDir = options.Direction;
 
         if (options.Attack)
@@ -110,7 +122,8 @@ Console.WriteLine(
     $"SUMMARY name={options.Name} connected={connected} " +
     $"entity={(client.EntityId?.ToString() ?? "none")} level={client.Level} xp={client.TotalXp} gold={client.Gold} bank={client.BankGold} " +
     $"maxVisible={maxVisible} sawOther={sawOther} combatSeen={client.CombatEventsSeen} " +
-    $"killsByMe={client.KillsByMe} lastRttMs={client.LastRttMs}");
+    $"killsByMe={client.KillsByMe} lastRttMs={client.LastRttMs}" +
+    (string.IsNullOrEmpty(client.LastInstanceMessage) ? string.Empty : $" instanceMsg=\"{client.LastInstanceMessage}\""));
 
 return connected ? 0 : 1;
 
@@ -141,15 +154,18 @@ static void PrintStatus(GameClient client, string name)
 
     string xp = client.XpForNextLevel >= 0 ? $"{client.TotalXp}/{client.XpForNextLevel}" : $"{client.TotalXp}(max)";
 
+    string zone = client.InInstance ? " zone=INSTANCE" : string.Empty;
+    string party = client.PartySize > 0 ? $" party={client.PartySize}({client.PartyLeader})" : string.Empty;
+
     Console.WriteLine(
         $"[{name}] tick={client.LastTick} lvl={client.Level} xp={xp} gold={client.Gold} bank={client.BankGold} " +
-        $"hp={hp} res={res} self={self} visible={client.Visible.Count} monsters={monsters}{combat}");
+        $"hp={hp} res={res} self={self} visible={client.Visible.Count} monsters={monsters}{zone}{party}{combat}");
 }
 
 internal sealed record HarnessOptions(
     string Host, int Port, string Name, double Seconds, Vec2 Direction,
     byte RaceId, byte ClassId, byte AbilityId, bool Attack, Gender Gender, bool Racial, bool Loot,
-    string AccountId, int DepositGold)
+    string AccountId, int DepositGold, byte Instance)
 {
     public static HarnessOptions Parse(string[] args)
     {
@@ -168,6 +184,7 @@ internal sealed record HarnessOptions(
         bool loot = false;
         string account = "";
         int depositGold = 0;
+        byte instance = 0;
 
         for (int i = 0; i < args.Length; i++)
         {
@@ -188,6 +205,7 @@ internal sealed record HarnessOptions(
                 case "--gender" when HasNext(): gender = ParseGender(args[++i]); break;
                 case "--account" when HasNext(): account = args[++i]; break;
                 case "--deposit" when HasNext() && int.TryParse(args[i + 1], out int dg): depositGold = dg; i++; break;
+                case "--instance" when HasNext() && byte.TryParse(args[i + 1], out byte inst): instance = inst; i++; break;
                 case "--attack": attack = true; break;
                 case "--racial": racial = true; break;
                 case "--loot": loot = true; break;
@@ -201,7 +219,7 @@ internal sealed record HarnessOptions(
             account = name;
         }
 
-        return new HarnessOptions(host, port, name, seconds, new Vec2(dirX, dirY), race, cls, ability, attack, gender, racial, loot, account, depositGold);
+        return new HarnessOptions(host, port, name, seconds, new Vec2(dirX, dirY), race, cls, ability, attack, gender, racial, loot, account, depositGold, instance);
     }
 
     private static Gender ParseGender(string value) => value.ToLowerInvariant() switch

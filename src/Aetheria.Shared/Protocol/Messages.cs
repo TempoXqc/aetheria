@@ -108,6 +108,70 @@ public readonly struct UseRacial
     public static UseRacial Read(ref PacketReader r) => default;
 }
 
+/// <summary>Invite another player (by entity id) into the sender's party. Same faction only.</summary>
+public readonly struct PartyInvite
+{
+    public readonly int TargetEntityId;
+
+    public PartyInvite(int targetEntityId) => TargetEntityId = targetEntityId;
+
+    public void Write(PacketWriter w)
+    {
+        w.WriteByte((byte)MessageType.PartyInvite);
+        w.WriteInt(TargetEntityId);
+    }
+
+    public static PartyInvite Read(ref PacketReader r) => new(r.ReadInt());
+}
+
+/// <summary>Accept or decline the sender's pending party invite.</summary>
+public readonly struct PartyRespond
+{
+    public readonly bool Accept;
+
+    public PartyRespond(bool accept) => Accept = accept;
+
+    public void Write(PacketWriter w)
+    {
+        w.WriteByte((byte)MessageType.PartyRespond);
+        w.WriteBool(Accept);
+    }
+
+    public static PartyRespond Read(ref PacketReader r) => new(r.ReadBool());
+}
+
+/// <summary>Leave the current party (no payload).</summary>
+public readonly struct PartyLeave
+{
+    public void Write(PacketWriter w) => w.WriteByte((byte)MessageType.PartyLeave);
+
+    public static PartyLeave Read(ref PacketReader r) => default;
+}
+
+/// <summary>Ask to enter an instanced zone (solo, or with the whole party if the sender leads one).</summary>
+public readonly struct EnterInstance
+{
+    public readonly byte InstanceDefId;
+
+    public EnterInstance(byte instanceDefId) => InstanceDefId = instanceDefId;
+
+    public void Write(PacketWriter w)
+    {
+        w.WriteByte((byte)MessageType.EnterInstance);
+        w.WriteByte(InstanceDefId);
+    }
+
+    public static EnterInstance Read(ref PacketReader r) => new(r.ReadByte());
+}
+
+/// <summary>Leave the current instance and return to the open world (no payload).</summary>
+public readonly struct LeaveInstance
+{
+    public void Write(PacketWriter w) => w.WriteByte((byte)MessageType.LeaveInstance);
+
+    public static LeaveInstance Read(ref PacketReader r) => default;
+}
+
 /// <summary>Request to loot everything from a corpse. The server validates range and ownership rules.</summary>
 public readonly struct LootCorpse
 {
@@ -503,6 +567,93 @@ public readonly struct InventoryState
         }
 
         return new InventoryState(weapon, armor, items);
+    }
+}
+
+/// <summary>Someone invited this client into a party (display name shown to the user).</summary>
+public readonly struct PartyInviteNotice
+{
+    public readonly string InviterName;
+
+    public PartyInviteNotice(string inviterName) => InviterName = inviterName;
+
+    public void Write(PacketWriter w)
+    {
+        w.WriteByte((byte)MessageType.PartyInviteNotice);
+        w.WriteString(InviterName);
+    }
+
+    public static PartyInviteNotice Read(ref PacketReader r) => new(r.ReadString());
+}
+
+/// <summary>
+/// The client's current party roster (names, leader first). An empty roster means "not in a party".
+/// Sent to every member whenever the roster changes.
+/// </summary>
+public readonly struct PartyState
+{
+    public readonly string LeaderName;
+    public readonly IReadOnlyList<string> MemberNames;
+
+    public PartyState(string leaderName, IReadOnlyList<string> memberNames)
+    {
+        LeaderName = leaderName;
+        MemberNames = memberNames;
+    }
+
+    public void Write(PacketWriter w)
+    {
+        w.WriteByte((byte)MessageType.PartyState);
+        w.WriteString(LeaderName);
+        w.WriteUInt((uint)MemberNames.Count);
+        for (int i = 0; i < MemberNames.Count; i++)
+        {
+            w.WriteString(MemberNames[i]);
+        }
+    }
+
+    public static PartyState Read(ref PacketReader r)
+    {
+        string leader = r.ReadString();
+        uint count = r.ReadUInt();
+        var names = new string[count];
+        for (uint i = 0; i < count; i++)
+        {
+            names[i] = r.ReadString();
+        }
+
+        return new PartyState(leader, names);
+    }
+}
+
+/// <summary>Outcome of an EnterInstance/LeaveInstance request (or a forced move), with a reason.</summary>
+public readonly struct InstanceResult
+{
+    public readonly bool Ok;
+    public readonly byte InstanceDefId; // 0 = the open world
+    public readonly string Message;
+
+    public InstanceResult(bool ok, byte instanceDefId, string message)
+    {
+        Ok = ok;
+        InstanceDefId = instanceDefId;
+        Message = message;
+    }
+
+    public void Write(PacketWriter w)
+    {
+        w.WriteByte((byte)MessageType.InstanceResult);
+        w.WriteBool(Ok);
+        w.WriteByte(InstanceDefId);
+        w.WriteString(Message);
+    }
+
+    public static InstanceResult Read(ref PacketReader r)
+    {
+        bool ok = r.ReadBool();
+        byte defId = r.ReadByte();
+        string message = r.ReadString();
+        return new InstanceResult(ok, defId, message);
     }
 }
 

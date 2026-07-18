@@ -59,7 +59,7 @@ public static class LootTests
     {
         var world = new World();
         ServerEntity a = world.SpawnPlayer(new PeerId(1), "A", 1, 1);
-        ServerEntity b = world.SpawnPlayer(new PeerId(2), "B", 1, 1);
+        ServerEntity b = world.SpawnPlayer(new PeerId(2), "B", raceId: 2, classId: 1); // opposite faction
         world.GrantStarterKit(a);
         world.GrantStarterKit(b);
         int aGoldBefore = a.Inventory.Gold;
@@ -112,7 +112,7 @@ public static class LootTests
     {
         var world = new World();
         ServerEntity a = world.SpawnPlayer(new PeerId(1), "A", 1, 1);
-        ServerEntity b = world.SpawnPlayer(new PeerId(2), "B", 1, 1);
+        ServerEntity b = world.SpawnPlayer(new PeerId(2), "B", raceId: 2, classId: 1); // opposite faction
         world.GrantStarterKit(b);
 
         for (int i = 0; i < 400 && b.IsAlive; i++)

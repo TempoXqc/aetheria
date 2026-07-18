@@ -43,20 +43,26 @@ gold to the killer.
 - [ ] Item-by-item loot windows (currently loot-all on interact) and inventory management (move/drop).
 - [ ] Consumable use (e.g. healing potions) and vendors.
 
-### Étape C — Grouping
+### Étape C — Grouping ✅
 
-- [ ] Party system: invite / accept / leave, group roster, shared context for instances.
+Party system: invite (same faction only) / accept / decline / leave, leader promotion on leave,
+disband at one member, 40-player cap, roster broadcast to members. The party is the entry unit for
+instances and raids.
 
-### Étape D — Instances, raids & world bosses
+### Étape D — Instances, raids & world bosses ✅ (core)
 
-- [ ] **Instanced** content: solo/party **instances that scale** with group size; **raids**
-      instanceable and scaled, requiring **6–40 players**.
-- [ ] **Dungeons are NOT instanced** — they live in the open world, so **PvP is possible** there.
-- [ ] **World raid bosses**: raid-difficulty bosses placed in the open (non-instanced) world; PvP
-      possible around them.
-- [ ] Architecture: a `WorldManager` owning multiple `World` instances (the shared open world plus
-      instanced copies); players are assigned to one; the interest grid already localizes work per
-      instance. This is also the seam toward server meshing (M6).
+A `WorldManager` owns the shared open world plus per-group **instance** worlds (all sharing one
+entity-id allocator so players transfer seamlessly, keeping their identity). Instances are
+**data-driven templates** (spawn lists) whose monsters **scale with group size** (health/damage
+multipliers). **Raids** are instances requiring **6–40 players** (leader-triggered, party required).
+**Dungeons are NOT instanced** — an elite camp with the Goblin King lives in the open world where
+rival factions can fight over it — and **Ashmaw the Devourer**, a raid-difficulty **world boss**,
+roams the open world un-instanced (PvP possible). The **faction rule** landed with it: players cannot
+attack their own camp; opposite factions can.
+
+- [ ] Instance completion/reset logic, loot lockouts, per-boss mechanics.
+- [ ] Entrance objects in the world (currently entered via a request from anywhere).
+- [ ] World-boss respawn timers and announcements.
 
 ### Étape E — Progression (XP-driven, not expansion-style levels) ✅ (core)
 

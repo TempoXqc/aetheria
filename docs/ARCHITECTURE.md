@@ -119,11 +119,18 @@ building it until a single node is actually saturated, but we never design ourse
 
 ## What is intentionally NOT here yet
 
-Grouping, instances/raids and world bosses, persistence (Postgres/Redis), reliable channels,
-client-side prediction and interpolation, snapshot delta-compression, authentication, richer combat
-(multi-ability bars, cast times, threat, pathfinding), item-by-item loot windows / vendors / usable
-consumables, and anti-cheat beyond server authority. The Unity rendering client is also still to come.
-Each has a place in the [ROADMAP](ROADMAP.md); none of them changes the shape above.
+Persistence (Postgres/Redis), reliable channels, client-side prediction and interpolation, snapshot
+delta-compression, authentication, richer combat (multi-ability bars, cast times, threat,
+pathfinding), item-by-item loot windows / vendors / usable consumables, instance lockouts/resets, and
+anti-cheat beyond server authority. The Unity rendering client is also still to come. Each has a place
+in the [ROADMAP](ROADMAP.md); none of them changes the shape above.
+
+Parties, scaled instances/raids, open-world dungeons, and world bosses (Étapes C & D) are in: a
+`WorldManager` runs the open world plus per-group instance worlds sharing one entity-id allocator
+(players transfer worlds keeping their identity), instance monsters scale with group size, raids
+require 6–40 players, and the faction rule (no same-camp attacks; cross-camp PvP) makes the
+non-instanced dungeon camp and the world boss contested. See
+[ADR-0011](adr/0011-parties-instances-world-bosses.md).
 
 Items, full-loot corpses, XP progression, weapon/spell proficiency, unique names, and hardcore
 permadeath + the account bank (Étapes B, E, F) are implemented server-side; see

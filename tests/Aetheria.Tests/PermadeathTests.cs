@@ -12,7 +12,7 @@ public static class PermadeathTests
     {
         var world = new World();
         ServerEntity killer = world.SpawnPlayer(new PeerId(1), "Killer", 1, 1);
-        ServerEntity victim = world.SpawnPlayer(new PeerId(2), "Victim", 1, 1);
+        ServerEntity victim = world.SpawnPlayer(new PeerId(2), "Victim", raceId: 2, classId: 1);
         world.GrantStarterKit(victim);
 
         world.GrantExperience(victim, 300); // level 3 with stat bonuses
@@ -46,7 +46,7 @@ public static class PermadeathTests
     {
         var world = new World();
         ServerEntity killer = world.SpawnPlayer(new PeerId(1), "Reaper", 1, 1);
-        ServerEntity victim = world.SpawnPlayer(new PeerId(2), "Prey", 1, 1);
+        ServerEntity victim = world.SpawnPlayer(new PeerId(2), "Prey", raceId: 2, classId: 1);
         world.GrantStarterKit(victim); // 50 gold + Rusty Sword
 
         for (int i = 0; i < 400 && victim.IsAlive; i++)

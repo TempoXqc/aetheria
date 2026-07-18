@@ -43,7 +43,7 @@ public static class ResourceSkillTests
     {
         var world = new World();
         ServerEntity w = world.SpawnPlayer(new PeerId(1), "Swinger", 1, 1); // Warrior, Slash → line 1
-        ServerEntity t = world.SpawnPlayer(new PeerId(2), "Dummy", 1, 1);
+        ServerEntity t = world.SpawnPlayer(new PeerId(2), "Dummy", raceId: 2, classId: 1);
 
         Assert.Equal(0, w.GetSkill(1));
         world.TryUseAbility(w.Id, w.BasicAbilityId, t.Id);
@@ -58,7 +58,7 @@ public static class ResourceSkillTests
     {
         var world = new World();
         ServerEntity w = world.SpawnPlayer(new PeerId(1), "Master", 1, 1);
-        ServerEntity t = world.SpawnPlayer(new PeerId(2), "Target", 1, 1);
+        ServerEntity t = world.SpawnPlayer(new PeerId(2), "Target", raceId: 2, classId: 1);
 
         world.TryUseAbility(w.Id, w.BasicAbilityId, t.Id); // skill 0 at damage time
         int lowSkillDamage = world.DrainCombatEvents()[0].Damage;

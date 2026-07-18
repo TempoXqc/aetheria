@@ -120,6 +120,40 @@ public sealed class MonsterDefinition
         => new(MaxHealth, MoveSpeed, AttackPower, Defense, AggroRadius);
 }
 
+/// <summary>One monster placement inside an instance template.</summary>
+public sealed class InstanceSpawn
+{
+    public byte MonsterId { get; init; }
+    public float X { get; init; }
+    public float Y { get; init; }
+}
+
+/// <summary>
+/// A data-driven instanced zone template. Instances (and raids) are private copies created per
+/// group; their monsters SCALE with the entering group's size. Raids additionally require a minimum
+/// party size. (Open-world dungeons are deliberately NOT defined here — they are just monster camps
+/// in the shared world, where PvP is possible.)
+/// </summary>
+public sealed class InstanceDefinition
+{
+    public byte Id { get; init; }
+    public string Name { get; init; } = "Instance";
+
+    /// <summary>Raids require a minimum group size and allow a much larger one.</summary>
+    public bool IsRaid { get; init; }
+
+    public int MinPlayers { get; init; } = 1;
+    public int MaxPlayers { get; init; } = 5;
+
+    /// <summary>Extra monster health per player beyond the first (0.5 = +50% each).</summary>
+    public float HealthScalingPerExtraPlayer { get; init; } = 0.5f;
+
+    /// <summary>Extra monster damage per player beyond the first.</summary>
+    public float DamageScalingPerExtraPlayer { get; init; } = 0.25f;
+
+    public InstanceSpawn[] Spawns { get; init; } = [];
+}
+
 /// <summary>A data-driven item: equippable gear (with stat bonuses) or stackable materials/consumables.</summary>
 public sealed class ItemDefinition
 {

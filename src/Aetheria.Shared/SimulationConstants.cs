@@ -55,6 +55,9 @@ public static class SimulationConstants
     /// <summary>Number of item slots in an account bank.</summary>
     public const int BankCapacity = 200;
 
+    /// <summary>Maximum party size (raid cap).</summary>
+    public const int MaxPartySize = 40;
+
     /// <summary>Protocol version — bump on any wire-format change; handshake rejects mismatches.</summary>
-    public const byte ProtocolVersion = 4;
+    public const byte ProtocolVersion = 5;
 }

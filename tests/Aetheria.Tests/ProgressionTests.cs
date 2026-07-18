@@ -78,7 +78,7 @@ public static class ProgressionTests
     {
         var world = new World();
         ServerEntity warrior = world.SpawnPlayer(new PeerId(1), "W", 1, 1); // kit: Slash(1), Whirlwind(20 @ lvl3)
-        ServerEntity target = world.SpawnPlayer(new PeerId(2), "T", 1, 1);
+        ServerEntity target = world.SpawnPlayer(new PeerId(2), "T", raceId: 2, classId: 1); // opposite faction
         warrior.GainResource(100); // ensure rage is not the blocker (Whirlwind costs 25)
 
         warrior.Level = 1;

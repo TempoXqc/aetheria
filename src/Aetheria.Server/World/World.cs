@@ -11,6 +11,17 @@ using Aetheria.Shared.Spatial;
 namespace Aetheria.Server.World;
 
 /// <summary>
+/// Allocates entity ids. Shared across every <see cref="World"/> a server runs (open world +
+/// instances), so an entity keeps its id when it transfers between worlds and ids never collide.
+/// </summary>
+public sealed class EntityIdAllocator
+{
+    private int _next = 1;
+
+    public int Next() => _next++;
+}
+
+/// <summary>
 /// The authoritative game world: the single source of truth for every entity's state, plus the rules
 /// that turn client input into outcomes. Clients propose; the world disposes. All mutation happens
 /// here, on the simulation thread, which is what makes the server trustworthy for PvE and PvP.
@@ -27,11 +38,15 @@ public sealed class World
     private readonly List<CombatEventMessage> _combatEvents = new();
     private readonly List<int> _respawnScratch = new();
     private readonly List<ServerEntity> _aiScratch = new();
+    private readonly EntityIdAllocator _ids;
 
-    private int _nextEntityId = 1;
     private int _spawnCounter;
 
-    public World(GameData? gameData = null) => _gameData = gameData ?? GameData.CreateDefault();
+    public World(GameData? gameData = null, EntityIdAllocator? ids = null)
+    {
+        _gameData = gameData ?? GameData.CreateDefault();
+        _ids = ids ?? new EntityIdAllocator();
+    }
 
     /// <summary>The current simulation tick (increments once per fixed step).</summary>
     public uint Tick { get; private set; }
@@ -50,7 +65,7 @@ public sealed class World
         RaceDefinition race = _gameData.GetRace(raceId);
         StatBlock stats = StatBlock.Combine(cls.ToBaseStats(), race.ToModifiers());
 
-        int id = _nextEntityId++;
+        int id = _ids.Next();
         var entity = new ServerEntity(id, EntityKind.Player, NextSpawnPosition(), stats, cls.BasicAbilityId)
         {
             Owner = owner,
@@ -133,13 +148,25 @@ public sealed class World
         entity.ProgressionResourceBonus = p.ManaBonusForXp(entity.TotalXp); // only mana uses it
     }
 
-    /// <summary>Create a monster entity from a monster definition at a fixed spawn position.</summary>
-    public ServerEntity SpawnMonster(byte monsterId, Vec2 position)
+    /// <summary>
+    /// Create a monster entity from a monster definition at a fixed spawn position, optionally scaled
+    /// (instances multiply monster health/damage by group size).
+    /// </summary>
+    public ServerEntity SpawnMonster(byte monsterId, Vec2 position, float healthMult = 1f, float damageMult = 1f)
     {
         MonsterDefinition def = _gameData.GetMonster(monsterId);
+        StatBlock baseStats = def.ToStats();
+        StatBlock stats = healthMult == 1f && damageMult == 1f
+            ? baseStats
+            : new StatBlock(
+                (int)MathF.Round(baseStats.MaxHealth * healthMult),
+                baseStats.MoveSpeed,
+                (int)MathF.Round(baseStats.AttackPower * damageMult),
+                baseStats.Defense,
+                baseStats.AggroRadius);
 
-        int id = _nextEntityId++;
-        var entity = new ServerEntity(id, EntityKind.Monster, position, def.ToStats(), def.BasicAbilityId)
+        int id = _ids.Next();
+        var entity = new ServerEntity(id, EntityKind.Monster, position, stats, def.BasicAbilityId)
         {
             Name = def.Name,
             MonsterId = def.Id,
@@ -147,6 +174,35 @@ public sealed class World
 
         AddAlive(entity);
         return entity;
+    }
+
+    /// <summary>
+    /// Pull an entity out of this world (for transfer into another world). Returns null if absent.
+    /// The entity keeps its id — ids come from an allocator shared across worlds.
+    /// </summary>
+    public ServerEntity? RemoveForTransfer(int entityId)
+    {
+        if (!_entities.Remove(entityId, out ServerEntity? entity))
+        {
+            return null;
+        }
+
+        _grid.Remove(entityId);
+        return entity;
+    }
+
+    /// <summary>Insert a transferred entity into this world at the given position (also its new respawn point).</summary>
+    public void AdoptEntity(ServerEntity entity, Vec2 position)
+    {
+        entity.Position = position;
+        entity.SpawnPosition = position;
+        entity.MoveIntent = Vec2.Zero;
+        entity.AiTargetId = null;
+        _entities[entity.Id] = entity;
+        if (entity.IsAlive)
+        {
+            _grid.InsertOrUpdate(entity.Id, position);
+        }
     }
 
     /// <summary>Remove an entity from the world and the interest grid.</summary>
@@ -189,6 +245,14 @@ public sealed class World
             !_entities.TryGetValue(targetId, out ServerEntity? target) || target.IsDead ||
             attackerId == targetId ||
             target.Kind == EntityKind.Corpse) // corpses are looted, not attacked
+        {
+            return false;
+        }
+
+        // Faction rule: players cannot attack players of their own camp. Opposite factions can —
+        // that is open-world PvP (and why non-instanced dungeons/world bosses are contested).
+        if (attacker.Kind == EntityKind.Player && target.Kind == EntityKind.Player &&
+            attacker.Faction == target.Faction)
         {
             return false;
         }
@@ -513,7 +577,7 @@ public sealed class World
         dead.EquippedArmorId = 0;
         RecomputeEquipment(dead); // the respawned body has no gear until it loots/replaces it
 
-        int id = _nextEntityId++;
+        int id = _ids.Next();
         var corpse = new ServerEntity(id, EntityKind.Corpse, dead.Position, new StatBlock(1, 0f, 0, 0, 0f), 0)
         {
             Name = $"{dead.Name}'s Corpse",

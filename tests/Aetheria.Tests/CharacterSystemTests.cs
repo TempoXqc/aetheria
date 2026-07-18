@@ -60,7 +60,7 @@ public static class CharacterSystemTests
     {
         var world = new World();
         ServerEntity mage = world.SpawnPlayer(new PeerId(1), "M", 1, 2); // Human Mage, Firebolt cost 20
-        ServerEntity target = world.SpawnPlayer(new PeerId(2), "T", 1, 1);
+        ServerEntity target = world.SpawnPlayer(new PeerId(2), "T", raceId: 2, classId: 1); // opposite faction
 
         int startMana = (int)mage.CurrentResource;
         Assert.True(world.TryUseAbility(mage.Id, mage.BasicAbilityId, target.Id));
@@ -101,7 +101,7 @@ public static class CharacterSystemTests
     {
         var world = new World();
         ServerEntity warrior = world.SpawnPlayer(new PeerId(1), "W", 1, 1); // Rage starts at 0
-        ServerEntity target = world.SpawnPlayer(new PeerId(2), "T", 1, 1);
+        ServerEntity target = world.SpawnPlayer(new PeerId(2), "T", raceId: 2, classId: 1); // opposite faction
 
         Assert.Equal(0, (int)warrior.CurrentResource);
         world.TryUseAbility(warrior.Id, warrior.BasicAbilityId, target.Id); // Slash, cost 0
@@ -113,7 +113,7 @@ public static class CharacterSystemTests
     {
         var world = new World();
         ServerEntity human = world.SpawnPlayer(new PeerId(1), "H", 1, 1); // Human Warrior, racial = Second Wind
-        ServerEntity attacker = world.SpawnPlayer(new PeerId(2), "A", 1, 1);
+        ServerEntity attacker = world.SpawnPlayer(new PeerId(2), "A", raceId: 2, classId: 1); // Orc attacker (opposite faction)
 
         world.TryUseAbility(attacker.Id, attacker.BasicAbilityId, human.Id); // damage the human
         int damagedHp = human.Health;

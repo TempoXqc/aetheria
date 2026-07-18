@@ -1,4 +1,5 @@
 using Aetheria.Server.Items;
+using Aetheria.Server.Social;
 using Aetheria.Server.World;
 using Aetheria.Shared;
 using Aetheria.Shared.Data;
@@ -10,9 +11,10 @@ using Aetheria.Shared.Protocol;
 namespace Aetheria.Server;
 
 /// <summary>
-/// Glue between the network transport and the authoritative <see cref="World.World"/>. It owns the
-/// per-peer session state, runs the handshake, validates and dispatches inbound messages, and each
-/// tick broadcasts area-of-interest snapshots and combat events to the relevant players.
+/// Glue between the network transport and the simulation. It owns per-peer session state, runs the
+/// handshake, validates and dispatches inbound messages, and each tick advances every running world
+/// (the shared open world plus per-group instances) and broadcasts area-of-interest snapshots and
+/// combat events to the players in each world.
 ///
 /// Everything here runs on the single simulation thread. Inbound bytes are treated as hostile:
 /// malformed packets are dropped, never trusted, never allowed to throw past the dispatch loop.
@@ -20,7 +22,8 @@ namespace Aetheria.Server;
 public sealed class GameServer
 {
     private readonly IServerTransport _transport;
-    private readonly World.World _world;
+    private readonly WorldManager _worlds;
+    private readonly PartyManager _parties = new(SimulationConstants.MaxPartySize);
     private readonly Dictionary<PeerId, PlayerSession> _sessions = new();
     private readonly PacketWriter _writer = new();
     private readonly Action<string> _log;
@@ -37,13 +40,16 @@ public sealed class GameServer
     public GameServer(IServerTransport transport, GameData? gameData = null, Action<string>? log = null)
     {
         _transport = transport;
-        _world = new World.World(gameData);
+        _worlds = new WorldManager(gameData);
         _log = log ?? (_ => { });
 
-        SpawnStartingMonsters();
+        SpawnOpenWorldContent();
     }
 
-    public World.World World => _world;
+    /// <summary>The shared open world (kept as `World` for compatibility and tests).</summary>
+    public World.World World => _worlds.OpenWorld;
+
+    public WorldManager Worlds => _worlds;
 
     public int PlayerCount => _sessions.Count(s => s.Value.HandshakeComplete);
 
@@ -55,7 +61,7 @@ public sealed class GameServer
             switch (evt.Kind)
             {
                 case TransportEventKind.PeerConnected:
-                    _sessions[evt.Peer] = new PlayerSession();
+                    _sessions[evt.Peer] = new PlayerSession(_worlds.OpenWorld);
                     break;
 
                 case TransportEventKind.PacketReceived:
@@ -69,26 +75,46 @@ public sealed class GameServer
         }
     }
 
-    /// <summary>Advance the world, then send snapshots and combat events to the relevant players.</summary>
+    /// <summary>Advance every world, then send snapshots and combat events per world.</summary>
     public void Tick(float dt)
     {
-        _world.Step(dt);
+        foreach (World.World world in _worlds.AllWorlds.ToArray())
+        {
+            world.Step(dt);
+        }
+
         BroadcastSnapshots();
-        BroadcastCombatEvents(_world.DrainCombatEvents());
+
+        foreach (World.World world in _worlds.AllWorlds.ToArray())
+        {
+            BroadcastCombatEvents(world, world.DrainCombatEvents());
+        }
 
         // Self status (progression + inventory) changes rarely; send it a few times a second.
-        if (_world.Tick % 10 == 0)
+        if (_worlds.OpenWorld.Tick % 10 == 0)
         {
             BroadcastPlayerState();
         }
     }
 
-    private void SpawnStartingMonsters()
+    private void SpawnOpenWorldContent()
     {
-        // A small starter pack near the origin so a freshly connected player can find a fight.
-        _world.SpawnMonster(monsterId: 1, new Vec2(10f, 6f));   // Goblin Grunt
-        _world.SpawnMonster(monsterId: 1, new Vec2(12f, 9f));   // Goblin Grunt
-        _world.SpawnMonster(monsterId: 2, new Vec2(-8f, 10f));  // Dire Wolf
+        World.World open = _worlds.OpenWorld;
+
+        // Starter camp near the origin so a freshly connected player can find a fight.
+        open.SpawnMonster(monsterId: 1, new Vec2(10f, 6f));
+        open.SpawnMonster(monsterId: 1, new Vec2(12f, 9f));
+        open.SpawnMonster(monsterId: 2, new Vec2(-8f, 10f));
+
+        // Open-world DUNGEON: a non-instanced elite camp. It lives in the shared world, so rival
+        // factions can meet — and fight — over it.
+        open.SpawnMonster(monsterId: 1, new Vec2(38f, 38f));
+        open.SpawnMonster(monsterId: 1, new Vec2(42f, 40f));
+        open.SpawnMonster(monsterId: 2, new Vec2(40f, 44f));
+        open.SpawnMonster(monsterId: 3, new Vec2(45f, 45f)); // Goblin King (dungeon boss, contested)
+
+        // WORLD RAID BOSS: raid-difficulty, in the open world, never instanced — PvP possible.
+        open.SpawnMonster(monsterId: 4, new Vec2(80f, 80f)); // Ashmaw the Devourer
     }
 
     private void HandlePacket(PeerId peer, byte[] payload)
@@ -113,31 +139,58 @@ public sealed class GameServer
                 return; // Nothing else is valid before the handshake completes.
             }
 
+            World.World world = session.CurrentWorld;
+
             switch (type)
             {
                 case MessageType.InputCommand:
                     InputCommand input = InputCommand.Read(ref reader);
-                    _world.ApplyInput(session.EntityId, input.Sequence, input.MoveDirection);
+                    world.ApplyInput(session.EntityId, input.Sequence, input.MoveDirection);
                     break;
 
                 case MessageType.UseAbility:
                     UseAbility ability = UseAbility.Read(ref reader);
-                    _world.TryUseAbility(session.EntityId, ability.AbilityId, ability.TargetEntityId);
+                    world.TryUseAbility(session.EntityId, ability.AbilityId, ability.TargetEntityId);
                     break;
 
                 case MessageType.UseRacial:
                     _ = UseRacial.Read(ref reader);
-                    _world.TryUseRacial(session.EntityId);
+                    world.TryUseRacial(session.EntityId);
                     break;
 
                 case MessageType.LootCorpse:
                     LootCorpse loot = LootCorpse.Read(ref reader);
-                    _world.TryLootCorpse(session.EntityId, loot.CorpseEntityId);
+                    world.TryLootCorpse(session.EntityId, loot.CorpseEntityId);
                     break;
 
                 case MessageType.BankTransaction:
                     BankTransaction tx = BankTransaction.Read(ref reader);
                     HandleBankTransaction(peer, session, tx);
+                    break;
+
+                case MessageType.PartyInvite:
+                    PartyInvite invite = PartyInvite.Read(ref reader);
+                    HandlePartyInvite(peer, session, invite.TargetEntityId);
+                    break;
+
+                case MessageType.PartyRespond:
+                    PartyRespond respond = PartyRespond.Read(ref reader);
+                    HandlePartyRespond(peer, respond.Accept);
+                    break;
+
+                case MessageType.PartyLeave:
+                    _ = PartyLeave.Read(ref reader);
+                    HandlePartyLeave(peer);
+                    break;
+
+                case MessageType.EnterInstance:
+                    EnterInstance enter = EnterInstance.Read(ref reader);
+                    HandleEnterInstance(peer, session, enter.InstanceDefId);
+                    break;
+
+                case MessageType.LeaveInstance:
+                    _ = LeaveInstance.Read(ref reader);
+                    HandleLeaveInstance(peer, session, notify: true);
                     break;
 
                 case MessageType.Ping:
@@ -162,6 +215,7 @@ public sealed class GameServer
     private void HandleConnectRequest(PeerId peer, PlayerSession session, ref PacketReader reader)
     {
         ConnectRequest request = ConnectRequest.Read(ref reader);
+        GameData data = _worlds.GameData;
 
         if (request.ProtocolVersion != SimulationConstants.ProtocolVersion)
         {
@@ -172,11 +226,10 @@ public sealed class GameServer
         }
 
         // Enforce the balance matrix: a race may only play its allowed classes.
-        if (!_world.GameData.IsClassAllowedForRace(request.RaceId, request.ClassId))
+        if (!data.IsClassAllowedForRace(request.RaceId, request.ClassId))
         {
-            string raceName = _world.GameData.GetRace(request.RaceId).Name;
-            string className = _world.GameData.GetClass(request.ClassId).Name;
-            Send(peer, new ConnectRejected($"{raceName} cannot play the {className} class."));
+            Send(peer, new ConnectRejected(
+                $"{data.GetRace(request.RaceId).Name} cannot play the {data.GetClass(request.ClassId).Name} class."));
             _transport.Kick(peer);
             return;
         }
@@ -197,30 +250,347 @@ public sealed class GameServer
             return;
         }
 
-        ServerEntity entity = _world.SpawnPlayer(peer, name, request.RaceId, request.ClassId, request.Gender);
-        _world.GrantStarterKit(entity);
+        ServerEntity entity = _worlds.OpenWorld.SpawnPlayer(peer, name, request.RaceId, request.ClassId, request.Gender);
+        _worlds.OpenWorld.GrantStarterKit(entity);
         session.EntityId = entity.Id;
         session.Name = entity.Name;
         session.AccountId = accountId;
+        session.CurrentWorld = _worlds.OpenWorld;
         session.HandshakeComplete = true;
 
         Send(peer, new ConnectAccepted(entity.Id, (byte)SimulationConstants.TickRate));
         SendBankState(peer, accountId); // the account bank survives permadeath and is shown on join
 
-        string race = _world.GameData.GetRace(entity.RaceId).Name;
-        string cls = _world.GameData.GetClass(entity.ClassId).Name;
-        _log($"'{session.Name}' joined as {entity.Faction} {race} {cls} ({entity.Gender}, " +
-             $"entity {entity.Id}, {peer}). Players online: {PlayerCount}.");
+        _log($"'{session.Name}' joined as {entity.Faction} {data.GetRace(entity.RaceId).Name} " +
+             $"{data.GetClass(entity.ClassId).Name} ({entity.Gender}, entity {entity.Id}, {peer}). " +
+             $"Players online: {PlayerCount}.");
     }
 
     private void HandleDisconnect(PeerId peer)
     {
-        if (_sessions.Remove(peer, out PlayerSession? session) && session.HandshakeComplete)
+        if (!_sessions.Remove(peer, out PlayerSession? session) || !session.HandshakeComplete)
         {
-            _activeNames.Remove(session.Name); // free the name for reuse
-            _world.Despawn(session.EntityId);
-            _log($"'{session.Name}' left (entity {session.EntityId}). Players online: {PlayerCount}.");
+            return;
         }
+
+        Party? left = _parties.Leave(peer.Value);
+        if (left is not null)
+        {
+            BroadcastPartyState(left);
+        }
+
+        _activeNames.Remove(session.Name); // free the name for reuse
+        session.CurrentWorld.Despawn(session.EntityId);
+        _worlds.DestroyInstanceIfEmpty(session.CurrentWorld);
+        _log($"'{session.Name}' left (entity {session.EntityId}). Players online: {PlayerCount}.");
+    }
+
+    // ------------------------------------------------------------------ Party
+
+    private void HandlePartyInvite(PeerId inviterPeer, PlayerSession inviterSession, int targetEntityId)
+    {
+        (PeerId targetPeer, PlayerSession targetSession)? target = FindSessionByEntity(targetEntityId);
+        if (target is null)
+        {
+            return;
+        }
+
+        // Same-camp only: parties cannot span factions.
+        if (!TryGetEntity(inviterSession, out ServerEntity? inviter) ||
+            !TryGetEntity(target.Value.targetSession, out ServerEntity? invitee) ||
+            inviter!.Faction != invitee!.Faction)
+        {
+            return;
+        }
+
+        if (_parties.Invite(inviterPeer.Value, target.Value.targetPeer.Value, out _))
+        {
+            Send(target.Value.targetPeer, new PartyInviteNotice(inviterSession.Name));
+        }
+    }
+
+    private void HandlePartyRespond(PeerId peer, bool accept)
+    {
+        if (!accept)
+        {
+            _parties.Decline(peer.Value);
+            return;
+        }
+
+        Party? party = _parties.Accept(peer.Value);
+        if (party is not null)
+        {
+            BroadcastPartyState(party);
+        }
+    }
+
+    private void HandlePartyLeave(PeerId peer)
+    {
+        Party? party = _parties.Leave(peer.Value);
+        if (party is not null)
+        {
+            BroadcastPartyState(party);
+            SendPartyStateTo(peer); // the leaver sees an empty roster
+        }
+    }
+
+    /// <summary>Send the roster to every current member of the party (leader first).</summary>
+    private void BroadcastPartyState(Party party)
+    {
+        foreach (int member in party.Members.ToArray())
+        {
+            SendPartyStateTo(new PeerId(member));
+        }
+    }
+
+    private void SendPartyStateTo(PeerId peer)
+    {
+        if (!_sessions.ContainsKey(peer))
+        {
+            return;
+        }
+
+        Party? party = _parties.GetParty(peer.Value);
+        if (party is null)
+        {
+            Send(peer, new PartyState(string.Empty, []));
+            return;
+        }
+
+        string leaderName = _sessions.TryGetValue(new PeerId(party.Leader), out PlayerSession? ls)
+            ? ls.Name : "?";
+        var names = new List<string>(party.Count);
+        foreach (int member in party.Members)
+        {
+            if (_sessions.TryGetValue(new PeerId(member), out PlayerSession? ms))
+            {
+                names.Add(ms.Name);
+            }
+        }
+
+        Send(peer, new PartyState(leaderName, names));
+    }
+
+    // -------------------------------------------------------------- Instances
+
+    private void HandleEnterInstance(PeerId peer, PlayerSession session, byte instanceDefId)
+    {
+        if (!_worlds.GameData.TryGetInstance(instanceDefId, out InstanceDefinition def))
+        {
+            Send(peer, new InstanceResult(false, instanceDefId, "Unknown instance."));
+            return;
+        }
+
+        if (!ReferenceEquals(session.CurrentWorld, _worlds.OpenWorld))
+        {
+            Send(peer, new InstanceResult(false, instanceDefId, "Leave your current instance first."));
+            return;
+        }
+
+        // The entering group: the sender's whole party (leader-triggered), or just the sender solo.
+        Party? party = _parties.GetParty(peer.Value);
+        List<(PeerId peerId, PlayerSession session)> group = new();
+        if (party is null)
+        {
+            group.Add((peer, session));
+        }
+        else
+        {
+            if (party.Leader != peer.Value)
+            {
+                Send(peer, new InstanceResult(false, instanceDefId, "Only the party leader can start an instance."));
+                return;
+            }
+
+            foreach (int member in party.Members)
+            {
+                var memberPeer = new PeerId(member);
+                if (_sessions.TryGetValue(memberPeer, out PlayerSession? memberSession) &&
+                    memberSession.HandshakeComplete &&
+                    ReferenceEquals(memberSession.CurrentWorld, _worlds.OpenWorld))
+                {
+                    group.Add((memberPeer, memberSession));
+                }
+            }
+        }
+
+        if (!WorldManager.CanEnter(def, group.Count, out string reason))
+        {
+            Send(peer, new InstanceResult(false, instanceDefId, reason));
+            return;
+        }
+
+        World.World instance = _worlds.CreateInstance(def, group.Count);
+
+        int slot = 0;
+        foreach ((PeerId memberPeer, PlayerSession memberSession) in group)
+        {
+            Vec2 entry = new(slot * 2f, 0f); // spread the group across the entrance
+            slot++;
+            if (WorldManager.TransferPlayer(memberSession.CurrentWorld, instance, memberSession.EntityId, entry))
+            {
+                memberSession.CurrentWorld = instance;
+                Send(memberPeer, new InstanceResult(true, instanceDefId,
+                    $"Entered {def.Name} ({group.Count} player(s); monsters scaled accordingly)."));
+            }
+        }
+
+        _log($"Instance '{def.Name}' created for {group.Count} player(s).");
+    }
+
+    private void HandleLeaveInstance(PeerId peer, PlayerSession session, bool notify)
+    {
+        if (ReferenceEquals(session.CurrentWorld, _worlds.OpenWorld))
+        {
+            if (notify)
+            {
+                Send(peer, new InstanceResult(false, 0, "You are not in an instance."));
+            }
+
+            return;
+        }
+
+        World.World instance = session.CurrentWorld;
+        if (WorldManager.TransferPlayer(instance, _worlds.OpenWorld, session.EntityId, Vec2.Zero))
+        {
+            session.CurrentWorld = _worlds.OpenWorld;
+            _worlds.DestroyInstanceIfEmpty(instance);
+            if (notify)
+            {
+                Send(peer, new InstanceResult(true, 0, "Returned to the open world."));
+            }
+        }
+    }
+
+    // ------------------------------------------------------------------ Bank
+
+    private void HandleBankTransaction(PeerId peer, PlayerSession session, BankTransaction tx)
+    {
+        if (!TryGetEntity(session, out ServerEntity? self) || self!.IsDead)
+        {
+            return;
+        }
+
+        Inventory bank = GetOrCreateBank(session.AccountId);
+        Inventory inv = self.Inventory;
+        GameData data = _worlds.GameData;
+
+        switch (tx.Op)
+        {
+            case BankOp.DepositGold: BankService.DepositGold(inv, bank, tx.Amount); break;
+            case BankOp.WithdrawGold: BankService.WithdrawGold(inv, bank, tx.Amount); break;
+            case BankOp.DepositItem: BankService.DepositItem(inv, bank, tx.ItemId, tx.Amount, data); break;
+            case BankOp.WithdrawItem: BankService.WithdrawItem(inv, bank, tx.ItemId, tx.Amount, data); break;
+            default: return;
+        }
+
+        SendBankState(peer, session.AccountId);
+        Send(peer, new InventoryState(self.EquippedWeaponId, self.EquippedArmorId, self.Inventory.Stacks));
+    }
+
+    private Inventory GetOrCreateBank(string accountId)
+    {
+        if (!_banks.TryGetValue(accountId, out Inventory? bank))
+        {
+            bank = new Inventory(SimulationConstants.BankCapacity);
+            _banks[accountId] = bank;
+        }
+
+        return bank;
+    }
+
+    private void SendBankState(PeerId peer, string accountId)
+    {
+        Inventory bank = GetOrCreateBank(accountId);
+        Send(peer, new BankState(bank.Gold, bank.Stacks));
+    }
+
+    // ------------------------------------------------------------- Broadcast
+
+    private void BroadcastSnapshots()
+    {
+        foreach ((PeerId peer, PlayerSession session) in _sessions)
+        {
+            if (!session.HandshakeComplete || !TryGetEntity(session, out ServerEntity? self))
+            {
+                continue;
+            }
+
+            // A dead player still gets snapshots centred on where they fell, so they can watch the
+            // world (and their killer) while waiting to respawn.
+            List<EntitySnapshot> visible = session.CurrentWorld.BuildAreaSnapshot(self!.Position);
+            Send(peer, new SnapshotMessage(session.CurrentWorld.Tick, visible));
+        }
+    }
+
+    private void BroadcastCombatEvents(World.World world, IReadOnlyList<CombatEventMessage> events)
+    {
+        if (events.Count == 0)
+        {
+            return;
+        }
+
+        float aoiSq = SimulationConstants.AreaOfInterestRadius * SimulationConstants.AreaOfInterestRadius;
+
+        foreach (CombatEventMessage evt in events)
+        {
+            bool haveAttacker = world.Entities.TryGetValue(evt.AttackerId, out ServerEntity? attacker);
+            bool haveTarget = world.Entities.TryGetValue(evt.TargetId, out ServerEntity? target);
+
+            foreach ((PeerId peer, PlayerSession session) in _sessions)
+            {
+                if (!session.HandshakeComplete ||
+                    !ReferenceEquals(session.CurrentWorld, world) || // combat events stay world-local
+                    !TryGetEntity(session, out ServerEntity? self))
+                {
+                    continue;
+                }
+
+                bool near =
+                    (haveAttacker && Vec2.DistanceSquared(self!.Position, attacker!.Position) <= aoiSq) ||
+                    (haveTarget && Vec2.DistanceSquared(self!.Position, target!.Position) <= aoiSq);
+
+                if (near)
+                {
+                    Send(peer, evt);
+                }
+            }
+        }
+    }
+
+    private void BroadcastPlayerState()
+    {
+        ProgressionConfig progression = _worlds.GameData.Progression;
+
+        foreach ((PeerId peer, PlayerSession session) in _sessions)
+        {
+            if (!session.HandshakeComplete || !TryGetEntity(session, out ServerEntity? self))
+            {
+                continue;
+            }
+
+            Send(peer, new PlayerStatus(
+                self!.Level, self.TotalXp, progression.XpForNextLevel(self.TotalXp), self.Inventory.Gold));
+            Send(peer, new InventoryState(self.EquippedWeaponId, self.EquippedArmorId, self.Inventory.Stacks));
+        }
+    }
+
+    // --------------------------------------------------------------- Helpers
+
+    private bool TryGetEntity(PlayerSession session, out ServerEntity? entity)
+        => session.CurrentWorld.Entities.TryGetValue(session.EntityId, out entity);
+
+    private (PeerId targetPeer, PlayerSession targetSession)? FindSessionByEntity(int entityId)
+    {
+        foreach ((PeerId peer, PlayerSession session) in _sessions)
+        {
+            if (session.HandshakeComplete && session.EntityId == entityId)
+            {
+                return (peer, session);
+            }
+        }
+
+        return null;
     }
 
     /// <summary>
@@ -257,115 +627,6 @@ public sealed class GameServer
         return true;
     }
 
-    private void BroadcastSnapshots()
-    {
-        foreach ((PeerId peer, PlayerSession session) in _sessions)
-        {
-            if (!session.HandshakeComplete ||
-                !_world.Entities.TryGetValue(session.EntityId, out ServerEntity? self))
-            {
-                continue;
-            }
-
-            // A dead player still gets snapshots centred on where they fell, so they can watch the
-            // world (and their killer) while waiting to respawn.
-            List<EntitySnapshot> visible = _world.BuildAreaSnapshot(self.Position);
-            Send(peer, new SnapshotMessage(_world.Tick, visible));
-        }
-    }
-
-    private void BroadcastCombatEvents(IReadOnlyList<CombatEventMessage> events)
-    {
-        if (events.Count == 0)
-        {
-            return;
-        }
-
-        float aoiSq = SimulationConstants.AreaOfInterestRadius * SimulationConstants.AreaOfInterestRadius;
-
-        foreach (CombatEventMessage evt in events)
-        {
-            bool haveAttacker = _world.Entities.TryGetValue(evt.AttackerId, out ServerEntity? attacker);
-            bool haveTarget = _world.Entities.TryGetValue(evt.TargetId, out ServerEntity? target);
-
-            foreach ((PeerId peer, PlayerSession session) in _sessions)
-            {
-                if (!session.HandshakeComplete ||
-                    !_world.Entities.TryGetValue(session.EntityId, out ServerEntity? self))
-                {
-                    continue;
-                }
-
-                bool near =
-                    (haveAttacker && Vec2.DistanceSquared(self.Position, attacker!.Position) <= aoiSq) ||
-                    (haveTarget && Vec2.DistanceSquared(self.Position, target!.Position) <= aoiSq);
-
-                if (near)
-                {
-                    Send(peer, evt);
-                }
-            }
-        }
-    }
-
-    private void HandleBankTransaction(PeerId peer, PlayerSession session, BankTransaction tx)
-    {
-        if (!_world.Entities.TryGetValue(session.EntityId, out ServerEntity? self) || self.IsDead)
-        {
-            return;
-        }
-
-        Inventory bank = GetOrCreateBank(session.AccountId);
-        Inventory inv = self.Inventory;
-
-        switch (tx.Op)
-        {
-            case BankOp.DepositGold: BankService.DepositGold(inv, bank, tx.Amount); break;
-            case BankOp.WithdrawGold: BankService.WithdrawGold(inv, bank, tx.Amount); break;
-            case BankOp.DepositItem: BankService.DepositItem(inv, bank, tx.ItemId, tx.Amount, _world.GameData); break;
-            case BankOp.WithdrawItem: BankService.WithdrawItem(inv, bank, tx.ItemId, tx.Amount, _world.GameData); break;
-            default: return;
-        }
-
-        SendBankState(peer, session.AccountId);
-        Send(peer, new InventoryState(self.EquippedWeaponId, self.EquippedArmorId, self.Inventory.Stacks));
-    }
-
-    private Inventory GetOrCreateBank(string accountId)
-    {
-        if (!_banks.TryGetValue(accountId, out Inventory? bank))
-        {
-            bank = new Inventory(SimulationConstants.BankCapacity);
-            _banks[accountId] = bank;
-        }
-
-        return bank;
-    }
-
-    private void SendBankState(PeerId peer, string accountId)
-    {
-        Inventory bank = GetOrCreateBank(accountId);
-        Send(peer, new BankState(bank.Gold, bank.Stacks));
-    }
-
-    private void BroadcastPlayerState()
-    {
-        ProgressionConfig progression = _world.GameData.Progression;
-
-        foreach ((PeerId peer, PlayerSession session) in _sessions)
-        {
-            if (!session.HandshakeComplete ||
-                !_world.Entities.TryGetValue(session.EntityId, out ServerEntity? self))
-            {
-                continue;
-            }
-
-            Send(peer, new PlayerStatus(
-                self.Level, self.TotalXp, progression.XpForNextLevel(self.TotalXp), self.Inventory.Gold));
-            Send(peer, new InventoryState(self.EquippedWeaponId, self.EquippedArmorId, self.Inventory.Stacks));
-        }
-    }
-
     private void Send(PeerId peer, ConnectAccepted msg) => SendWith(peer, msg.Write);
     private void Send(PeerId peer, ConnectRejected msg) => SendWith(peer, msg.Write);
     private void Send(PeerId peer, Pong msg) => SendWith(peer, msg.Write);
@@ -374,6 +635,9 @@ public sealed class GameServer
     private void Send(PeerId peer, PlayerStatus msg) => SendWith(peer, msg.Write);
     private void Send(PeerId peer, InventoryState msg) => SendWith(peer, msg.Write);
     private void Send(PeerId peer, BankState msg) => SendWith(peer, msg.Write);
+    private void Send(PeerId peer, PartyState msg) => SendWith(peer, msg.Write);
+    private void Send(PeerId peer, PartyInviteNotice msg) => SendWith(peer, msg.Write);
+    private void Send(PeerId peer, InstanceResult msg) => SendWith(peer, msg.Write);
 
     private void SendWith(PeerId peer, Action<PacketWriter> write)
     {
@@ -384,9 +648,14 @@ public sealed class GameServer
 
     private sealed class PlayerSession
     {
+        public PlayerSession(World.World startWorld) => CurrentWorld = startWorld;
+
         public int EntityId { get; set; }
         public string Name { get; set; } = string.Empty;
         public string AccountId { get; set; } = string.Empty;
         public bool HandshakeComplete { get; set; }
+
+        /// <summary>The world this player currently inhabits (open world or an instance).</summary>
+        public World.World CurrentWorld { get; set; }
     }
 }

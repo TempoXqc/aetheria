@@ -12,8 +12,11 @@ test headless. Le client de rendu Unity viendra plus tard (voir la [ROADMAP](doc
 > d'arme/sort a une **maîtrise qui monte à l'usage** et le rend plus puissant (façon WoW d'origine).
 > Les **noms de personnage sont uniques par serveur** (les deux factions). **Hardcore** : à la mort le
 > personnage **repart de zéro** (XP/niveau/compétences remis à zéro, équipement lâché sur le cadavre),
-> mais une **banque de compte persistante** garde or et objets d'une vie à l'autre. Vérifié : un joueur
-> dépose 40 or, monte niveau 2, meurt (niveau → 1, or porté perdu), et sa banque reste à 40.
+> mais une **banque de compte persistante** garde or et objets d'une vie à l'autre. **Groupes** (invite
+> même faction, chef, cap 40) et **instances** : donjons instanciés **scalés selon la taille du
+> groupe**, **raids 6–40 joueurs** (instanciés, scalés), tandis que les **donjons du monde ouvert ne
+> sont PAS instanciés** (camp du Roi Gobelin) et qu'un **boss de raid mondial** (Ashmaw) rôde en monde
+> ouvert — **PvP possible** : on ne peut pas attaquer son propre camp, mais la faction adverse oui.
 >
 > Le socle (système de personnage) : un serveur autoritaire à pas de temps fixe
 > simule un monde continu ; les clients se connectent en UDP, choisissent **faction / race / classe /
@@ -86,6 +89,9 @@ monstres réapparaître après leur délai de respawn.
 | `--attack`  | Chasse et attaque le monstre visible le plus proche| (désactivé) |
 | `--racial`  | Utilise la capacité raciale (le serveur gère le CD)| (désactivé) |
 | `--loot`    | Loote le cadavre visible le plus proche (à portée) | (désactivé) |
+| `--account` | Identifiant de compte (banque persistante)         | = nom       |
+| `--deposit` | Dépose N or en banque après connexion              | `0`         |
+| `--instance`| Entre dans l'instance N (1=donjon, 2=raid 6-40)    | `0`         |
 
 Rappel matrice classe/race : Humain→Guerrier/Mage · Nain→Guerrier/Rôdeur · Orc→Guerrier/Rôdeur ·
 Elfe→Mage/Rôdeur. Une combinaison interdite est refusée à la connexion.
