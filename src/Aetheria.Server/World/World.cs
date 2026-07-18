@@ -38,6 +38,10 @@ public sealed class World
     private readonly List<CombatEventMessage> _combatEvents = new();
     private readonly List<int> _respawnScratch = new();
     private readonly List<ServerEntity> _aiScratch = new();
+
+    // Active duels: entity id -> (opponent id, to-death?). Both directions are stored.
+    private readonly Dictionary<int, (int opponentId, bool toDeath)> _duels = new();
+    private readonly List<(int winnerId, int loserId, bool toDeath)> _duelEndings = new();
     private readonly EntityIdAllocator _ids;
 
     private int _spawnCounter;
@@ -288,9 +292,9 @@ public sealed class World
         }
 
         // Faction rule: players cannot attack players of their own camp. Opposite factions can —
-        // that is open-world PvP (and why non-instanced dungeons/world bosses are contested).
+        // that is open-world PvP. Exception: an active DUEL pair may always fight each other.
         if (attacker.Kind == EntityKind.Player && target.Kind == EntityKind.Player &&
-            attacker.Faction == target.Faction)
+            attacker.Faction == target.Faction && !IsDuelPair(attackerId, targetId))
         {
             return false;
         }
@@ -556,6 +560,22 @@ public sealed class World
         int raw = (int)MathF.Round((ability.BaseDamage + attacker.EffectiveAttackPower) * skillMult);
         int damage = System.Math.Max(1, raw - target.EffectiveDefense);
 
+        // FRIENDLY duel: the killing blow is pulled — the loser survives at 1 hp and the duel ends.
+        if (_duels.TryGetValue(attacker.Id, out (int opponentId, bool toDeath) duel) &&
+            duel.opponentId == target.Id && !duel.toDeath && damage >= target.Health)
+        {
+            damage = System.Math.Max(0, target.Health - 1);
+            if (damage > 0)
+            {
+                target.TakeDamage(damage, Tick);
+            }
+
+            _combatEvents.Add(new CombatEventMessage(
+                attacker.Id, target.Id, ability.Id, damage, target.Health, false));
+            EndDuel(attacker.Id, winnerId: attacker.Id);
+            return;
+        }
+
         target.TakeDamage(damage, Tick);
         attacker.OnDealtDamage(Tick); // rage generation + combat timestamp (Warriors)
         target.OnTookDamage(Tick);
@@ -578,6 +598,12 @@ public sealed class World
 
     private void OnEntityKilled(ServerEntity killer, ServerEntity victim)
     {
+        // A duel TO THE DEATH ends the hardcore way: the loser's death is entirely real.
+        if (victim.Kind == EntityKind.Player && _duels.ContainsKey(victim.Id))
+        {
+            EndDuel(victim.Id, winnerId: killer.Id);
+        }
+
         if (victim.Kind == EntityKind.Player)
         {
             // Full loot: the player's carried inventory, equipped gear, and gold drop as a lootable
@@ -637,6 +663,106 @@ public sealed class World
         {
             loot.TryAdd(itemId, 1, stackable: false, maxStack: 1);
         }
+    }
+
+    // ------------------------------------------------------------------ Duels
+
+    /// <summary>True if these two entities are currently dueling each other.</summary>
+    public bool IsDuelPair(int a, int b)
+        => _duels.TryGetValue(a, out (int opponentId, bool toDeath) duel) && duel.opponentId == b;
+
+    /// <summary>True if this entity is in any duel.</summary>
+    public bool IsDueling(int entityId) => _duels.ContainsKey(entityId);
+
+    /// <summary>Begin a duel between two living players (both must be duel-free).</summary>
+    public bool StartDuel(int a, int b, bool toDeath)
+    {
+        if (a == b || _duels.ContainsKey(a) || _duels.ContainsKey(b) ||
+            !_entities.TryGetValue(a, out ServerEntity? ea) || ea.IsDead || ea.Kind != EntityKind.Player ||
+            !_entities.TryGetValue(b, out ServerEntity? eb) || eb.IsDead || eb.Kind != EntityKind.Player)
+        {
+            return false;
+        }
+
+        _duels[a] = (b, toDeath);
+        _duels[b] = (a, toDeath);
+        return true;
+    }
+
+    /// <summary>End the duel this entity is part of, recording the winner (0 = no winner, e.g. forfeit).</summary>
+    public void EndDuel(int entityId, int winnerId)
+    {
+        if (!_duels.Remove(entityId, out (int opponentId, bool toDeath) duel))
+        {
+            return;
+        }
+
+        _duels.Remove(duel.opponentId);
+        int loserId = winnerId == entityId ? duel.opponentId : entityId;
+        if (winnerId != 0)
+        {
+            _duelEndings.Add((winnerId, loserId, duel.toDeath));
+        }
+    }
+
+    /// <summary>End this entity's duel as a forfeit: the opponent wins (e.g. on disconnect).</summary>
+    public void ForfeitDuel(int entityId)
+    {
+        if (_duels.TryGetValue(entityId, out (int opponentId, bool toDeath) duel))
+        {
+            EndDuel(entityId, winnerId: duel.opponentId);
+        }
+    }
+
+    /// <summary>Return and clear the duel results recorded since the last drain.</summary>
+    public IReadOnlyList<(int winnerId, int loserId, bool toDeath)> DrainDuelEndings()
+    {
+        if (_duelEndings.Count == 0)
+        {
+            return [];
+        }
+
+        var copy = _duelEndings.ToArray();
+        _duelEndings.Clear();
+        return copy;
+    }
+
+    // ------------------------------------------------------------ Ground drops
+
+    /// <summary>
+    /// Drop a quantity of an item from a player's bag onto the ground. It becomes a lootable sack
+    /// (a corpse-kind container) at their feet, reusing all the corpse-loot plumbing — anyone can
+    /// pick it up, and it vanishes once emptied. Returns true if something was dropped.
+    /// </summary>
+    public bool TryDropItem(int playerId, byte itemId, int quantity)
+    {
+        if (!_entities.TryGetValue(playerId, out ServerEntity? player) || player.IsDead ||
+            player.Kind != EntityKind.Player || quantity <= 0)
+        {
+            return false;
+        }
+
+        int removed = player.Inventory.RemoveQuantity(itemId, quantity);
+        if (removed <= 0)
+        {
+            return false;
+        }
+
+        ItemDefinition def = _gameData.GetItem(itemId);
+        var loot = new Inventory(SimulationConstants.CorpseLootCapacity);
+        loot.TryAdd(itemId, removed, def.Stackable, def.MaxStack);
+
+        int id = _ids.Next();
+        var sack = new ServerEntity(id, EntityKind.Corpse, player.Position, new StatBlock(1, 0f, 0, 0, 0f), 0)
+        {
+            Name = "Sac de " + player.Name,
+            Faction = player.Faction,
+            LootContainer = loot,
+        };
+
+        _entities[id] = sack;
+        _grid.InsertOrUpdate(id, sack.Position);
+        return true;
     }
 
     /// <summary>Common validation for all corpse interactions: living player, real corpse, in range.</summary>

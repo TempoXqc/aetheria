@@ -59,12 +59,15 @@ public static class SimulationConstants
     public const int MaxPartySize = 40;
 
     /// <summary>Protocol version — bump on any wire-format change; handshake rejects mismatches.</summary>
-    public const byte ProtocolVersion = 8;
+    public const byte ProtocolVersion = 9;
+
+    /// <summary>How close two players must be to trade (world units).</summary>
+    public const float TradeRange = 6f;
 
     /// <summary>
     /// Human-readable build version, bumped at every delivery. Shown on the client login screen,
     /// in the in-game HUD, and in the server startup log, so "am I up to date?" has a one-glance
     /// answer on both sides.
     /// </summary>
-    public const string GameVersion = "0.11.0";
+    public const string GameVersion = "0.12.0";
 }

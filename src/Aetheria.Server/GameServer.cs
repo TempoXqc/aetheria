@@ -36,6 +36,15 @@ public sealed class GameServer
     // persistence (M4), where names are reserved in the database.
     private readonly HashSet<string> _activeNames = new(StringComparer.OrdinalIgnoreCase);
 
+    // Pending duel challenges: challenged peer -> (challenger peer, to-death?).
+    private readonly Dictionary<PeerId, (PeerId challenger, bool toDeath)> _pendingDuels = new();
+
+    // Pending trade proposals: proposed-to peer -> proposer peer.
+    private readonly Dictionary<PeerId, PeerId> _pendingTrades = new();
+
+    // Active trades, indexed by BOTH participants' peers.
+    private readonly Dictionary<PeerId, TradeSession> _trades = new();
+
     // Live account banks, keyed by account id, hydrated from durable state at boot.
     private readonly Dictionary<string, Inventory> _banks = new(StringComparer.OrdinalIgnoreCase);
 
@@ -121,6 +130,8 @@ public sealed class GameServer
                     playerDied = true; // a player death (permadeath!) must hit disk immediately
                 }
             }
+
+            BroadcastDuelEndings(world);
         }
 
         if (playerDied)
@@ -224,6 +235,55 @@ public sealed class GameServer
                 case MessageType.BankTransaction:
                     BankTransaction tx = BankTransaction.Read(ref reader);
                     HandleBankTransaction(peer, session, tx);
+                    break;
+
+                case MessageType.Inspect:
+                    Inspect inspect = Inspect.Read(ref reader);
+                    HandleInspect(peer, session, inspect.TargetEntityId);
+                    break;
+
+                case MessageType.DuelRequest:
+                    DuelRequest duelReq = DuelRequest.Read(ref reader);
+                    HandleDuelRequest(peer, session, duelReq);
+                    break;
+
+                case MessageType.DuelRespond:
+                    DuelRespond duelResp = DuelRespond.Read(ref reader);
+                    HandleDuelRespond(peer, session, duelResp.Accept);
+                    break;
+
+                case MessageType.TradeRequest:
+                    TradeRequest tradeReq = TradeRequest.Read(ref reader);
+                    HandleTradeRequest(peer, session, tradeReq.TargetEntityId);
+                    break;
+
+                case MessageType.TradeRespond:
+                    TradeRespond tradeResp = TradeRespond.Read(ref reader);
+                    HandleTradeRespond(peer, session, tradeResp.Accept);
+                    break;
+
+                case MessageType.TradeSetOffer:
+                    TradeSetOffer offer = TradeSetOffer.Read(ref reader);
+                    HandleTradeSetOffer(peer, offer);
+                    break;
+
+                case MessageType.TradeAccept:
+                    _ = TradeAccept.Read(ref reader);
+                    HandleTradeAccept(peer);
+                    break;
+
+                case MessageType.TradeCancel:
+                    _ = TradeCancel.Read(ref reader);
+                    CancelTrade(peer, "Échange annulé.");
+                    break;
+
+                case MessageType.DropItem:
+                    DropItem drop = DropItem.Read(ref reader);
+                    if (session.CurrentWorld.TryDropItem(session.EntityId, drop.ItemId, drop.Quantity))
+                    {
+                        SendSelfState(peer, session);
+                    }
+
                     break;
 
                 case MessageType.PartyInvite:
@@ -377,6 +437,12 @@ public sealed class GameServer
         {
             BroadcastPartyState(left);
         }
+
+        // Social cleanup: a fleeing duelist forfeits; an open trade is cancelled.
+        session.CurrentWorld.ForfeitDuel(session.EntityId);
+        CancelTrade(peer, "L'autre joueur s'est déconnecté.");
+        _pendingDuels.Remove(peer);
+        _pendingTrades.Remove(peer);
 
         // Persist the departing character before it despawns, then flush everything.
         if (TryGetEntity(session, out ServerEntity? departing))
@@ -566,6 +632,264 @@ public sealed class GameServer
             {
                 Send(peer, new InstanceResult(true, 0, "Returned to the open world."));
             }
+        }
+    }
+
+    // ---------------------------------------------------------------- Social
+
+    private void HandleInspect(PeerId peer, PlayerSession session, int targetEntityId)
+    {
+        (PeerId targetPeer, PlayerSession targetSession)? found = FindSessionByEntity(targetEntityId);
+        if (found is null ||
+            !TryGetEntity(session, out ServerEntity? self) ||
+            !TryGetEntity(found.Value.targetSession, out ServerEntity? target) ||
+            self!.Faction != target!.Faction) // inspection is a same-camp courtesy
+        {
+            return;
+        }
+
+        Send(peer, new InspectResult(target.Name, (byte)System.Math.Clamp(target.Level, 1, 255),
+            target.RaceId, target.ClassId, target.EffectiveMaxHealth,
+            target.EffectiveAttackPower, target.EffectiveDefense,
+            target.EquippedWeaponId, target.EquippedArmorId, target.TotalXp));
+    }
+
+    private void HandleDuelRequest(PeerId peer, PlayerSession session, DuelRequest request)
+    {
+        (PeerId targetPeer, PlayerSession targetSession)? found = FindSessionByEntity(request.TargetEntityId);
+        if (found is null ||
+            !ReferenceEquals(found.Value.targetSession.CurrentWorld, session.CurrentWorld) ||
+            session.CurrentWorld.IsDueling(session.EntityId) ||
+            session.CurrentWorld.IsDueling(request.TargetEntityId) ||
+            _pendingDuels.ContainsKey(found.Value.targetPeer))
+        {
+            return;
+        }
+
+        _pendingDuels[found.Value.targetPeer] = (peer, request.ToDeath);
+        Send(found.Value.targetPeer, new DuelNotice(session.Name, request.ToDeath));
+    }
+
+    private void HandleDuelRespond(PeerId peer, PlayerSession session, bool accept)
+    {
+        if (!_pendingDuels.Remove(peer, out (PeerId challenger, bool toDeath) pending))
+        {
+            return;
+        }
+
+        if (!accept ||
+            !_sessions.TryGetValue(pending.challenger, out PlayerSession? challengerSession) ||
+            !ReferenceEquals(challengerSession.CurrentWorld, session.CurrentWorld))
+        {
+            return;
+        }
+
+        if (session.CurrentWorld.StartDuel(challengerSession.EntityId, session.EntityId, pending.toDeath))
+        {
+            string kind = pending.toDeath ? "DUEL À MORT" : "duel amical";
+            Send(pending.challenger, new DuelState(true, session.EntityId, pending.toDeath,
+                kind + " contre " + session.Name + " — battez-vous !"));
+            Send(peer, new DuelState(true, challengerSession.EntityId, pending.toDeath,
+                kind + " contre " + challengerSession.Name + " — battez-vous !"));
+            _log($"Duel {(pending.toDeath ? "TO THE DEATH" : "(friendly)")}: " +
+                 $"'{challengerSession.Name}' vs '{session.Name}'.");
+        }
+    }
+
+    /// <summary>Broadcast the endings of any duels that resolved this tick.</summary>
+    private void BroadcastDuelEndings(World.World world)
+    {
+        foreach ((int winnerId, int loserId, bool toDeath) in world.DrainDuelEndings())
+        {
+            (PeerId, PlayerSession)? winner = FindSessionByEntity(winnerId);
+            (PeerId, PlayerSession)? loser = FindSessionByEntity(loserId);
+            string winnerName = winner?.Item2.Name ?? "?";
+            string loserName = loser?.Item2.Name ?? "?";
+            string message = toDeath
+                ? winnerName + " a tué " + loserName + " en duel à mort !"
+                : winnerName + " remporte le duel contre " + loserName + ".";
+
+            if (winner is not null)
+            {
+                Send(winner.Value.Item1, new DuelState(false, 0, toDeath, message));
+            }
+
+            if (loser is not null)
+            {
+                Send(loser.Value.Item1, new DuelState(false, 0, toDeath, message));
+            }
+
+            _log($"Duel ended: {message}");
+        }
+    }
+
+    private void HandleTradeRequest(PeerId peer, PlayerSession session, int targetEntityId)
+    {
+        (PeerId targetPeer, PlayerSession targetSession)? found = FindSessionByEntity(targetEntityId);
+        if (found is null ||
+            _trades.ContainsKey(peer) || _trades.ContainsKey(found.Value.targetPeer) ||
+            _pendingTrades.ContainsKey(found.Value.targetPeer) ||
+            !ReferenceEquals(found.Value.targetSession.CurrentWorld, session.CurrentWorld) ||
+            !TryGetEntity(session, out ServerEntity? self) ||
+            !TryGetEntity(found.Value.targetSession, out ServerEntity? target) ||
+            self!.Faction != target!.Faction ||
+            Vec2.DistanceSquared(self.Position, target.Position)
+                > SimulationConstants.TradeRange * SimulationConstants.TradeRange)
+        {
+            return;
+        }
+
+        _pendingTrades[found.Value.targetPeer] = peer;
+        Send(found.Value.targetPeer, new TradeNotice(session.Name));
+    }
+
+    private void HandleTradeRespond(PeerId peer, PlayerSession session, bool accept)
+    {
+        if (!_pendingTrades.Remove(peer, out PeerId proposer))
+        {
+            return;
+        }
+
+        if (!accept || !_sessions.TryGetValue(proposer, out PlayerSession? proposerSession) ||
+            _trades.ContainsKey(peer) || _trades.ContainsKey(proposer))
+        {
+            return;
+        }
+
+        var trade = new TradeSession(proposer, peer);
+        _trades[proposer] = trade;
+        _trades[peer] = trade;
+        BroadcastTradeState(trade, "");
+        _log($"Trade opened: '{proposerSession.Name}' <-> '{session.Name}'.");
+    }
+
+    private void HandleTradeSetOffer(PeerId peer, TradeSetOffer offer)
+    {
+        if (!_trades.TryGetValue(peer, out TradeSession? trade))
+        {
+            return;
+        }
+
+        trade.OfferOf(peer).Set(offer.Gold, offer.Items);
+        trade.AcceptedA = false;
+        trade.AcceptedB = false;
+        BroadcastTradeState(trade, "");
+    }
+
+    private void HandleTradeAccept(PeerId peer)
+    {
+        if (!_trades.TryGetValue(peer, out TradeSession? trade))
+        {
+            return;
+        }
+
+        trade.SetAccepted(peer);
+        if (!trade.AcceptedA || !trade.AcceptedB)
+        {
+            BroadcastTradeState(trade, "");
+            return;
+        }
+
+        // Both locked in: validate everything and swap atomically.
+        if (!_sessions.TryGetValue(trade.PeerA, out PlayerSession? sa) ||
+            !_sessions.TryGetValue(trade.PeerB, out PlayerSession? sb) ||
+            !TryGetEntity(sa, out ServerEntity? ea) || !TryGetEntity(sb, out ServerEntity? eb))
+        {
+            CancelTrade(peer, "Échange interrompu.");
+            return;
+        }
+
+        if (Vec2.DistanceSquared(ea!.Position, eb!.Position)
+            > SimulationConstants.TradeRange * SimulationConstants.TradeRange)
+        {
+            trade.AcceptedA = false;
+            trade.AcceptedB = false;
+            BroadcastTradeState(trade, "Trop loin l'un de l'autre !");
+            return;
+        }
+
+        if (TradeLogic.TryExecute(ea.Inventory, trade.OfferA, eb.Inventory, trade.OfferB,
+                _worlds.GameData, out string error))
+        {
+            CloseTrade(trade, "Échange conclu !");
+            SendSelfState(trade.PeerA, sa);
+            SendSelfState(trade.PeerB, sb);
+            _log($"Trade completed: '{sa.Name}' <-> '{sb.Name}'.");
+        }
+        else
+        {
+            trade.AcceptedA = false;
+            trade.AcceptedB = false;
+            BroadcastTradeState(trade, error);
+        }
+    }
+
+    private void CancelTrade(PeerId peer, string reason)
+    {
+        if (_trades.TryGetValue(peer, out TradeSession? trade))
+        {
+            CloseTrade(trade, reason);
+        }
+    }
+
+    private void CloseTrade(TradeSession trade, string message)
+    {
+        _trades.Remove(trade.PeerA);
+        _trades.Remove(trade.PeerB);
+        SendTradeStateTo(trade.PeerA, trade, active: false, message);
+        SendTradeStateTo(trade.PeerB, trade, active: false, message);
+    }
+
+    private void BroadcastTradeState(TradeSession trade, string message)
+    {
+        SendTradeStateTo(trade.PeerA, trade, active: true, message);
+        SendTradeStateTo(trade.PeerB, trade, active: true, message);
+    }
+
+    private void SendTradeStateTo(PeerId peer, TradeSession trade, bool active, string message)
+    {
+        if (!_sessions.ContainsKey(peer))
+        {
+            return;
+        }
+
+        PeerId other = trade.OtherOf(peer);
+        string partnerName = _sessions.TryGetValue(other, out PlayerSession? os) ? os.Name : "?";
+        TradeOffer mine = trade.OfferOf(peer);
+        TradeOffer theirs = trade.OfferOf(other);
+        bool myAccepted = trade.IsAccepted(peer);
+        bool theirAccepted = trade.IsAccepted(other);
+
+        Send(peer, new TradeState(active, partnerName, mine.Gold, mine.Items,
+            theirs.Gold, theirs.Items, myAccepted, theirAccepted, message));
+    }
+
+    /// <summary>An in-progress trade between two peers.</summary>
+    private sealed class TradeSession
+    {
+        public TradeSession(PeerId a, PeerId b)
+        {
+            PeerA = a;
+            PeerB = b;
+        }
+
+        public PeerId PeerA { get; }
+        public PeerId PeerB { get; }
+        public TradeOffer OfferA { get; } = new();
+        public TradeOffer OfferB { get; } = new();
+        public bool AcceptedA { get; set; }
+        public bool AcceptedB { get; set; }
+
+        public TradeOffer OfferOf(PeerId peer) => peer.Equals(PeerA) ? OfferA : OfferB;
+
+        public PeerId OtherOf(PeerId peer) => peer.Equals(PeerA) ? PeerB : PeerA;
+
+        public bool IsAccepted(PeerId peer) => peer.Equals(PeerA) ? AcceptedA : AcceptedB;
+
+        public void SetAccepted(PeerId peer)
+        {
+            if (peer.Equals(PeerA)) { AcceptedA = true; }
+            else { AcceptedB = true; }
         }
     }
 
@@ -807,6 +1131,11 @@ public sealed class GameServer
     private void Send(PeerId peer, PartyInviteNotice msg) => SendWith(peer, msg.Write);
     private void Send(PeerId peer, InstanceResult msg) => SendWith(peer, msg.Write);
     private void Send(PeerId peer, CorpseContentsMessage msg) => SendWith(peer, msg.Write);
+    private void Send(PeerId peer, InspectResult msg) => SendWith(peer, msg.Write);
+    private void Send(PeerId peer, DuelNotice msg) => SendWith(peer, msg.Write);
+    private void Send(PeerId peer, DuelState msg) => SendWith(peer, msg.Write);
+    private void Send(PeerId peer, TradeNotice msg) => SendWith(peer, msg.Write);
+    private void Send(PeerId peer, TradeState msg) => SendWith(peer, msg.Write);
 
     private void SendWith(PeerId peer, Action<PacketWriter> write)
     {

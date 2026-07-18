@@ -79,6 +79,17 @@ namespace Aetheria.UnityClient
         private int _contextEntityId = -1;
         private Vector2 _contextPos;
 
+        // Trade window local offer (mirrored to the server on every change).
+        private readonly List<ItemStack> _myOffer = new List<ItemStack>();
+        private int _myOfferGold;
+        private bool _wasTradeActive;
+        private ItemStack? _pendingAutoOffer; // set when a drag-drop onto a player starts the trade
+
+        // Drag & drop from the character-sheet bag.
+        private ItemStack? _draggingItem;
+        private string _lastDuelMessage = "";
+        private string _lastTradeMessage = "";
+
         // Layout drag state.
         private HudConfig.Frame? _draggingFrame;
         private Vector2 _dragStartMouse;
@@ -117,6 +128,7 @@ namespace Aetheria.UnityClient
             SyncViews();
             FindNearbyCorpse();
             AppendCombatLog();
+            TrackSocialState();
 
             if (!_menuOpen && _awaitingBind == null)
             {
@@ -266,6 +278,45 @@ namespace Aetheria.UnityClient
             if (_combatLog.Count > 6) { _combatLog.RemoveAt(0); }
         }
 
+        /// <summary>Log duel/trade transitions and apply the drag-drop auto-offer when a trade opens.</summary>
+        private void TrackSocialState()
+        {
+            if (_client.DuelMessage != _lastDuelMessage && !string.IsNullOrEmpty(_client.DuelMessage))
+            {
+                _lastDuelMessage = _client.DuelMessage;
+                _combatLog.Add("<color=#f0c040>" + _client.DuelMessage + "</color>");
+                if (_combatLog.Count > 6) { _combatLog.RemoveAt(0); }
+            }
+
+            if (_client.TradeMessage != _lastTradeMessage && !string.IsNullOrEmpty(_client.TradeMessage))
+            {
+                _lastTradeMessage = _client.TradeMessage;
+                _combatLog.Add("<color=#40d0f0>" + _client.TradeMessage + "</color>");
+                if (_combatLog.Count > 6) { _combatLog.RemoveAt(0); }
+            }
+
+            if (_client.TradeActive && !_wasTradeActive)
+            {
+                _myOffer.Clear();
+                _myOfferGold = 0;
+                if (_pendingAutoOffer != null)
+                {
+                    _myOffer.Add(_pendingAutoOffer.Value); // the dragged item opens as the first offer
+                    _pendingAutoOffer = null;
+                    PushOffer();
+                }
+            }
+            else if (!_client.TradeActive && _wasTradeActive)
+            {
+                _myOffer.Clear();
+                _myOfferGold = 0;
+            }
+
+            _wasTradeActive = _client.TradeActive;
+        }
+
+        private void PushOffer() => _client.SendTradeSetOffer(_myOfferGold, _myOffer);
+
         private void FollowSelf()
         {
             if (_cameraRig == null)
@@ -324,7 +375,8 @@ namespace Aetheria.UnityClient
 
             EntitySnapshot? picked = PickEntityUnderMouse(e =>
                 (e.Kind == EntityKind.Monster ||
-                 (e.Kind == EntityKind.Player && e.Faction != self.Faction)) && e.Id != self.Id);
+                 (e.Kind == EntityKind.Player && e.Faction != self.Faction) ||
+                 e.Id == _client.DuelOpponentId) && e.Id != self.Id);
 
             _targetId = picked?.Id ?? -1;
             _autoAttack = picked != null;
@@ -354,7 +406,7 @@ namespace Aetheria.UnityClient
                     _autoAttack = true;
                     break;
 
-                case EntityKind.Player when target.Faction != self.Faction:
+                case EntityKind.Player when target.Faction != self.Faction || target.Id == _client.DuelOpponentId:
                     _targetId = target.Id;
                     _autoAttack = true;
                     break;
@@ -469,7 +521,8 @@ namespace Aetheria.UnityClient
             {
                 EntitySnapshot e = visible[i];
                 bool hostile = e.Kind == EntityKind.Monster ||
-                               (e.Kind == EntityKind.Player && e.Faction != self.Faction);
+                               (e.Kind == EntityKind.Player && e.Faction != self.Faction) ||
+                               e.Id == _client.DuelOpponentId;
                 if (hostile && e.Id != self.Id) { hostiles.Add(e); }
             }
 
@@ -570,6 +623,10 @@ namespace Aetheria.UnityClient
             DrawLootWindow();
             DrawCharacterSheet();
             DrawContextMenu();
+            DrawSocialNotices();
+            DrawTradeWindow();
+            DrawInspectWindow();
+            DrawDragGhost();
             DrawVersionTag();
             if (_cfg.ShowHelp) { DrawHelp(); }
             if (_layoutEditMode) { DrawLayoutEditor(); }
@@ -968,10 +1025,24 @@ namespace Aetheria.UnityClient
                 for (int i = 0; i < _client.InventoryItems.Count && y < win.y + win.height - 26; i++)
                 {
                     ItemStack stack = _client.InventoryItems[i];
-                    GUI.Label(new Rect(win.x + 12, y, win.width - 24, 20),
+                    Rect row = new Rect(win.x + 12, y, win.width - 24, 20);
+                    GUI.Label(row,
                         "· " + Data.GetItem(stack.ItemId).Name + (stack.Quantity > 1 ? " ×" + stack.Quantity : ""));
+
+                    // Grab to drag: release on an ally to trade it, on the ground to drop it.
+                    Event e = Event.current;
+                    if (e.type == EventType.MouseDown && e.button == 0 && row.Contains(e.mousePosition) &&
+                        _draggingItem == null && !_client.TradeActive)
+                    {
+                        _draggingItem = stack;
+                        e.Use();
+                    }
+
                     y += 22f;
                 }
+
+                GUI.Label(new Rect(win.x + 12, win.y + win.height - 22, win.width - 24, 18),
+                    "<size=9><i>Glisse un objet vers un allié (échange) ou le sol (poser)</i></size>", Rich());
             }
         }
 
@@ -984,7 +1055,7 @@ namespace Aetheria.UnityClient
             EntitySnapshot target;
             if (!_client.TryGetEntity(_contextEntityId, out target)) { _contextEntityId = -1; return; }
 
-            Rect win = new Rect(_contextPos.x, _contextPos.y, 170, 118);
+            Rect win = new Rect(_contextPos.x, _contextPos.y, 180, 202);
             GUI.Box(win, "<b>" + (string.IsNullOrEmpty(target.Name) ? "Joueur" : target.Name) + "</b>", RichCenteredBox());
 
             float y = win.y + 26f;
@@ -996,11 +1067,268 @@ namespace Aetheria.UnityClient
             }
 
             y += 28f;
-            GUI.enabled = false;
-            GUI.Button(new Rect(win.x + 8, y, win.width - 16, 24), "Inspecter (à venir)");
+            if (GUI.Button(new Rect(win.x + 8, y, win.width - 16, 24), "Inspecter"))
+            {
+                _client.SendInspect(_contextEntityId);
+                _contextEntityId = -1;
+                return;
+            }
+
             y += 28f;
-            GUI.Button(new Rect(win.x + 8, y, win.width - 16, 24), "Duel (à venir)");
+            if (GUI.Button(new Rect(win.x + 8, y, win.width - 16, 24), "Échanger"))
+            {
+                _client.SendTradeRequest(_contextEntityId);
+                _contextEntityId = -1;
+                return;
+            }
+
+            y += 28f;
+            if (GUI.Button(new Rect(win.x + 8, y, win.width - 16, 24), "Duel amical"))
+            {
+                _client.SendDuelRequest(_contextEntityId, toDeath: false);
+                _contextEntityId = -1;
+                return;
+            }
+
+            y += 28f;
+            GUI.color = new Color(1f, 0.5f, 0.5f);
+            if (GUI.Button(new Rect(win.x + 8, y, win.width - 16, 24), "DUEL À MORT"))
+            {
+                _client.SendDuelRequest(_contextEntityId, toDeath: true);
+                _contextEntityId = -1;
+            }
+
+            GUI.color = Color.white;
+        }
+
+        // --- Social windows ---
+
+        private void DrawSocialNotices()
+        {
+            float y = 110f;
+
+            if (_client.PendingDuelFrom != null)
+            {
+                string kind = _client.PendingDuelToDeath ? "<color=#ff6060>DUEL À MORT</color>" : "duel amical";
+                Rect box = new Rect((VirtW / 2f) - 170, y, 340, 54);
+                GUI.Box(box, "<b>" + _client.PendingDuelFrom + "</b> te propose un " + kind + " !", RichCenteredBox());
+                if (GUI.Button(new Rect(box.x + 30, box.y + 26, 130, 22), "Accepter"))
+                {
+                    _client.SendDuelRespond(true);
+                    _client.ClearPendingDuel();
+                }
+
+                if (GUI.Button(new Rect(box.x + 180, box.y + 26, 130, 22), "Refuser"))
+                {
+                    _client.SendDuelRespond(false);
+                    _client.ClearPendingDuel();
+                }
+
+                y += 60f;
+            }
+
+            if (_client.PendingTradeFrom != null && !_client.TradeActive)
+            {
+                Rect box = new Rect((VirtW / 2f) - 170, y, 340, 54);
+                GUI.Box(box, "<b>" + _client.PendingTradeFrom + "</b> propose un échange.", RichCenteredBox());
+                if (GUI.Button(new Rect(box.x + 30, box.y + 26, 130, 22), "Accepter"))
+                {
+                    _client.SendTradeRespond(true);
+                    _client.ClearPendingTrade();
+                }
+
+                if (GUI.Button(new Rect(box.x + 180, box.y + 26, 130, 22), "Refuser"))
+                {
+                    _client.SendTradeRespond(false);
+                    _client.ClearPendingTrade();
+                }
+            }
+
+            if (_client.DuelOpponentId >= 0)
+            {
+                GUI.Label(new Rect((VirtW / 2f) - 150, 76, 300, 20),
+                    _client.DuelToDeath
+                        ? "<color=#ff6060><b>⚔ DUEL À MORT EN COURS ⚔</b></color>"
+                        : "<color=#f0c040><b>⚔ Duel en cours ⚔</b></color>", RichCentered());
+            }
+        }
+
+        private void DrawTradeWindow()
+        {
+            if (!_client.TradeActive) { return; }
+
+            Rect win = new Rect((VirtW / 2f) - 210, (VirtH / 2f) - 160, 420, 320);
+            GUI.Box(win, "<b>Échange avec " + _client.TradePartner + "</b>", RichCenteredBox());
+
+            float colW = (win.width - 36f) / 2f;
+            float leftX = win.x + 12f;
+            float rightX = win.x + 24f + colW;
+            float topY = win.y + 28f;
+
+            // My side.
+            GUI.Label(new Rect(leftX, topY, colW, 18), "<b>Mon offre</b>" +
+                (_client.TradeMyAccepted ? "  <color=#50e060>✔</color>" : ""), Rich());
+            GUI.Label(new Rect(leftX, topY + 20, 90, 20), "Or : " + _myOfferGold);
+            if (GUI.Button(new Rect(leftX + 92, topY + 19, 30, 20), "+10") && _client.Gold >= _myOfferGold + 10)
+            {
+                _myOfferGold += 10;
+                PushOffer();
+            }
+
+            if (GUI.Button(new Rect(leftX + 126, topY + 19, 30, 20), "−10") && _myOfferGold >= 10)
+            {
+                _myOfferGold -= 10;
+                PushOffer();
+            }
+
+            float y = topY + 44f;
+            for (int i = 0; i < _myOffer.Count; i++)
+            {
+                ItemStack s = _myOffer[i];
+                GUI.Label(new Rect(leftX, y, colW - 34, 20),
+                    Data.GetItem(s.ItemId).Name + (s.Quantity > 1 ? " ×" + s.Quantity : ""));
+                if (GUI.Button(new Rect(leftX + colW - 30, y, 24, 20), "−"))
+                {
+                    _myOffer.RemoveAt(i);
+                    PushOffer();
+                    break;
+                }
+
+                y += 22f;
+            }
+
+            // Add from bag (items not already offered).
+            GUI.Label(new Rect(leftX, y + 4, colW, 18), "<i>Sac (cliquer pour offrir) :</i>", Rich());
+            y += 24f;
+            IReadOnlyList<ItemStack> bag = _client.InventoryItems;
+            for (int i = 0; i < bag.Count && y < win.y + win.height - 60; i++)
+            {
+                ItemStack s = bag[i];
+                bool alreadyOffered = false;
+                for (int k = 0; k < _myOffer.Count; k++)
+                {
+                    if (_myOffer[k].ItemId == s.ItemId) { alreadyOffered = true; }
+                }
+
+                if (alreadyOffered) { continue; }
+
+                if (GUI.Button(new Rect(leftX, y, colW - 8, 20),
+                        Data.GetItem(s.ItemId).Name + (s.Quantity > 1 ? " ×" + s.Quantity : "")))
+                {
+                    _myOffer.Add(s);
+                    PushOffer();
+                }
+
+                y += 22f;
+            }
+
+            // Their side.
+            GUI.Label(new Rect(rightX, topY, colW, 18), "<b>Son offre</b>" +
+                (_client.TradeTheirAccepted ? "  <color=#50e060>✔</color>" : ""), Rich());
+            GUI.Label(new Rect(rightX, topY + 20, colW, 20), "Or : " + _client.TradeTheirGold);
+            float ty = topY + 44f;
+            IReadOnlyList<ItemStack> theirs = _client.TradeTheirItems;
+            for (int i = 0; i < theirs.Count; i++)
+            {
+                ItemStack s = theirs[i];
+                GUI.Label(new Rect(rightX, ty, colW, 20),
+                    Data.GetItem(s.ItemId).Name + (s.Quantity > 1 ? " ×" + s.Quantity : ""));
+                ty += 22f;
+            }
+
+            if (!string.IsNullOrEmpty(_client.TradeMessage))
+            {
+                GUI.Label(new Rect(win.x + 12, win.y + win.height - 56, win.width - 24, 20),
+                    "<color=#f0c040>" + _client.TradeMessage + "</color>", Rich());
+            }
+
+            bool locked = _client.TradeMyAccepted;
+            GUI.enabled = !locked;
+            if (GUI.Button(new Rect(win.x + 12, win.y + win.height - 32, 190, 24),
+                    locked ? "En attente de l'autre…" : "Accepter l'échange"))
+            {
+                _client.SendTradeAccept();
+            }
+
             GUI.enabled = true;
+            if (GUI.Button(new Rect(win.x + win.width - 202, win.y + win.height - 32, 190, 24), "Annuler"))
+            {
+                _client.SendTradeCancel();
+            }
+        }
+
+        private void DrawInspectWindow()
+        {
+            if (!(_client.LastInspect is InspectResult info)) { return; }
+
+            Rect win = new Rect(40, 120, 260, 190);
+            GUI.Box(win, "<b>Inspection — " + info.Name + "</b>", RichCenteredBox());
+            if (GUI.Button(new Rect(win.x + win.width - 24, win.y + 4, 20, 20), "X"))
+            {
+                _client.ClearInspect();
+                return;
+            }
+
+            string race = "?";
+            for (int i = 0; i < Races.Length; i++)
+            {
+                if (Races[i].id == info.RaceId) { race = Races[i].label; }
+            }
+
+            string cls = "?";
+            for (int i = 0; i < Classes.Length; i++)
+            {
+                if (Classes[i].id == info.ClassId) { cls = Classes[i].label; }
+            }
+
+            float y = win.y + 28f;
+            GUI.Label(new Rect(win.x + 12, y, win.width - 24, 20), race + " · " + cls);
+            y += 22f;
+            GUI.Label(new Rect(win.x + 12, y, win.width - 24, 20), "Niveau " + info.Level + "   XP " + info.TotalXp);
+            y += 22f;
+            GUI.Label(new Rect(win.x + 12, y, win.width - 24, 20),
+                "PV max " + info.MaxHealth + "   Atk " + info.Attack + "   Déf " + info.Defense);
+            y += 22f;
+            GUI.Label(new Rect(win.x + 12, y, win.width - 24, 20),
+                "Arme : " + (info.WeaponId != 0 ? Data.GetItem(info.WeaponId).Name : "(aucune)"));
+            y += 22f;
+            GUI.Label(new Rect(win.x + 12, y, win.width - 24, 20),
+                "Armure : " + (info.ArmorId != 0 ? Data.GetItem(info.ArmorId).Name : "(aucune)"));
+        }
+
+        /// <summary>The item ghost that follows the cursor during a bag drag.</summary>
+        private void DrawDragGhost()
+        {
+            if (_draggingItem == null) { return; }
+
+            ItemStack s = _draggingItem.Value;
+            Vector2 m = new Vector2(Input.mousePosition.x / _cfg.UiScale,
+                (Screen.height - Input.mousePosition.y) / _cfg.UiScale);
+            GUI.Box(new Rect(m.x - 60, m.y - 30, 140, 24),
+                Data.GetItem(s.ItemId).Name + (s.Quantity > 1 ? " ×" + s.Quantity : ""));
+            GUI.Label(new Rect(m.x - 100, m.y - 6, 220, 18),
+                "<size=10>→ joueur allié : échanger · sol : poser</size>", RichCentered());
+
+            // Release: over an ally → propose a trade with this item pre-offered; elsewhere → drop.
+            if (Input.GetMouseButtonUp(0))
+            {
+                EntitySnapshot self;
+                bool haveSelf = _client.TryGetSelf(out self);
+                EntitySnapshot? ally = !haveSelf ? null : PickEntityUnderMouse(e =>
+                    e.Kind == EntityKind.Player && e.Faction == self.Faction && e.Id != self.Id);
+
+                if (ally != null)
+                {
+                    _pendingAutoOffer = s;
+                    _client.SendTradeRequest(ally.Value.Id);
+                }
+                else
+                {
+                    _client.SendDropItem(s.ItemId, s.Quantity);
+                }
+
+                _draggingItem = null;
+            }
         }
 
         // --- Escape menu & options ---

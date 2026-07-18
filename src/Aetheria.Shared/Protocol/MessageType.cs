@@ -23,6 +23,15 @@ public enum MessageType : byte
     LeaveInstance = 13,
     OpenCorpse = 14,
     LootItem = 15,
+    Inspect = 16,
+    DuelRequest = 17,
+    DuelRespond = 18,
+    TradeRequest = 19,
+    TradeRespond = 20,
+    TradeSetOffer = 21,
+    TradeAccept = 22,
+    TradeCancel = 23,
+    DropItem = 24,
 
     // --- Server -> Client ---
     ConnectAccepted = 128,
@@ -37,6 +46,11 @@ public enum MessageType : byte
     InstanceResult = 137,
     PartyInviteNotice = 138,
     CorpseContents = 139,
+    InspectResult = 140,
+    DuelNotice = 141,
+    DuelState = 142,
+    TradeNotice = 143,
+    TradeState = 144,
 }
 
 /// <summary>Coarse kind of an entity, so the client knows how to represent it. Extended over time.</summary>
