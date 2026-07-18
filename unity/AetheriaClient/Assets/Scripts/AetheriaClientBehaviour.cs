@@ -116,6 +116,12 @@ namespace Aetheria.UnityClient
                 return;
             }
 
+            // Lobby phases (login / character screen): just pump the socket, no world logic yet.
+            if (!_client.EntityId.HasValue)
+            {
+                return;
+            }
+
             if (Input.GetKeyDown(KeyCode.Escape))
             {
                 if (_awaitingBind != null) { _awaitingBind = null; }
@@ -148,18 +154,20 @@ namespace Aetheria.UnityClient
             int.TryParse(_port, out int port);
             if (port <= 0) { port = SimulationConstants.DefaultPort; }
 
-            byte raceId = Races[_raceIndex].id;
-            _classId = Classes[_classIndex].id;
-            _racialId = Races[_raceIndex].racial;
-            Gender gender = _genderIndex == 1 ? Gender.Female : Gender.Male;
-            string account = string.IsNullOrWhiteSpace(_account) ? _name : _account;
+            string account = _account.Trim();
+            if (account.Length == 0)
+            {
+                _error = "Entre un identifiant de compte.";
+                return;
+            }
+
             string secret = string.IsNullOrEmpty(_secret) ? account : _secret;
 
             try
             {
                 _transport = new UdpClientTransport();
                 _client = new GameClient(_transport);
-                _client.Connect(_host, port, _name, raceId, _classId, gender, account, secret);
+                _client.Connect(_host, port, account, secret);
                 _connected = true;
                 _error = "";
             }
@@ -170,6 +178,33 @@ namespace Aetheria.UnityClient
                 _transport = null;
                 _client = null;
             }
+        }
+
+        /// <summary>Play the existing character shown on the character screen.</summary>
+        private void EnterExisting()
+        {
+            _name = _client.CharacterName;
+            _classId = _client.CharacterClassId;
+            for (int i = 0; i < Classes.Length; i++)
+            {
+                if (Classes[i].id == _classId) { _classIndex = i; }
+            }
+
+            for (int i = 0; i < Races.Length; i++)
+            {
+                if (Races[i].id == _client.CharacterRaceId) { _racialId = Races[i].racial; }
+            }
+
+            _client.SendEnterWorld();
+        }
+
+        /// <summary>Create the account's character on this server, then enter the world.</summary>
+        private void CreateAndEnter()
+        {
+            _classId = Classes[_classIndex].id;
+            _racialId = Races[_raceIndex].racial;
+            Gender gender = _genderIndex == 1 ? Gender.Female : Gender.Male;
+            _client.SendCreateCharacter(_name, Races[_raceIndex].id, _classId, gender);
         }
 
         private void Disconnect()
@@ -607,9 +642,9 @@ namespace Aetheria.UnityClient
         {
             GUI.matrix = Matrix4x4.Scale(new Vector3(_cfg.UiScale, _cfg.UiScale, 1f));
 
-            if (!_connected)
+            if (!_connected || _client == null || !_client.EntityId.HasValue)
             {
-                DrawLogin();
+                DrawAuthScreens();
                 return;
             }
 
@@ -633,27 +668,58 @@ namespace Aetheria.UnityClient
             if (_menuOpen) { DrawEscapeMenu(); }
         }
 
-        // --- Login ---
+        // --- Auth flow screens: login → your character (or creation) → world ---
 
-        private void DrawLogin()
+        private void DrawAuthScreens()
         {
-            const int W = 340;
-            Rect box = new Rect((VirtW - W) / 2f, VirtH * 0.16f, W, 360);
-            GUI.Box(box, "AETHERIA — Connexion   <size=10>v" + SimulationConstants.GameVersion +
-                         " · proto " + SimulationConstants.ProtocolVersion + "</size>", RichCenteredBox());
+            if (!_connected || _client == null)
+            {
+                DrawLoginScreen();
+            }
+            else if (!_client.LoggedIn)
+            {
+                DrawWaitScreen("Connexion au serveur…");
+            }
+            else if (_client.HasCharacter)
+            {
+                DrawCharacterScreen();
+            }
+            else
+            {
+                DrawCreationScreen();
+            }
+        }
 
-            GUILayout.BeginArea(new Rect(box.x + 15, box.y + 30, W - 30, box.height - 45));
+        private void DrawTitledBox(out Rect box, float height, string subtitle)
+        {
+            const int W = 360;
+            box = new Rect((VirtW - W) / 2f, VirtH * 0.14f, W, height);
+            GUI.Box(box, "<size=16><b>AETHERIA</b></size>   <size=10>v" + SimulationConstants.GameVersion +
+                         "</size>\n<size=11>" + subtitle + "</size>", RichCenteredBox());
+        }
+
+        private void DrawErrors()
+        {
+            string error = _error;
+            if (string.IsNullOrEmpty(error) && _client != null) { error = _client.LoginError; }
+            if (!string.IsNullOrEmpty(error))
+            {
+                GUILayout.Label("<color=#ff7070>" + error + "</color>",
+                    new GUIStyle(GUI.skin.label) { richText = true, wordWrap = true });
+            }
+        }
+
+        /// <summary>Screen 1 — the account: server address, account id, secret.</summary>
+        private void DrawLoginScreen()
+        {
+            DrawTitledBox(out Rect box, 240, "Connexion");
+            GUILayout.BeginArea(new Rect(box.x + 15, box.y + 48, box.width - 30, box.height - 60));
 
             GUILayout.BeginHorizontal();
             GUILayout.Label("Serveur", GUILayout.Width(70));
             _host = GUILayout.TextField(_host);
             GUILayout.Label(":", GUILayout.Width(8));
             _port = GUILayout.TextField(_port, GUILayout.Width(56));
-            GUILayout.EndHorizontal();
-
-            GUILayout.BeginHorizontal();
-            GUILayout.Label("Nom", GUILayout.Width(70));
-            _name = GUILayout.TextField(_name);
             GUILayout.EndHorizontal();
 
             GUILayout.BeginHorizontal();
@@ -664,6 +730,67 @@ namespace Aetheria.UnityClient
             GUILayout.BeginHorizontal();
             GUILayout.Label("Secret", GUILayout.Width(70));
             _secret = GUILayout.PasswordField(_secret, '*');
+            GUILayout.EndHorizontal();
+
+            GUILayout.Space(10);
+            if (GUILayout.Button("SE CONNECTER", GUILayout.Height(34))) { Connect(); }
+
+            GUILayout.Space(4);
+            GUILayout.Label("<size=10><i>Un personnage par serveur — change d'adresse pour jouer un autre héros.</i></size>", Rich());
+            DrawErrors();
+            GUILayout.EndArea();
+        }
+
+        private void DrawWaitScreen(string message)
+        {
+            DrawTitledBox(out Rect box, 150, message);
+            GUILayout.BeginArea(new Rect(box.x + 15, box.y + 60, box.width - 30, 70));
+            DrawErrors();
+            if (GUILayout.Button("Annuler", GUILayout.Height(26))) { Disconnect(); }
+            GUILayout.EndArea();
+        }
+
+        /// <summary>Screen 2a — the account already has its character on this server.</summary>
+        private void DrawCharacterScreen()
+        {
+            DrawTitledBox(out Rect box, 250, "Ton personnage");
+            GUILayout.BeginArea(new Rect(box.x + 15, box.y + 48, box.width - 30, box.height - 60));
+
+            string race = "?";
+            for (int i = 0; i < Races.Length; i++)
+            {
+                if (Races[i].id == _client.CharacterRaceId) { race = Races[i].label; }
+            }
+
+            string cls = "?";
+            for (int i = 0; i < Classes.Length; i++)
+            {
+                if (Classes[i].id == _client.CharacterClassId) { cls = Classes[i].label; }
+            }
+
+            GUILayout.Label("<size=15><b>" + _client.CharacterName + "</b></size>", Rich());
+            GUILayout.Label(race + " · " + cls + " · niveau " + _client.CharacterLevel);
+            GUILayout.Label("<size=10><i>" + _client.CharacterGender + "</i></size>", Rich());
+
+            GUILayout.Space(12);
+            if (GUILayout.Button("ENTRER EN JEU", GUILayout.Height(38))) { EnterExisting(); }
+
+            GUILayout.Space(6);
+            if (GUILayout.Button("Changer de serveur", GUILayout.Height(24))) { Disconnect(); }
+
+            DrawErrors();
+            GUILayout.EndArea();
+        }
+
+        /// <summary>Screen 2b — no character on this server yet: create and name it.</summary>
+        private void DrawCreationScreen()
+        {
+            DrawTitledBox(out Rect box, 330, "Crée ton personnage");
+            GUILayout.BeginArea(new Rect(box.x + 15, box.y + 48, box.width - 30, box.height - 60));
+
+            GUILayout.BeginHorizontal();
+            GUILayout.Label("Nom", GUILayout.Width(70));
+            _name = GUILayout.TextField(_name);
             GUILayout.EndHorizontal();
 
             GUILayout.Space(6);
@@ -704,15 +831,14 @@ namespace Aetheria.UnityClient
             GUILayout.Space(4);
             _genderIndex = GUILayout.SelectionGrid(_genderIndex, new[] { "Male", "Female" }, 2);
 
-            GUILayout.Space(8);
-            if (GUILayout.Button("JOUER", GUILayout.Height(34))) { Connect(); }
+            GUILayout.Space(10);
+            if (GUILayout.Button("CRÉER ET ENTRER EN JEU", GUILayout.Height(38))) { CreateAndEnter(); }
 
-            if (!string.IsNullOrEmpty(_error))
-            {
-                GUILayout.Label("<color=#ff7070>" + _error + "</color>",
-                    new GUIStyle(GUI.skin.label) { richText = true, wordWrap = true });
-            }
+            GUILayout.Space(4);
+            GUILayout.Label("<size=10><i>Tu apparaîtras dans le sanctuaire — une zone sans PvP ni monstres.</i></size>", Rich());
+            if (GUILayout.Button("Changer de serveur", GUILayout.Height(22))) { Disconnect(); }
 
+            DrawErrors();
             GUILayout.EndArea();
         }
 
@@ -736,10 +862,20 @@ namespace Aetheria.UnityClient
             DrawBar(new Rect(frame.x + 8, frame.y + 46, frame.width - 16, 14), resFill,
                 ResourceColor(), haveSelf ? self.Resource + " / " + self.MaxResource : "—");
 
+            bool inSanctuary = false;
+            if (haveSelf && !_client.InInstance)
+            {
+                float dx = self.Position.X - SimulationConstants.SafeZoneCenterX;
+                float dy = self.Position.Y - SimulationConstants.SafeZoneCenterY;
+                inSanctuary = (dx * dx) + (dy * dy)
+                    <= SimulationConstants.SafeZoneRadius * SimulationConstants.SafeZoneRadius;
+            }
+
             GUI.Label(new Rect(frame.x + 8, frame.y + 64, frame.width - 16, 26),
                 "Or " + _client.Gold + "   Banque " + _client.BankGold +
                 (_client.InInstance ? "   [INSTANCE]" : "") +
-                (_client.PartySize > 0 ? "   Groupe " + _client.PartySize : ""));
+                (inSanctuary ? "   <color=#70d0ff>⛨ Sanctuaire</color>" : "") +
+                (_client.PartySize > 0 ? "   Groupe " + _client.PartySize : ""), Rich());
         }
 
         private Color ResourceColor()

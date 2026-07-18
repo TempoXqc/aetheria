@@ -32,6 +32,9 @@ public enum MessageType : byte
     TradeAccept = 22,
     TradeCancel = 23,
     DropItem = 24,
+    Login = 25,
+    CreateCharacter = 26,
+    EnterWorld = 27,
 
     // --- Server -> Client ---
     ConnectAccepted = 128,
@@ -51,6 +54,7 @@ public enum MessageType : byte
     DuelState = 142,
     TradeNotice = 143,
     TradeState = 144,
+    LoginResult = 145,
 }
 
 /// <summary>Coarse kind of an entity, so the client knows how to represent it. Extended over time.</summary>

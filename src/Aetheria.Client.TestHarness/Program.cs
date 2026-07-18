@@ -12,8 +12,9 @@ var options = HarnessOptions.Parse(args);
 
 using var transport = new UdpClientTransport();
 var client = new GameClient(transport);
-client.Connect(options.Host, options.Port, options.Name, options.RaceId, options.ClassId, options.Gender, options.AccountId, options.Secret);
+client.Connect(options.Host, options.Port, options.AccountId, options.Secret);
 bool deposited = false;
+bool enterSent = false;
 
 Console.WriteLine(
     $"[{options.Name}] connecting to {options.Host}:{options.Port} " +
@@ -36,6 +37,27 @@ while (clock.Elapsed.TotalSeconds < options.Seconds)
     {
         Console.WriteLine($"[{options.Name}] REJECTED: {client.RejectReason}");
         break;
+    }
+
+    if (client.LoginError.Length > 0)
+    {
+        Console.WriteLine($"[{options.Name}] REJECTED: {client.LoginError}");
+        break;
+    }
+
+    // Two-step handshake: once logged in, enter with the existing character or create one.
+    if (client.LoggedIn && client.EntityId is null && !enterSent)
+    {
+        if (client.HasCharacter)
+        {
+            client.SendEnterWorld();
+        }
+        else
+        {
+            client.SendCreateCharacter(options.Name, options.RaceId, options.ClassId, options.Gender);
+        }
+
+        enterSent = true;
     }
 
     if (client.EntityId is int myId)

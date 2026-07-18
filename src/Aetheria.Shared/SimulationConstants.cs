@@ -59,15 +59,24 @@ public static class SimulationConstants
     public const int MaxPartySize = 40;
 
     /// <summary>Protocol version — bump on any wire-format change; handshake rejects mismatches.</summary>
-    public const byte ProtocolVersion = 9;
+    public const byte ProtocolVersion = 10;
 
     /// <summary>How close two players must be to trade (world units).</summary>
     public const float TradeRange = 6f;
+
+    /// <summary>
+    /// The open world's SANCTUARY: a circle around the spawn point where neither PvP nor PvE can
+    /// touch you — no player can attack or be attacked, and monsters never aggro. New characters
+    /// spawn inside it. Instances have no sanctuary.
+    /// </summary>
+    public const float SafeZoneRadius = 18f;
+    public const float SafeZoneCenterX = 0f;
+    public const float SafeZoneCenterY = 0f;
 
     /// <summary>
     /// Human-readable build version, bumped at every delivery. Shown on the client login screen,
     /// in the in-game HUD, and in the server startup log, so "am I up to date?" has a one-glance
     /// answer on both sides.
     /// </summary>
-    public const string GameVersion = "0.12.0";
+    public const string GameVersion = "0.13.0";
 }

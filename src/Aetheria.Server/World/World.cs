@@ -55,6 +55,19 @@ public sealed class World
     /// <summary>The current simulation tick (increments once per fixed step).</summary>
     public uint Tick { get; private set; }
 
+    /// <summary>
+    /// True for the open world: a sanctuary circle around the spawn where players can neither
+    /// attack nor be attacked (PvP AND PvE), and monsters never aggro. Instances have none.
+    /// </summary>
+    public bool HasSafeZone { get; set; }
+
+    /// <summary>Is this position inside the sanctuary?</summary>
+    public bool IsSafePosition(Vec2 position)
+        => HasSafeZone && Vec2.DistanceSquared(
+               position,
+               new Vec2(SimulationConstants.SafeZoneCenterX, SimulationConstants.SafeZoneCenterY))
+           <= SimulationConstants.SafeZoneRadius * SimulationConstants.SafeZoneRadius;
+
     /// <summary>The content registry backing this world.</summary>
     public GameData GameData => _gameData;
 
@@ -299,6 +312,13 @@ public sealed class World
             return false;
         }
 
+        // Sanctuary: inside the safe zone a player can neither strike nor be struck — by anyone.
+        if ((attacker.Kind == EntityKind.Player && IsSafePosition(attacker.Position)) ||
+            (target.Kind == EntityKind.Player && IsSafePosition(target.Position)))
+        {
+            return false;
+        }
+
         AbilityDefinition ability = _gameData.GetAbility(abilityId);
 
         // Players may only use abilities in their class kit that their level has unlocked.
@@ -500,10 +520,11 @@ public sealed class World
 
     private ServerEntity? AcquireOrKeepTarget(ServerEntity monster)
     {
-        // Keep the current target if it is still valid and within aggro range.
+        // Keep the current target if it is still valid, in aggro range, and not in sanctuary.
         if (monster.AiTargetId is int currentId &&
             _entities.TryGetValue(currentId, out ServerEntity? current) &&
             current.IsAlive &&
+            !IsSafePosition(current.Position) &&
             Vec2.DistanceSquared(monster.Position, current.Position)
                 <= monster.Stats.AggroRadius * monster.Stats.AggroRadius)
         {
@@ -518,7 +539,8 @@ public sealed class World
         foreach (int id in _queryScratch)
         {
             if (!_entities.TryGetValue(id, out ServerEntity? candidate) ||
-                candidate.Kind != EntityKind.Player || candidate.IsDead)
+                candidate.Kind != EntityKind.Player || candidate.IsDead ||
+                IsSafePosition(candidate.Position)) // sanctuary: monsters never aggro
             {
                 continue;
             }

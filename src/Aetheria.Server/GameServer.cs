@@ -5,6 +5,7 @@ using Aetheria.Server.Persistence;
 using Aetheria.Server.Social;
 using Aetheria.Server.World;
 using Aetheria.Shared;
+using Aetheria.Shared.Combat;
 using Aetheria.Shared.Data;
 using Aetheria.Shared.Items;
 using Aetheria.Shared.Math;
@@ -156,10 +157,10 @@ public sealed class GameServer
     {
         World.World open = _worlds.OpenWorld;
 
-        // Starter camp near the origin so a freshly connected player can find a fight.
-        open.SpawnMonster(monsterId: 1, new Vec2(10f, 6f));
-        open.SpawnMonster(monsterId: 1, new Vec2(12f, 9f));
-        open.SpawnMonster(monsterId: 2, new Vec2(-8f, 10f));
+        // Starter camp just OUTSIDE the spawn sanctuary (radius 18): step out to find a fight.
+        open.SpawnMonster(monsterId: 1, new Vec2(24f, 10f));
+        open.SpawnMonster(monsterId: 1, new Vec2(27f, 13f));
+        open.SpawnMonster(monsterId: 2, new Vec2(-25f, 14f));
 
         // Open-world DUNGEON: a non-instanced elite camp. It lives in the shared world, so rival
         // factions can meet — and fight — over it.
@@ -184,14 +185,46 @@ public sealed class GameServer
             var reader = new PacketReader(payload);
             var type = (MessageType)reader.ReadByte();
 
-            if (!session.HandshakeComplete)
+            // Phase gate 1: before login, only Login is valid.
+            if (session.Phase == SessionPhase.AwaitingLogin)
             {
-                if (type == MessageType.ConnectRequest)
+                if (type == MessageType.Login)
                 {
-                    HandleConnectRequest(peer, session, ref reader);
+                    HandleLogin(peer, session, ref reader);
                 }
 
-                return; // Nothing else is valid before the handshake completes.
+                return;
+            }
+
+            // Phase gate 2: logged in but not yet in the world — character selection screen.
+            if (session.Phase == SessionPhase.LoggedIn)
+            {
+                switch (type)
+                {
+                    case MessageType.CreateCharacter:
+                        CreateCharacter create = CreateCharacter.Read(ref reader);
+                        HandleCreateCharacter(peer, session, create);
+                        break;
+
+                    case MessageType.EnterWorld:
+                        _ = EnterWorld.Read(ref reader);
+                        HandleEnterWorld(peer, session);
+                        break;
+
+                    case MessageType.Ping:
+                        Ping lobbyPing = Ping.Read(ref reader);
+                        Send(peer, new Pong(lobbyPing.ClientTimeMs, Environment.TickCount64));
+                        break;
+
+                    case MessageType.Disconnect:
+                        _transport.Kick(peer);
+                        break;
+
+                    default:
+                        break;
+                }
+
+                return;
             }
 
             World.World world = session.CurrentWorld;
@@ -330,24 +363,15 @@ public sealed class GameServer
         }
     }
 
-    private void HandleConnectRequest(PeerId peer, PlayerSession session, ref PacketReader reader)
+    /// <summary>Step 1: authenticate the ACCOUNT and report its (single) character on this server.</summary>
+    private void HandleLogin(PeerId peer, PlayerSession session, ref PacketReader reader)
     {
-        ConnectRequest request = ConnectRequest.Read(ref reader);
-        GameData data = _worlds.GameData;
+        Login request = Login.Read(ref reader);
 
         if (request.ProtocolVersion != SimulationConstants.ProtocolVersion)
         {
-            Send(peer, new ConnectRejected(
-                $"Protocol mismatch: server v{SimulationConstants.ProtocolVersion}, client v{request.ProtocolVersion}."));
-            _transport.Kick(peer);
-            return;
-        }
-
-        // Enforce the balance matrix: a race may only play its allowed classes.
-        if (!data.IsClassAllowedForRace(request.RaceId, request.ClassId))
-        {
-            Send(peer, new ConnectRejected(
-                $"{data.GetRace(request.RaceId).Name} cannot play the {data.GetClass(request.ClassId).Name} class."));
+            Send(peer, LoginResult.Failure(
+                $"Version incompatible : serveur v{SimulationConstants.ProtocolVersion}, client v{request.ProtocolVersion}."));
             _transport.Kick(peer);
             return;
         }
@@ -355,12 +379,11 @@ public sealed class GameServer
         string accountId = (request.AccountId ?? string.Empty).Trim();
         if (accountId.Length is < 1 or > 32)
         {
-            Send(peer, new ConnectRejected("A valid account id (1-32 characters) is required."));
-            _transport.Kick(peer);
+            Send(peer, LoginResult.Failure("Identifiant de compte requis (1-32 caractères)."));
             return;
         }
 
-        // Account auth: the first connect sets the secret; later connects must match it.
+        // First login sets the secret; later logins must match it.
         AccountRecord account = GetOrCreateAccount(accountId);
         string secretHash = HashSecret(request.AccountSecret);
         if (string.IsNullOrEmpty(account.SecretHash))
@@ -369,45 +392,101 @@ public sealed class GameServer
         }
         else if (!string.Equals(account.SecretHash, secretHash, StringComparison.Ordinal))
         {
-            Send(peer, new ConnectRejected("Wrong account secret."));
-            _transport.Kick(peer);
+            Send(peer, LoginResult.Failure("Mauvais secret de compte."));
             return;
         }
 
-        // Character name: well-formed, not currently online, and durably owned (server-wide,
-        // across both factions; a name reserved by another account stays taken even offline).
-        if (!TryClaimName(request.Name, accountId, out string name, out string nameError))
+        session.AccountId = accountId;
+        session.Phase = SessionPhase.LoggedIn;
+
+        // One character per account per server: report it if it exists.
+        CharacterRecord? existing = account.Characters.Values.FirstOrDefault();
+        if (existing is null)
         {
-            Send(peer, new ConnectRejected(nameError));
-            _transport.Kick(peer);
+            Send(peer, new LoginResult(true, "", false, string.Empty, 0, 0, Gender.Male, 1));
+        }
+        else
+        {
+            byte level = (byte)System.Math.Clamp(
+                _worlds.GameData.Progression.LevelForXp(existing.TotalXp), 1, 255);
+            Send(peer, new LoginResult(true, "", true, existing.Name,
+                existing.RaceId, existing.ClassId, (Gender)existing.Gender, level));
+        }
+
+        _log($"Account '{accountId}' logged in ({peer}); character: {(existing?.Name ?? "none")}.");
+    }
+
+    /// <summary>Create this server's one character for the account, then enter the world.</summary>
+    private void HandleCreateCharacter(PeerId peer, PlayerSession session, CreateCharacter request)
+    {
+        GameData data = _worlds.GameData;
+        AccountRecord account = GetOrCreateAccount(session.AccountId);
+
+        if (account.Characters.Count > 0)
+        {
+            Send(peer, LoginResult.Failure("Ce compte a déjà un personnage sur ce serveur."));
+            return;
+        }
+
+        if (!data.IsClassAllowedForRace(request.RaceId, request.ClassId))
+        {
+            Send(peer, LoginResult.Failure(
+                $"{data.GetRace(request.RaceId).Name} ne peut pas jouer {data.GetClass(request.ClassId).Name}."));
+            return;
+        }
+
+        if (!TryClaimName(request.Name, session.AccountId, out string name, out string nameError))
+        {
+            Send(peer, LoginResult.Failure(nameError));
             return;
         }
 
         ServerEntity entity = _worlds.OpenWorld.SpawnPlayer(peer, name, request.RaceId, request.ClassId, request.Gender);
+        _worlds.OpenWorld.GrantStarterKit(entity);
+        account.Characters[name.ToLowerInvariant()] = CharacterMapper.Capture(entity);
 
-        // Returning character: restore its saved progression/inventory. New one: starter kit.
-        if (account.Characters.TryGetValue(name.ToLowerInvariant(), out CharacterRecord? saved))
+        EnterWorldWith(peer, session, entity, isNew: true);
+    }
+
+    /// <summary>Enter the world with the account's existing character.</summary>
+    private void HandleEnterWorld(PeerId peer, PlayerSession session)
+    {
+        AccountRecord account = GetOrCreateAccount(session.AccountId);
+        CharacterRecord? saved = account.Characters.Values.FirstOrDefault();
+        if (saved is null)
         {
-            CharacterMapper.Restore(_worlds.OpenWorld, entity, saved);
-        }
-        else
-        {
-            _worlds.OpenWorld.GrantStarterKit(entity);
-            account.Characters[name.ToLowerInvariant()] = CharacterMapper.Capture(entity);
+            Send(peer, LoginResult.Failure("Aucun personnage sur ce serveur — crée-le d'abord."));
+            return;
         }
 
+        // Blocks a second simultaneous login of the same character (name already online).
+        if (!TryClaimName(saved.Name, session.AccountId, out string name, out string nameError))
+        {
+            Send(peer, LoginResult.Failure(nameError));
+            return;
+        }
+
+        ServerEntity entity = _worlds.OpenWorld.SpawnPlayer(
+            peer, name, saved.RaceId, saved.ClassId, (Gender)saved.Gender);
+        CharacterMapper.Restore(_worlds.OpenWorld, entity, saved);
+
+        EnterWorldWith(peer, session, entity, isNew: false);
+    }
+
+    private void EnterWorldWith(PeerId peer, PlayerSession session, ServerEntity entity, bool isNew)
+    {
+        GameData data = _worlds.GameData;
         session.EntityId = entity.Id;
         session.Name = entity.Name;
-        session.AccountId = accountId;
         session.CurrentWorld = _worlds.OpenWorld;
-        session.HandshakeComplete = true;
+        session.Phase = SessionPhase.InWorld;
 
         Send(peer, new ConnectAccepted(entity.Id, (byte)SimulationConstants.TickRate));
-        SendBankState(peer, accountId); // the account bank survives permadeath and is shown on join
+        SendBankState(peer, session.AccountId);
 
-        _log($"'{session.Name}' joined as {entity.Faction} {data.GetRace(entity.RaceId).Name} " +
+        _log($"'{session.Name}' entered as {entity.Faction} {data.GetRace(entity.RaceId).Name} " +
              $"{data.GetClass(entity.ClassId).Name} ({entity.Gender}, entity {entity.Id}, {peer}, " +
-             $"{(saved is null ? "new" : "restored")}). Players online: {PlayerCount}.");
+             $"{(isNew ? "new" : "restored")}). Players online: {PlayerCount}.");
     }
 
     private AccountRecord GetOrCreateAccount(string accountId)
@@ -427,9 +506,14 @@ public sealed class GameServer
 
     private void HandleDisconnect(PeerId peer)
     {
-        if (!_sessions.Remove(peer, out PlayerSession? session) || !session.HandshakeComplete)
+        if (!_sessions.Remove(peer, out PlayerSession? session))
         {
             return;
+        }
+
+        if (!session.HandshakeComplete)
+        {
+            return; // never entered the world — nothing to clean up
         }
 
         Party? left = _parties.Leave(peer.Value);
@@ -1136,12 +1220,20 @@ public sealed class GameServer
     private void Send(PeerId peer, DuelState msg) => SendWith(peer, msg.Write);
     private void Send(PeerId peer, TradeNotice msg) => SendWith(peer, msg.Write);
     private void Send(PeerId peer, TradeState msg) => SendWith(peer, msg.Write);
+    private void Send(PeerId peer, LoginResult msg) => SendWith(peer, msg.Write);
 
     private void SendWith(PeerId peer, Action<PacketWriter> write)
     {
         _writer.Reset();
         write(_writer);
         _transport.Send(peer, _writer.WrittenSpan);
+    }
+
+    private enum SessionPhase
+    {
+        AwaitingLogin,
+        LoggedIn,
+        InWorld,
     }
 
     private sealed class PlayerSession
@@ -1151,7 +1243,10 @@ public sealed class GameServer
         public int EntityId { get; set; }
         public string Name { get; set; } = string.Empty;
         public string AccountId { get; set; } = string.Empty;
-        public bool HandshakeComplete { get; set; }
+        public SessionPhase Phase { get; set; } = SessionPhase.AwaitingLogin;
+
+        /// <summary>Kept for the broadcast/persist paths: "fully in the world".</summary>
+        public bool HandshakeComplete => Phase == SessionPhase.InWorld;
 
         /// <summary>The world this player currently inhabits (open world or an instance).</summary>
         public World.World CurrentWorld { get; set; }

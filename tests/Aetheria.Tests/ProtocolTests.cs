@@ -6,25 +6,36 @@ namespace Aetheria.Tests;
 
 public static class ProtocolTests
 {
-    [Test("ConnectRequest survives a write/read round trip.")]
-    public static void ConnectRequest_RoundTrips()
+    [Test("Login and LoginResult survive write/read round trips.")]
+    public static void LoginFlow_RoundTrips()
     {
-        var writer = new PacketWriter();
-        new ConnectRequest(protocolVersion: 1, name: "Aria", raceId: 3, classId: 2, gender: Gender.Female,
-            accountId: "acct-42", accountSecret: "hunter2").Write(writer);
+        var w1 = new PacketWriter();
+        new Login(protocolVersion: 10, accountId: "acct-42", accountSecret: "hunter2").Write(w1);
+        var r1 = new PacketReader(w1.WrittenSpan);
+        Assert.Equal(MessageType.Login, (MessageType)r1.ReadByte());
+        Login login = Login.Read(ref r1);
+        Assert.Equal((byte)10, login.ProtocolVersion);
+        Assert.Equal("acct-42", login.AccountId);
+        Assert.Equal("hunter2", login.AccountSecret);
 
-        var reader = new PacketReader(writer.WrittenSpan);
-        Assert.Equal(MessageType.ConnectRequest, (MessageType)reader.ReadByte());
-        ConnectRequest decoded = ConnectRequest.Read(ref reader);
+        var w2 = new PacketWriter();
+        new LoginResult(true, "", true, "Aria", 3, 2, Gender.Female, 4).Write(w2);
+        var r2 = new PacketReader(w2.WrittenSpan);
+        Assert.Equal(MessageType.LoginResult, (MessageType)r2.ReadByte());
+        LoginResult result = LoginResult.Read(ref r2);
+        Assert.True(result.Ok);
+        Assert.True(result.HasCharacter);
+        Assert.Equal("Aria", result.CharacterName);
+        Assert.Equal(Gender.Female, result.Gender);
+        Assert.Equal((byte)4, result.Level);
 
-        Assert.Equal((byte)1, decoded.ProtocolVersion);
-        Assert.Equal("Aria", decoded.Name);
-        Assert.Equal((byte)3, decoded.RaceId);
-        Assert.Equal((byte)2, decoded.ClassId);
-        Assert.Equal(Gender.Female, decoded.Gender);
-        Assert.Equal("acct-42", decoded.AccountId);
-        Assert.Equal("hunter2", decoded.AccountSecret);
-        Assert.Equal(0, reader.Remaining);
+        var w3 = new PacketWriter();
+        new CreateCharacter("Borin", 4, 1, Gender.Male).Write(w3);
+        var r3 = new PacketReader(w3.WrittenSpan);
+        Assert.Equal(MessageType.CreateCharacter, (MessageType)r3.ReadByte());
+        CreateCharacter create = CreateCharacter.Read(ref r3);
+        Assert.Equal("Borin", create.Name);
+        Assert.Equal((byte)4, create.RaceId);
     }
 
     [Test("UseAbility survives a write/read round trip.")]

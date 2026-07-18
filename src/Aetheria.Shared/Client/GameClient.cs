@@ -67,13 +67,42 @@ public sealed class GameClient
     public string LastInstanceMessage { get; private set; } = string.Empty;
     public bool InInstance { get; private set; }
 
-    public void Connect(
-        string host, int port, string name, byte raceId, byte classId, Gender gender,
-        string accountId, string accountSecret = "")
+    // --- Login flow (account first, then the server's single character) ---
+
+    /// <summary>True once the account is authenticated (the character screen can show).</summary>
+    public bool LoggedIn { get; private set; }
+
+    /// <summary>Login/creation error to display, cleared on the next attempt.</summary>
+    public string LoginError { get; private set; } = string.Empty;
+
+    /// <summary>The account's character on this server, if any (valid once LoggedIn).</summary>
+    public bool HasCharacter { get; private set; }
+    public string CharacterName { get; private set; } = string.Empty;
+    public byte CharacterRaceId { get; private set; }
+    public byte CharacterClassId { get; private set; }
+    public Gender CharacterGender { get; private set; }
+    public byte CharacterLevel { get; private set; } = 1;
+
+    /// <summary>Open the socket toward the server and authenticate the account.</summary>
+    public void Connect(string host, int port, string accountId, string accountSecret)
     {
         _transport.Connect(host, port);
-        Send(new ConnectRequest(
-            SimulationConstants.ProtocolVersion, name, raceId, classId, gender, accountId, accountSecret));
+        LoginError = string.Empty;
+        Send(new Login(SimulationConstants.ProtocolVersion, accountId, accountSecret));
+    }
+
+    /// <summary>Create this server's one character for the account, then enter the world.</summary>
+    public void SendCreateCharacter(string name, byte raceId, byte classId, Gender gender)
+    {
+        LoginError = string.Empty;
+        Send(new CreateCharacter(name, raceId, classId, gender));
+    }
+
+    /// <summary>Enter the world with the existing character.</summary>
+    public void SendEnterWorld()
+    {
+        LoginError = string.Empty;
+        Send(new EnterWorld());
     }
 
     public void SendBank(BankOp op, byte itemId, int amount) => Send(new BankTransaction(op, itemId, amount));
@@ -322,6 +351,25 @@ public sealed class GameClient
 
                     break;
 
+                case MessageType.LoginResult:
+                    LoginResult login = LoginResult.Read(ref reader);
+                    if (login.Ok)
+                    {
+                        LoggedIn = true;
+                        HasCharacter = login.HasCharacter;
+                        CharacterName = login.CharacterName;
+                        CharacterRaceId = login.RaceId;
+                        CharacterClassId = login.ClassId;
+                        CharacterGender = login.Gender;
+                        CharacterLevel = login.Level;
+                    }
+                    else
+                    {
+                        LoginError = login.Message;
+                    }
+
+                    break;
+
                 case MessageType.InspectResult:
                     LastInspect = InspectResult.Read(ref reader);
                     break;
@@ -432,7 +480,9 @@ public sealed class GameClient
         return false;
     }
 
-    private void Send(ConnectRequest msg) => SendWith(msg.Write);
+    private void Send(Login msg) => SendWith(msg.Write);
+    private void Send(CreateCharacter msg) => SendWith(msg.Write);
+    private void Send(EnterWorld msg) => SendWith(msg.Write);
     private void Send(InputCommand msg) => SendWith(msg.Write);
     private void Send(UseAbility msg) => SendWith(msg.Write);
     private void Send(UseRacial msg) => SendWith(msg.Write);
