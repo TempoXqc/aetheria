@@ -29,6 +29,10 @@ namespace Aetheria.UnityClient
         /// <summary>Tail pivot for quadrupeds (wag animation). Null otherwise.</summary>
         public Transform Tail;
 
+        /// <summary>Hand bones (skinned FBX rigs) — weapons mount here when present.</summary>
+        public Transform HandL;
+        public Transform HandR;
+
         /// <summary>Renderers tinted by relation (self / ally / enemy) — the character's tunic.</summary>
         public Renderer[] TintTargets = new Renderer[0];
 
@@ -37,6 +41,50 @@ namespace Aetheria.UnityClient
 
         /// <summary>Quadrupeds swing legs in diagonal pairs and "bite" instead of arm-swinging.</summary>
         public bool Quadruped;
+
+        /// <summary>
+        /// Non-null for skinned FBX rigs (Quaternius/Mixamo bones): swings then compose with the
+        /// captured bind pose AROUND THE CHARACTER'S OWN AXES, so animation code never needs to
+        /// know each bone's local axis convention. Null for procedural rigs (pivots start at
+        /// identity, plain local rotation is enough).
+        /// </summary>
+        public Transform BoneRoot;
+
+        private readonly System.Collections.Generic.Dictionary<Transform, Quaternion> _rest =
+            new System.Collections.Generic.Dictionary<Transform, Quaternion>();
+
+        /// <summary>Record every animated bone's bind rotation relative to the root (bone rigs).</summary>
+        public void CaptureRestPose()
+        {
+            _rest.Clear();
+            if (BoneRoot == null) { return; }
+
+            foreach (Transform t in new[] { ArmL, ArmR, LegL, LegR, Head })
+            {
+                if (t != null)
+                {
+                    _rest[t] = Quaternion.Inverse(BoneRoot.rotation) * t.rotation;
+                }
+            }
+        }
+
+        /// <summary>Swing a pivot by X degrees around the character's sideways axis.</summary>
+        public void SwingX(Transform pivot, float degrees)
+        {
+            if (pivot == null) { return; }
+
+            if (BoneRoot == null)
+            {
+                pivot.localRotation = Quaternion.Euler(degrees, 0f, 0f);
+                return;
+            }
+
+            Quaternion rest;
+            if (_rest.TryGetValue(pivot, out rest))
+            {
+                pivot.rotation = BoneRoot.rotation * Quaternion.Euler(degrees, 0f, 0f) * rest;
+            }
+        }
     }
 
     /// <summary>
@@ -105,8 +153,35 @@ namespace Aetheria.UnityClient
                 case EntityKind.Npc:
                     return BuildBankChest(parent);
                 default:
+                    // Real modular meshes (Quaternius pack) when imported; procedural otherwise.
+                    if (QuaterniusCharacters.Available)
+                    {
+                        ModelRig q = QuaterniusCharacters.Create(parent, snapshot);
+                        if (q != null)
+                        {
+                            AttachHandheld(q, snapshot);
+                            return q;
+                        }
+                    }
+
                     return BuildPlayer(parent, snapshot);
             }
+        }
+
+        /// <summary>Weapon + shield for an FBX-based character (its clothes are real meshes).</summary>
+        private static void AttachHandheld(ModelRig rig, EntitySnapshot snapshot)
+        {
+            byte weaponItemId = snapshot.EquippedIn(EquipSlot.Weapon);
+            if (weaponItemId != 0)
+            {
+                AttachWeaponItem(rig, weaponItemId);
+            }
+            else
+            {
+                AttachWeapon(rig, snapshot.ClassId);
+            }
+
+            AttachOffHand(rig, snapshot.EquippedIn(EquipSlot.OffHand));
         }
 
         /// <summary>The slain creature lying on its side, darkened — cosmetic remains on a timer.</summary>
@@ -224,9 +299,29 @@ namespace Aetheria.UnityClient
             }
         }
 
+        /// <summary>Where a held item mounts: the HAND bone on FBX rigs, the forearm on procedural ones.</summary>
+        private static Transform GripFor(ModelRig rig, bool offHand)
+        {
+            Transform hand = offHand ? rig.HandL : rig.HandR;
+            if (hand != null && rig.BoneRoot != null)
+            {
+                Transform grip = Pivot(hand, "Grip", Vector3.zero);
+                grip.rotation = rig.BoneRoot.rotation; // align to the character, not the bone's axes
+                Vector3 ls = grip.lossyScale;          // undo import/bone scaling → world scale ≈ 1
+                grip.localScale = new Vector3(
+                    ls.x > 0.0001f ? 1f / ls.x : 1f,
+                    ls.y > 0.0001f ? 1f / ls.y : 1f,
+                    ls.z > 0.0001f ? 1f / ls.z : 1f);
+                return grip;
+            }
+
+            return Pivot(offHand ? rig.ArmL : rig.ArmR, "Grip",
+                new Vector3(0f, -0.66f, offHand ? 0.08f : 0.10f));
+        }
+
         private static void Sword(ModelRig rig, Color blade, float length)
         {
-            var w = Pivot(rig.ArmR, "Sword", new Vector3(0f, -0.66f, 0.10f));
+            var w = Pivot(GripFor(rig, offHand: false), "Sword", Vector3.zero);
             w.localRotation = Quaternion.Euler(90f, 0f, 0f);
             Cube(w, "Blade", new Vector3(0f, 0.10f + (length / 2f), 0f), new Vector3(0.06f, length, 0.10f), blade);
             Cube(w, "Guard", new Vector3(0f, 0.08f, 0f), new Vector3(0.20f, 0.05f, 0.06f), new Color(0.55f, 0.45f, 0.20f));
@@ -235,7 +330,7 @@ namespace Aetheria.UnityClient
 
         private static void Bow(ModelRig rig, Color wood, float scale)
         {
-            var w = Pivot(rig.ArmL, "Bow", new Vector3(0f, -0.66f, 0.08f));
+            var w = Pivot(GripFor(rig, offHand: true), "Bow", Vector3.zero);
             var upper = Caps(w, "LimbUp", new Vector3(0f, 0.24f * scale, 0.06f), new Vector3(0.05f, 0.26f * scale, 0.05f), wood);
             upper.transform.localRotation = Quaternion.Euler(-14f, 0f, 0f);
             var lower = Caps(w, "LimbDown", new Vector3(0f, -0.24f * scale, 0.06f), new Vector3(0.05f, 0.26f * scale, 0.05f), wood);
@@ -246,7 +341,7 @@ namespace Aetheria.UnityClient
 
         private static void Staff(ModelRig rig, Color wood, Color focus)
         {
-            var w = Pivot(rig.ArmR, "Staff", new Vector3(0f, -0.66f, 0.08f));
+            var w = Pivot(GripFor(rig, offHand: false), "Staff", Vector3.zero);
             Shape(PrimitiveType.Cylinder, w, "Shaft", new Vector3(0f, 0.35f, 0f),
                 new Vector3(0.05f, 0.75f, 0.05f), wood);
             var orb = Ball(w, "Focus", new Vector3(0f, 1.12f, 0f), new Vector3(0.16f, 0.16f, 0.16f), focus);
@@ -373,7 +468,9 @@ namespace Aetheria.UnityClient
             switch (itemId)
             {
                 case 22: // Wooden Shield: a round disc with an iron boss
-                    Transform mount = Pivot(rig.ArmL, "Shield", new Vector3(-0.14f, -0.40f, 0.02f));
+                    bool onHand = rig.HandL != null && rig.BoneRoot != null;
+                    Transform mount = Pivot(onHand ? GripFor(rig, offHand: true) : rig.ArmL, "Shield",
+                        onHand ? Vector3.zero : new Vector3(-0.14f, -0.40f, 0.02f));
                     mount.localRotation = Quaternion.Euler(0f, 0f, 90f); // disc faces outward
                     Shape(PrimitiveType.Cylinder, mount, "Disc", Vector3.zero,
                         new Vector3(0.40f, 0.025f, 0.40f), new Color(0.45f, 0.30f, 0.16f));
@@ -518,82 +615,7 @@ namespace Aetheria.UnityClient
 
             // Head: its own pivot so it can nod; a sphere skull with sculpted features.
             rig.Head = Pivot(model.transform, "Head", new Vector3(0f, 1.62f, 0f));
-            float hs = 0.32f * p.HeadScale;
-            Ball(rig.Head, "Skull", new Vector3(0f, 0.17f, 0f), new Vector3(hs * 1.05f, hs, hs * 1.02f), skin);
-
-            // Face variant: nose and eye proportions.
-            float noseScale = FaceNoseScale[face];
-            float eyeScale = FaceEyeScale[face];
-            Ball(rig.Head, "Nose", new Vector3(0f, 0.14f, hs * 0.52f),
-                new Vector3(0.08f * noseScale, 0.08f * noseScale, 0.11f * noseScale), skin);
-            Color eye = new Color(0.08f, 0.08f, 0.10f);
-            Ball(rig.Head, "EyeL", new Vector3(-hs * 0.24f, 0.21f, hs * 0.45f),
-                new Vector3(0.055f * eyeScale, 0.055f * eyeScale, 0.03f), eye);
-            Ball(rig.Head, "EyeR", new Vector3(hs * 0.24f, 0.21f, hs * 0.45f),
-                new Vector3(0.055f * eyeScale, 0.055f * eyeScale, 0.03f), eye);
-
-            // Hair style: 0 court, 1 long, 2 iroquois, 3 chauve.
-            if (hairStyle == 0 || hairStyle == 1)
-            {
-                Ball(rig.Head, "Hair", new Vector3(0f, 0.17f + (hs * 0.38f), -hs * 0.08f),
-                    new Vector3(hs * 1.12f, hs * 0.62f, hs * 1.1f), hairColor);
-            }
-
-            if (hairStyle == 1) // long: cap + hair falling down the back
-            {
-                Caps(rig.Head, "HairBack", new Vector3(0f, -0.02f, -hs * 0.5f),
-                    new Vector3(hs * 0.85f, 0.30f, 0.14f), hairColor);
-            }
-            else if (hairStyle == 2) // iroquois: a tall narrow crest
-            {
-                Ball(rig.Head, "Mohawk", new Vector3(0f, 0.17f + (hs * 0.62f), 0f),
-                    new Vector3(0.10f, 0.24f, hs * 1.15f), hairColor);
-            }
-
-            // Beard style: 0 aucune, 1 courte, 2 longue, 3 tressée.
-            if (beardStyle == 1)
-            {
-                Ball(rig.Head, "Beard", new Vector3(0f, 0.02f, hs * 0.40f),
-                    new Vector3(hs * 0.78f, 0.22f, 0.16f), beardColor);
-            }
-            else if (beardStyle == 2)
-            {
-                Ball(rig.Head, "Beard", new Vector3(0f, -0.10f, hs * 0.38f),
-                    new Vector3(hs * 0.78f, 0.44f, 0.16f), beardColor);
-            }
-            else if (beardStyle == 3)
-            {
-                Ball(rig.Head, "Beard", new Vector3(0f, -0.02f, hs * 0.38f),
-                    new Vector3(hs * 0.78f, 0.28f, 0.16f), beardColor);
-                Caps(rig.Head, "Braid", new Vector3(0f, -0.30f, hs * 0.40f),
-                    new Vector3(0.08f, 0.17f, 0.08f), beardColor);
-            }
-
-            if (p.Tusks)
-            {
-                Color bone = new Color(0.92f, 0.90f, 0.82f);
-                Caps(rig.Head, "TuskL", new Vector3(-0.07f, 0.06f, hs * 0.48f), new Vector3(0.045f, 0.06f, 0.045f), bone);
-                Caps(rig.Head, "TuskR", new Vector3(0.07f, 0.06f, hs * 0.48f), new Vector3(0.045f, 0.06f, 0.045f), bone);
-            }
-
-            if (p.Ears == 1) // pointed elf ears
-            {
-                var earL = Caps(rig.Head, "EarL", new Vector3(-hs * 0.56f, 0.26f, 0f), new Vector3(0.05f, 0.09f, 0.05f), skin);
-                earL.transform.localRotation = Quaternion.Euler(0f, 0f, 28f);
-                var earR = Caps(rig.Head, "EarR", new Vector3(hs * 0.56f, 0.26f, 0f), new Vector3(0.05f, 0.09f, 0.05f), skin);
-                earR.transform.localRotation = Quaternion.Euler(0f, 0f, -28f);
-            }
-            else if (p.Ears == 2) // large goblin ears
-            {
-                Ball(rig.Head, "EarL", new Vector3(-hs * 0.64f, 0.19f, 0f), new Vector3(0.16f, 0.11f, 0.06f), skin);
-                Ball(rig.Head, "EarR", new Vector3(hs * 0.64f, 0.19f, 0f), new Vector3(0.16f, 0.11f, 0.06f), skin);
-            }
-
-            if (p.Crown)
-            {
-                Shape(PrimitiveType.Cylinder, rig.Head, "Crown", new Vector3(0f, 0.17f + (hs * 0.62f), 0f),
-                    new Vector3(hs * 0.85f, 0.06f, hs * 0.85f), new Color(0.95f, 0.80f, 0.20f));
-            }
+            BuildHeadParts(rig.Head, p, skin, hairColor, beardColor, face, hairStyle, beardStyle);
 
             // Only relation-tint player tunics; monsters keep their fixed colours.
             if (p.Tunic == null)
@@ -605,13 +627,113 @@ namespace Aetheria.UnityClient
             return rig;
         }
 
+        /// <summary>
+        /// The whole customised head (skull, face, hair, beard, race features) built onto any
+        /// parent — the procedural body's head pivot, or an FBX rig's head bone.
+        /// </summary>
+        public static void BuildHeadOn(Transform headParent, byte raceId, Gender gender, Appearance look)
+        {
+            _ = gender;
+            BodyParams p = RaceParams(raceId);
+            p.UseCustom = true;
+
+            float f = SkinToneFactors[Mathf.Clamp(look.SkinTone, 0, SkinToneFactors.Length - 1)];
+            Color skin = new Color(p.Skin.r * f, p.Skin.g * f, p.Skin.b * f);
+            Color hairColor = HairColors[Mathf.Clamp(look.HairColor, 0, HairColors.Length - 1)];
+            Color beardColor = HairColors[Mathf.Clamp(look.BeardColor, 0, HairColors.Length - 1)];
+            int face = Mathf.Clamp(look.Face, 0, FaceNoseScale.Length - 1);
+
+            BuildHeadParts(headParent, p, skin, hairColor, beardColor, face, look.HairStyle, look.BeardStyle);
+        }
+
+        private static void BuildHeadParts(Transform head, BodyParams p, Color skin, Color hairColor,
+            Color beardColor, int face, int hairStyle, int beardStyle)
+        {
+            float hs = 0.32f * p.HeadScale;
+            Ball(head, "Skull", new Vector3(0f, 0.17f, 0f), new Vector3(hs * 1.05f, hs, hs * 1.02f), skin);
+
+            // Face variant: nose and eye proportions.
+            float noseScale = FaceNoseScale[face];
+            float eyeScale = FaceEyeScale[face];
+            Ball(head, "Nose", new Vector3(0f, 0.14f, hs * 0.52f),
+                new Vector3(0.08f * noseScale, 0.08f * noseScale, 0.11f * noseScale), skin);
+            Color eye = new Color(0.08f, 0.08f, 0.10f);
+            Ball(head, "EyeL", new Vector3(-hs * 0.24f, 0.21f, hs * 0.45f),
+                new Vector3(0.055f * eyeScale, 0.055f * eyeScale, 0.03f), eye);
+            Ball(head, "EyeR", new Vector3(hs * 0.24f, 0.21f, hs * 0.45f),
+                new Vector3(0.055f * eyeScale, 0.055f * eyeScale, 0.03f), eye);
+
+            // Hair style: 0 court, 1 long, 2 iroquois, 3 chauve.
+            if (hairStyle == 0 || hairStyle == 1)
+            {
+                Ball(head, "Hair", new Vector3(0f, 0.17f + (hs * 0.38f), -hs * 0.08f),
+                    new Vector3(hs * 1.12f, hs * 0.62f, hs * 1.1f), hairColor);
+            }
+
+            if (hairStyle == 1) // long: cap + hair falling down the back
+            {
+                Caps(head, "HairBack", new Vector3(0f, -0.02f, -hs * 0.5f),
+                    new Vector3(hs * 0.85f, 0.30f, 0.14f), hairColor);
+            }
+            else if (hairStyle == 2) // iroquois: a tall narrow crest
+            {
+                Ball(head, "Mohawk", new Vector3(0f, 0.17f + (hs * 0.62f), 0f),
+                    new Vector3(0.10f, 0.24f, hs * 1.15f), hairColor);
+            }
+
+            // Beard style: 0 aucune, 1 courte, 2 longue, 3 tressée.
+            if (beardStyle == 1)
+            {
+                Ball(head, "Beard", new Vector3(0f, 0.02f, hs * 0.40f),
+                    new Vector3(hs * 0.78f, 0.22f, 0.16f), beardColor);
+            }
+            else if (beardStyle == 2)
+            {
+                Ball(head, "Beard", new Vector3(0f, -0.10f, hs * 0.38f),
+                    new Vector3(hs * 0.78f, 0.44f, 0.16f), beardColor);
+            }
+            else if (beardStyle == 3)
+            {
+                Ball(head, "Beard", new Vector3(0f, -0.02f, hs * 0.38f),
+                    new Vector3(hs * 0.78f, 0.28f, 0.16f), beardColor);
+                Caps(head, "Braid", new Vector3(0f, -0.30f, hs * 0.40f),
+                    new Vector3(0.08f, 0.17f, 0.08f), beardColor);
+            }
+
+            if (p.Tusks)
+            {
+                Color bone = new Color(0.92f, 0.90f, 0.82f);
+                Caps(head, "TuskL", new Vector3(-0.07f, 0.06f, hs * 0.48f), new Vector3(0.045f, 0.06f, 0.045f), bone);
+                Caps(head, "TuskR", new Vector3(0.07f, 0.06f, hs * 0.48f), new Vector3(0.045f, 0.06f, 0.045f), bone);
+            }
+
+            if (p.Ears == 1) // pointed elf ears
+            {
+                var earL = Caps(head, "EarL", new Vector3(-hs * 0.56f, 0.26f, 0f), new Vector3(0.05f, 0.09f, 0.05f), skin);
+                earL.transform.localRotation = Quaternion.Euler(0f, 0f, 28f);
+                var earR = Caps(head, "EarR", new Vector3(hs * 0.56f, 0.26f, 0f), new Vector3(0.05f, 0.09f, 0.05f), skin);
+                earR.transform.localRotation = Quaternion.Euler(0f, 0f, -28f);
+            }
+            else if (p.Ears == 2) // large goblin ears
+            {
+                Ball(head, "EarL", new Vector3(-hs * 0.64f, 0.19f, 0f), new Vector3(0.16f, 0.11f, 0.06f), skin);
+                Ball(head, "EarR", new Vector3(hs * 0.64f, 0.19f, 0f), new Vector3(0.16f, 0.11f, 0.06f), skin);
+            }
+
+            if (p.Crown)
+            {
+                Shape(PrimitiveType.Cylinder, head, "Crown", new Vector3(0f, 0.17f + (hs * 0.62f), 0f),
+                    new Vector3(hs * 0.85f, 0.06f, hs * 0.85f), new Color(0.95f, 0.80f, 0.20f));
+            }
+        }
+
         private static void AttachWeapon(ModelRig rig, byte classId)
         {
             switch (classId)
             {
                 case 1: // Warrior: a sword held ready, blade forward.
                 {
-                    var w = Pivot(rig.ArmR, "Sword", new Vector3(0f, -0.66f, 0.10f));
+                    var w = Pivot(GripFor(rig, offHand: false), "Sword", Vector3.zero);
                     w.localRotation = Quaternion.Euler(90f, 0f, 0f); // +Y of the blade → forward (+Z)
                     Color steel = new Color(0.75f, 0.78f, 0.82f);
                     Cube(w, "Blade", new Vector3(0f, 0.38f, 0f), new Vector3(0.06f, 0.66f, 0.10f), steel);
@@ -625,8 +747,8 @@ namespace Aetheria.UnityClient
                     GameObject orb = GameObject.CreatePrimitive(PrimitiveType.Sphere);
                     orb.name = "Orb";
                     Object.Destroy(orb.GetComponent<Collider>());
-                    orb.transform.SetParent(rig.ArmR, false);
-                    orb.transform.localPosition = new Vector3(0f, -0.70f, 0.14f);
+                    orb.transform.SetParent(GripFor(rig, offHand: false), false);
+                    orb.transform.localPosition = new Vector3(0f, -0.04f, 0.04f);
                     orb.transform.localScale = new Vector3(0.17f, 0.17f, 0.17f);
                     Paint(orb, new Color(0.30f, 0.90f, 1f));
                     break;
@@ -634,7 +756,7 @@ namespace Aetheria.UnityClient
 
                 case 3: // Ranger: a bow in the off-hand.
                 {
-                    var w = Pivot(rig.ArmL, "Bow", new Vector3(0f, -0.66f, 0.08f));
+                    var w = Pivot(GripFor(rig, offHand: true), "Bow", Vector3.zero);
                     Color wood = new Color(0.45f, 0.30f, 0.15f);
                     var upper = Caps(w, "LimbUp", new Vector3(0f, 0.24f, 0.06f), new Vector3(0.05f, 0.26f, 0.05f), wood);
                     upper.transform.localRotation = Quaternion.Euler(-14f, 0f, 0f);

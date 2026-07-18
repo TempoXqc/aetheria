@@ -350,10 +350,10 @@ namespace Aetheria.UnityClient
             if (_rig.Quadruped)
             {
                 // Diagonal pairs, like a trot.
-                SetPivotX(_rig.ArmL, swing);
-                SetPivotX(_rig.LegR, swing);
-                SetPivotX(_rig.ArmR, -swing);
-                SetPivotX(_rig.LegL, -swing);
+                _rig.SwingX(_rig.ArmL, swing);
+                _rig.SwingX(_rig.LegR, swing);
+                _rig.SwingX(_rig.ArmR, -swing);
+                _rig.SwingX(_rig.LegL, -swing);
 
                 if (_rig.Tail != null)
                 {
@@ -365,22 +365,22 @@ namespace Aetheria.UnityClient
                 if (_rig.Head != null)
                 {
                     float bite = AttackCurve() * 28f;
-                    _rig.Head.localRotation = Quaternion.Euler(bite, 0f, 0f);
+                    _rig.SwingX(_rig.Head, bite);
                 }
             }
             else
             {
                 // Legs swing opposite each other; arms counter-swing.
-                SetPivotX(_rig.LegL, swing);
-                SetPivotX(_rig.LegR, -swing);
-                SetPivotX(_rig.ArmL, -swing * 0.7f);
+                _rig.SwingX(_rig.LegL, swing);
+                _rig.SwingX(_rig.LegR, -swing);
+                _rig.SwingX(_rig.ArmL, -swing * 0.7f);
 
                 // The weapon arm: walk counter-swing, overridden by the attack swing.
                 float atk = AttackCurve();
                 float armAngle = atk > 0f
                     ? Mathf.Lerp(20f, -105f, atk) // wind up slightly, then strike down/forward
                     : swing * 0.7f;
-                SetPivotX(_rig.ArmR, armAngle);
+                _rig.SwingX(_rig.ArmR, armAngle);
 
                 // Idle breathing: a subtle torso pulse when standing still.
                 if (_rig.Torso != null)
@@ -408,14 +408,6 @@ namespace Aetheria.UnityClient
 
             float t = 1f - (_attackTimer / AttackDuration); // 0 → 1 over the swing
             return Mathf.Sin(t * Mathf.PI);
-        }
-
-        private static void SetPivotX(Transform pivot, float degrees)
-        {
-            if (pivot != null)
-            {
-                pivot.localRotation = Quaternion.Euler(degrees, 0f, 0f);
-            }
         }
 
         // --------------------------------------------------------------- Colours
