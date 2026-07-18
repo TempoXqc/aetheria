@@ -8,6 +8,11 @@
       { "itemId": 33, "quantity": 1 },
       { "itemId": 34, "quantity": 1 },
       { "itemId": 35, "quantity": 1 }
+    ],
+    "gearDrops": [
+      { "itemId": 1, "chancePercent": 8 },
+      { "itemId": 3, "chancePercent": 5 },
+      { "itemId": 12, "chancePercent": 4 }
     ] },
   { "id": 2, "name": "Dire Wolf",           "level": 3,  "maxHealth": 200,  "moveSpeed": 6.0, "attackPower": 8, "defense": 3,  "aggroRadius": 9.0,  "basicAbilityId": 4, "xpReward": 60,   "goldReward": 10,
     "bodyParts": [
@@ -25,6 +30,11 @@
       { "itemId": 31, "quantity": 2 },
       { "itemId": 11, "quantity": 2 },
       { "itemId": 32, "quantity": 2 }
+    ],
+    "gearDrops": [
+      { "itemId": 2, "chancePercent": 100 },
+      { "itemId": 9, "chancePercent": 35 },
+      { "itemId": 7, "chancePercent": 30 }
     ] },
   { "id": 4, "name": "Ashmaw the Devourer", "level": 10, "maxHealth": 4500, "moveSpeed": 5.0, "attackPower": 35, "defense": 12, "aggroRadius": 14.0, "basicAbilityId": 4, "xpReward": 2200, "goldReward": 600,
     "bodyParts": [
@@ -33,5 +43,10 @@
       { "itemId": 62, "quantity": 1 },
       { "itemId": 63, "quantity": 4 },
       { "itemId": 64, "quantity": 3 }
+    ],
+    "gearDrops": [
+      { "itemId": 4, "chancePercent": 100 },
+      { "itemId": 9, "chancePercent": 100 },
+      { "itemId": 8, "chancePercent": 50 }
     ] }
 ]

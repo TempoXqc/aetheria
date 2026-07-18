@@ -208,11 +208,18 @@ public readonly struct EntitySnapshot
     /// <summary>Cast progress, 0..255 over the incantation.</summary>
     public readonly byte CastProgress;
 
+    /// <summary>Equipped weapon item id (0 = none) — the model in the character's hand.</summary>
+    public readonly byte EquippedWeaponId;
+
+    /// <summary>Equipped armor item id (0 = none) — drives the character's outfit.</summary>
+    public readonly byte EquippedArmorId;
+
     public EntitySnapshot(
         int id, EntityKind kind, Faction faction, Vec2 position,
         int health, int maxHealth, int resource, int maxResource, float facingRadians = 0f,
         byte level = 1, string name = "", byte raceId = 0, byte classId = 0, Gender gender = Gender.Male,
-        Appearance appearance = default, byte flags = 0, byte castAbilityId = 0, byte castProgress = 0)
+        Appearance appearance = default, byte flags = 0, byte castAbilityId = 0, byte castProgress = 0,
+        byte equippedWeaponId = 0, byte equippedArmorId = 0)
     {
         Id = id;
         Kind = kind;
@@ -232,6 +239,8 @@ public readonly struct EntitySnapshot
         Flags = flags;
         CastAbilityId = castAbilityId;
         CastProgress = castProgress;
+        EquippedWeaponId = equippedWeaponId;
+        EquippedArmorId = equippedArmorId;
     }
 
     public void Write(PacketWriter w)
@@ -255,6 +264,8 @@ public readonly struct EntitySnapshot
         w.WriteByte(Flags);
         w.WriteByte(CastAbilityId);
         w.WriteByte(CastProgress);
+        w.WriteByte(EquippedWeaponId);
+        w.WriteByte(EquippedArmorId);
     }
 
     public static EntitySnapshot Read(ref PacketReader r)
@@ -278,9 +289,11 @@ public readonly struct EntitySnapshot
         byte flags = r.ReadByte();
         byte castAbilityId = r.ReadByte();
         byte castProgress = r.ReadByte();
+        byte weaponId = r.ReadByte();
+        byte armorId = r.ReadByte();
         return new EntitySnapshot(
             id, kind, faction, new Vec2(x, y), health, maxHealth, resource, maxResource, facing, level, name,
-            raceId, classId, gender, appearance, flags, castAbilityId, castProgress);
+            raceId, classId, gender, appearance, flags, castAbilityId, castProgress, weaponId, armorId);
     }
 }
 

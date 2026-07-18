@@ -85,12 +85,22 @@ public sealed class ClassDefinition
     /// <summary>The ability used by this class's basic attack (available from level 1).</summary>
     public byte BasicAbilityId { get; init; }
 
+    /// <summary>
+    /// The ability the server AUTO-ATTACKS with (0 = same as BasicAbilityId). Lets the Mage
+    /// auto-attack with its WAND while Firebolt stays a hand-cast incantation, WoW-style.
+    /// </summary>
+    public byte AutoAttackAbilityId { get; init; }
+
+    /// <summary>The resolved auto-attack ability.</summary>
+    public byte EffectiveAutoAttackId => AutoAttackAbilityId != 0 ? AutoAttackAbilityId : BasicAbilityId;
+
     /// <summary>Every ability this class can use (basic + advanced). Advanced ones gate on level.</summary>
     public byte[] AbilityIds { get; init; } = [];
 
     /// <summary>True if the ability belongs to this class's kit.</summary>
     public bool HasAbility(byte abilityId)
-        => abilityId == BasicAbilityId || Array.IndexOf(AbilityIds, abilityId) >= 0;
+        => abilityId == BasicAbilityId || abilityId == EffectiveAutoAttackId ||
+           Array.IndexOf(AbilityIds, abilityId) >= 0;
 
     /// <summary>The resource this class spends on abilities.</summary>
     public ResourceType Resource { get; init; } = ResourceType.Mana;
@@ -131,6 +141,12 @@ public sealed class MonsterDefinition
     /// </summary>
     public IReadOnlyList<LootEntry> BodyParts { get; init; } = [];
 
+    /// <summary>
+    /// EQUIPMENT drops: rolled once per kill with the given percent chance (100 = guaranteed).
+    /// Body parts are deterministic; gear is where the dice live.
+    /// </summary>
+    public IReadOnlyList<GearDrop> GearDrops { get; init; } = [];
+
     public StatBlock ToStats()
         => new(MaxHealth, MoveSpeed, AttackPower, Defense, AggroRadius);
 }
@@ -140,6 +156,15 @@ public sealed class LootEntry
 {
     public byte ItemId { get; init; }
     public int Quantity { get; init; } = 1;
+}
+
+/// <summary>One chance-based equipment drop.</summary>
+public sealed class GearDrop
+{
+    public byte ItemId { get; init; }
+
+    /// <summary>Drop chance in percent (100 = always).</summary>
+    public int ChancePercent { get; init; } = 100;
 }
 
 /// <summary>One monster placement inside an instance template.</summary>

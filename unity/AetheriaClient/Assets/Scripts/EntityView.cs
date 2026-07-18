@@ -59,6 +59,10 @@ namespace Aetheria.UnityClient
         public byte CastAbilityId { get; private set; }
         public float CastFraction { get; private set; }
 
+        // The gear this model was built with — a change means the LOOK changed: rebuild.
+        private byte _builtWeaponId;
+        private byte _builtArmorId;
+
         /// <summary>Where nameplates and prompts should anchor, above the model's head.</summary>
         public float HeadHeight
         {
@@ -93,14 +97,39 @@ namespace Aetheria.UnityClient
                 view._rig = CharacterModelBuilder.Build(body.transform, snapshot);
             }
 
-            view._parts = body.GetComponentsInChildren<Renderer>();
-            view._baseColors = new Color[view._parts.Length];
-            for (int i = 0; i < view._parts.Length; i++)
+            view._builtWeaponId = snapshot.EquippedWeaponId;
+            view._builtArmorId = snapshot.EquippedArmorId;
+            view.CaptureParts();
+            return view;
+        }
+
+        private void CaptureParts()
+        {
+            _parts = _body.GetComponentsInChildren<Renderer>();
+            _baseColors = new Color[_parts.Length];
+            for (int i = 0; i < _parts.Length; i++)
             {
-                view._baseColors[i] = view._parts[i].material.color;
+                _baseColors[i] = _parts[i].material.color;
             }
 
-            return view;
+            _hasTint = false; // relation tint re-applies on the next snapshot
+        }
+
+        /// <summary>Tear the procedural model down and rebuild it (gear changed = new look).</summary>
+        private void RebuildModel(EntitySnapshot snapshot)
+        {
+            for (int i = _body.childCount - 1; i >= 0; i--)
+            {
+                Transform old = _body.GetChild(i);
+                old.SetParent(null, false); // detach FIRST so CaptureParts can't see the dying parts
+                Object.Destroy(old.gameObject);
+            }
+
+            _rig = CharacterModelBuilder.Build(_body, snapshot);
+            _builtWeaponId = snapshot.EquippedWeaponId;
+            _builtArmorId = snapshot.EquippedArmorId;
+            _torsoBaseY = 0f;
+            CaptureParts();
         }
 
         /// <summary>Apply the latest authoritative snapshot for this entity.</summary>
@@ -114,6 +143,13 @@ namespace Aetheria.UnityClient
             IsBoss = Kind == EntityKind.Monster && snapshot.MaxHealth >= 300;
             CastAbilityId = snapshot.CastAbilityId;
             CastFraction = snapshot.CastProgress / 255f;
+
+            // Gear changed → the silhouette changes with it (visible loot!).
+            if (Kind == EntityKind.Player && _extAnimator == null &&
+                (snapshot.EquippedWeaponId != _builtWeaponId || snapshot.EquippedArmorId != _builtArmorId))
+            {
+                RebuildModel(snapshot);
+            }
 
             // Server plane (X, Y) maps onto Unity ground plane (X, Z); models stand on y=0.
             _targetPosition = new Vector3(snapshot.Position.X, 0f, snapshot.Position.Y);

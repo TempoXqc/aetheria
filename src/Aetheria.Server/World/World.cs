@@ -94,6 +94,7 @@ public sealed class World
             Appearance = appearance.Clamped(), // trust boundary: hostile clients can't smuggle bad indexes
             Faction = race.Faction,
             RacialAbilityId = race.RacialAbilityId,
+            AutoAttackAbilityId = cls.EffectiveAutoAttackId, // wand for mages, weapon strike otherwise
         };
         entity.InitResource(cls.Resource, cls.MaxResource, cls.ResourceRegenPerSec * SimulationConstants.TickDelta);
         ApplyXp(entity, 0); // sets level 1 and zero progression bonuses
@@ -111,7 +112,12 @@ public sealed class World
     public void GrantStarterKit(ServerEntity entity)
     {
         entity.Inventory.AddGold(SimulationConstants.StartingGold);
-        entity.EquippedWeaponId = 1;               // Rusty Sword
+        entity.EquippedWeaponId = entity.ClassId switch
+        {
+            2 => (byte)6, // Mage: Worn Staff
+            3 => (byte)5, // Ranger: Worn Bow
+            _ => (byte)1, // Warrior: Rusty Sword
+        };
         AddItem(entity, itemId: 20, quantity: 2);  // Minor Healing Potions
         RecomputeEquipment(entity);
 
@@ -528,7 +534,8 @@ public sealed class World
 
             // Silent attempt: range, swing timer (the ability's own cooldown), resource and the
             // faction/sanctuary rules are all enforced inside TryUseAbility.
-            TryUseAbility(player.Id, player.BasicAbilityId, player.AutoAttackTargetId, fromAuto: true);
+            byte swing = player.AutoAttackAbilityId != 0 ? player.AutoAttackAbilityId : player.BasicAbilityId;
+            TryUseAbility(player.Id, swing, player.AutoAttackTargetId, fromAuto: true);
         }
     }
 
@@ -710,7 +717,7 @@ public sealed class World
                     e.Health, e.EffectiveMaxHealth, (int)e.CurrentResource, e.EffectiveMaxResource,
                     e.FacingRadians, (byte)System.Math.Clamp(e.Level, 1, 255), e.Name,
                     raceOrDef, e.ClassId, e.Gender, e.Appearance, flags,
-                    e.CastAbilityId, e.CastProgressAt(Tick)));
+                    e.CastAbilityId, e.CastProgressAt(Tick), e.EquippedWeaponId, e.EquippedArmorId));
             }
         }
 
@@ -1033,14 +1040,17 @@ public sealed class World
         _grid.InsertOrUpdate(id, remains.Position);
     }
 
+    /// <summary>RNG for gear drops. Tests inject a seeded instance for determinism.</summary>
+    public Random LootRng { get; set; } = new();
+
     /// <summary>
-    /// GUARANTEED skinning loot: every kill yields the creature's body parts, no RNG — so
-    /// "bring me 10 goblin heads" is deterministic. Parts that don't fit the killer's bags
-    /// drop at the kill site as a lootable sack instead of vanishing.
+    /// Kill loot: GUARANTEED body parts (no RNG — "bring me 10 goblin heads" is deterministic),
+    /// plus chance-rolled EQUIPMENT drops. Whatever doesn't fit the killer's bags drops at the
+    /// kill site as a lootable sack instead of vanishing.
     /// </summary>
     private void GrantBodyParts(ServerEntity killer, MonsterDefinition def, Vec2 killSite)
     {
-        if (def.BodyParts.Count == 0)
+        if (def.BodyParts.Count == 0 && def.GearDrops.Count == 0)
         {
             return;
         }
@@ -1059,6 +1069,23 @@ public sealed class World
             {
                 overflow ??= new Inventory(SimulationConstants.CorpseLootCapacity);
                 overflow.TryAdd(part.ItemId, leftover, item.Stackable, item.MaxStack);
+            }
+        }
+
+        // Equipment: one roll per listed piece. This is where the loot thrill lives.
+        foreach (GearDrop drop in def.GearDrops)
+        {
+            if (!_gameData.HasItem(drop.ItemId) || LootRng.Next(100) >= drop.ChancePercent)
+            {
+                continue;
+            }
+
+            ItemDefinition item = _gameData.GetItem(drop.ItemId);
+            int leftover = killer.Inventory.TryAdd(drop.ItemId, 1, item.Stackable, item.MaxStack);
+            if (leftover > 0)
+            {
+                overflow ??= new Inventory(SimulationConstants.CorpseLootCapacity);
+                overflow.TryAdd(drop.ItemId, leftover, item.Stackable, item.MaxStack);
             }
         }
 

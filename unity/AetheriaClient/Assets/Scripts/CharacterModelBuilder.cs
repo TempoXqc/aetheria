@@ -104,7 +104,8 @@ namespace Aetheria.UnityClient
                 case EntityKind.Npc:
                     return BuildBankChest(parent);
                 default:
-                    return BuildPlayer(parent, snapshot.RaceId, snapshot.ClassId, snapshot.Gender, snapshot.Appearance);
+                    return BuildPlayer(parent, snapshot.RaceId, snapshot.ClassId, snapshot.Gender,
+                        snapshot.Appearance, snapshot.EquippedWeaponId, snapshot.EquippedArmorId);
             }
         }
 
@@ -159,7 +160,7 @@ namespace Aetheria.UnityClient
         // ------------------------------------------------------------- Players
 
         private static ModelRig BuildPlayer(Transform parent, byte raceId, byte classId, Gender gender,
-            Appearance appearance)
+            Appearance appearance, byte weaponItemId, byte armorItemId)
         {
             BodyParams p = RaceParams(raceId);
             p.UseCustom = true;
@@ -169,8 +170,112 @@ namespace Aetheria.UnityClient
             }
 
             ModelRig rig = BuildHumanoid(parent, p, gender, appearance);
-            AttachWeapon(rig, classId);
+
+            // The EQUIPPED weapon decides what sits in the hand; class default when bare-handed.
+            if (weaponItemId != 0)
+            {
+                AttachWeaponItem(rig, weaponItemId);
+            }
+            else
+            {
+                AttachWeapon(rig, classId);
+            }
+
+            AttachArmor(rig, armorItemId);
             return rig;
+        }
+
+        /// <summary>The equipped weapon, as a model in the hand: your LOOT is your look.</summary>
+        private static void AttachWeaponItem(ModelRig rig, byte itemId)
+        {
+            switch (itemId)
+            {
+                case 1: // Rusty Sword: pitted, brownish blade
+                    Sword(rig, new Color(0.55f, 0.45f, 0.35f), 0.60f);
+                    break;
+                case 2: // Iron Sword: clean steel
+                    Sword(rig, new Color(0.75f, 0.78f, 0.82f), 0.66f);
+                    break;
+                case 4: // Steel Sword: bright, longer blade
+                    Sword(rig, new Color(0.88f, 0.92f, 1.0f), 0.78f);
+                    break;
+                case 5: // Worn Bow
+                    Bow(rig, new Color(0.40f, 0.28f, 0.15f), 0.9f);
+                    break;
+                case 7: // Hunting Bow: bigger, darker
+                    Bow(rig, new Color(0.32f, 0.20f, 0.10f), 1.1f);
+                    break;
+                case 6: // Worn Staff
+                    Staff(rig, new Color(0.45f, 0.32f, 0.18f), new Color(0.55f, 0.75f, 0.9f));
+                    break;
+                case 8: // Oak Staff: taller wood, brighter focus
+                    Staff(rig, new Color(0.38f, 0.26f, 0.12f), new Color(0.35f, 0.95f, 1f));
+                    break;
+                default: // unknown weapon: a plain steel sword silhouette
+                    Sword(rig, new Color(0.7f, 0.7f, 0.75f), 0.66f);
+                    break;
+            }
+        }
+
+        private static void Sword(ModelRig rig, Color blade, float length)
+        {
+            var w = Pivot(rig.ArmR, "Sword", new Vector3(0f, -0.66f, 0.10f));
+            w.localRotation = Quaternion.Euler(90f, 0f, 0f);
+            Cube(w, "Blade", new Vector3(0f, 0.10f + (length / 2f), 0f), new Vector3(0.06f, length, 0.10f), blade);
+            Cube(w, "Guard", new Vector3(0f, 0.08f, 0f), new Vector3(0.20f, 0.05f, 0.06f), new Color(0.55f, 0.45f, 0.20f));
+            Cube(w, "Grip", new Vector3(0f, -0.05f, 0f), new Vector3(0.05f, 0.12f, 0.05f), new Color(0.30f, 0.18f, 0.10f));
+        }
+
+        private static void Bow(ModelRig rig, Color wood, float scale)
+        {
+            var w = Pivot(rig.ArmL, "Bow", new Vector3(0f, -0.66f, 0.08f));
+            var upper = Caps(w, "LimbUp", new Vector3(0f, 0.24f * scale, 0.06f), new Vector3(0.05f, 0.26f * scale, 0.05f), wood);
+            upper.transform.localRotation = Quaternion.Euler(-14f, 0f, 0f);
+            var lower = Caps(w, "LimbDown", new Vector3(0f, -0.24f * scale, 0.06f), new Vector3(0.05f, 0.26f * scale, 0.05f), wood);
+            lower.transform.localRotation = Quaternion.Euler(14f, 0f, 0f);
+            Shape(PrimitiveType.Cylinder, w, "String", new Vector3(0f, 0f, -0.02f),
+                new Vector3(0.015f, 0.45f * scale, 0.015f), new Color(0.85f, 0.85f, 0.80f));
+        }
+
+        private static void Staff(ModelRig rig, Color wood, Color focus)
+        {
+            var w = Pivot(rig.ArmR, "Staff", new Vector3(0f, -0.66f, 0.08f));
+            Shape(PrimitiveType.Cylinder, w, "Shaft", new Vector3(0f, 0.35f, 0f),
+                new Vector3(0.05f, 0.75f, 0.05f), wood);
+            var orb = Ball(w, "Focus", new Vector3(0f, 1.12f, 0f), new Vector3(0.16f, 0.16f, 0.16f), focus);
+            _ = orb;
+        }
+
+        /// <summary>The equipped armor, worn on the body (shape and trims; the tunic keeps its tint).</summary>
+        private static void AttachArmor(ModelRig rig, byte itemId)
+        {
+            if (rig.Torso == null)
+            {
+                return;
+            }
+
+            Transform model = rig.Torso.parent;
+            switch (itemId)
+            {
+                case 3: // Leather Vest: a brown chest plate over the tunic
+                    Cube(model, "Vest", new Vector3(0f, 1.24f, 0.16f), new Vector3(0.44f, 0.5f, 0.08f),
+                        new Color(0.45f, 0.30f, 0.16f));
+                    break;
+
+                case 9: // Chain Mail: metallic shoulder guards + a chest plate
+                    Ball(model, "PauldronL", new Vector3(-0.36f, 1.52f, 0f), new Vector3(0.24f, 0.18f, 0.24f),
+                        new Color(0.60f, 0.62f, 0.68f));
+                    Ball(model, "PauldronR", new Vector3(0.36f, 1.52f, 0f), new Vector3(0.24f, 0.18f, 0.24f),
+                        new Color(0.60f, 0.62f, 0.68f));
+                    Cube(model, "Breastplate", new Vector3(0f, 1.24f, 0.16f), new Vector3(0.46f, 0.52f, 0.08f),
+                        new Color(0.55f, 0.58f, 0.64f));
+                    break;
+
+                case 12: // Padded Robe: a long violet skirt below the tunic
+                    Cube(model, "Robe", new Vector3(0f, 0.62f, 0f), new Vector3(0.55f, 0.6f, 0.36f),
+                        new Color(0.35f, 0.22f, 0.45f));
+                    break;
+            }
         }
 
         private static BodyParams RaceParams(byte raceId)

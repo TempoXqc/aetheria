@@ -98,6 +98,9 @@ public sealed class ServerEntity
     /// <summary>Entity this player is auto-attacking (0 = none). The server drives the swings.</summary>
     public int AutoAttackTargetId { get; set; }
 
+    /// <summary>The ability the server swings with (wand for mages, weapon strike otherwise).</summary>
+    public byte AutoAttackAbilityId { get; set; }
+
     /// <summary>Tick at which the GLOBAL COOLDOWN ends (manual abilities only).</summary>
     public uint GcdReadyTick { get; set; }
 

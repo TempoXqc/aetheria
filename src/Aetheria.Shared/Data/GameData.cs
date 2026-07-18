@@ -171,7 +171,7 @@ public sealed class GameData
         classes:
         [
             new ClassDefinition { Id = 1, Name = "Warrior", MaxHealth = 120, MoveSpeed = 5.0f, AttackPower = 12, Defense = 6, BasicAbilityId = 1, AbilityIds = [1, 20, 5], Resource = ResourceType.Rage,   MaxResource = 100, ResourceRegenPerSec = 0f },
-            new ClassDefinition { Id = 2, Name = "Mage",    MaxHealth = 80,  MoveSpeed = 5.0f, AttackPower = 18, Defense = 2, BasicAbilityId = 2, AbilityIds = [2, 21, 5], Resource = ResourceType.Mana,   MaxResource = 100, ResourceRegenPerSec = 8f },
+            new ClassDefinition { Id = 2, Name = "Mage",    MaxHealth = 80,  MoveSpeed = 5.0f, AttackPower = 18, Defense = 2, BasicAbilityId = 2, AutoAttackAbilityId = 6, AbilityIds = [2, 21, 5, 6], Resource = ResourceType.Mana,   MaxResource = 100, ResourceRegenPerSec = 8f },
             new ClassDefinition { Id = 3, Name = "Ranger",  MaxHealth = 95,  MoveSpeed = 5.5f, AttackPower = 14, Defense = 3, BasicAbilityId = 3, AbilityIds = [3, 22, 5], Resource = ResourceType.Energy, MaxResource = 100, ResourceRegenPerSec = 20f },
         ],
         abilities:
@@ -183,6 +183,8 @@ public sealed class GameData
             new AbilityDefinition { Id = 4, Name = "Claw",     BaseDamage = 6,  Range = 2.5f, CooldownTicks = 12, ResourceCost = 0 },
             // Self-cast recovery, all classes: 4%/s of max health (and max mana) for 10s, 30s cooldown.
             new AbilityDefinition { Id = 5, Name = "Renew", Range = 0f, CooldownTicks = 600, ResourceCost = 0, Effect = EffectType.Regen, EffectMagnitude = 0.04f, EffectDurationTicks = 200 },
+            // The Mage's WAND: a free, instant auto-attack (Firebolt stays a hand-cast spell).
+            new AbilityDefinition { Id = 6, Name = "Wand Shot", BaseDamage = 6, Range = 12f, CooldownTicks = 30, ResourceCost = 0 },
             // Advanced abilities (unlock at level 3)
             new AbilityDefinition { Id = 20, Name = "Whirlwind",  BaseDamage = 25, Range = 3f,  CooldownTicks = 40, ResourceCost = 25, UnlockLevel = 3, SkillLineId = 1 },
             new AbilityDefinition { Id = 21, Name = "Frostbolt",  BaseDamage = 24, Range = 12f, CooldownTicks = 24, ResourceCost = 30, UnlockLevel = 3, SkillLineId = 2, CastTimeTicks = 40 },
@@ -210,6 +212,12 @@ public sealed class GameData
                     new LootEntry { ItemId = 34 },                // Goblin Tongue
                     new LootEntry { ItemId = 35 },                // Goblin Foot
                 ],
+                GearDrops =
+                [
+                    new GearDrop { ItemId = 1, ChancePercent = 8 },  // Rusty Sword
+                    new GearDrop { ItemId = 3, ChancePercent = 5 },  // Leather Vest
+                    new GearDrop { ItemId = 12, ChancePercent = 4 }, // Padded Robe
+                ],
             },
             new MonsterDefinition
             {
@@ -236,6 +244,12 @@ public sealed class GameData
                     new LootEntry { ItemId = 11, Quantity = 2 },  // Goblin Ears
                     new LootEntry { ItemId = 32, Quantity = 2 },  // Goblin Eyes
                 ],
+                GearDrops =
+                [
+                    new GearDrop { ItemId = 2, ChancePercent = 100 }, // Iron Sword: the King always pays
+                    new GearDrop { ItemId = 9, ChancePercent = 35 },  // Chain Mail
+                    new GearDrop { ItemId = 7, ChancePercent = 30 },  // Hunting Bow
+                ],
             },
             // World raid boss: raid-difficulty, lives in the OPEN world — never instanced, PvP possible.
             new MonsterDefinition
@@ -248,6 +262,12 @@ public sealed class GameData
                     new LootEntry { ItemId = 62 },                // Charred Hide
                     new LootEntry { ItemId = 63, Quantity = 4 },  // Ashmaw Claws
                     new LootEntry { ItemId = 64, Quantity = 3 },  // Devourer Bones
+                ],
+                GearDrops =
+                [
+                    new GearDrop { ItemId = 4, ChancePercent = 100 }, // Steel Sword
+                    new GearDrop { ItemId = 9, ChancePercent = 100 }, // Chain Mail
+                    new GearDrop { ItemId = 8, ChancePercent = 50 },  // Oak Staff
                 ],
             },
         ],
@@ -283,6 +303,13 @@ public sealed class GameData
             new ItemDefinition { Id = 1,  Name = "Rusty Sword",  Type = ItemType.Weapon, Slot = EquipSlot.Weapon, AttackBonus = 3,  GoldValue = 5 },
             new ItemDefinition { Id = 2,  Name = "Iron Sword",   Type = ItemType.Weapon, Slot = EquipSlot.Weapon, AttackBonus = 6,  GoldValue = 20 },
             new ItemDefinition { Id = 3,  Name = "Leather Vest", Type = ItemType.Armor,  Slot = EquipSlot.Armor,  DefenseBonus = 4, HealthBonus = 10, GoldValue = 15 },
+            new ItemDefinition { Id = 4,  Name = "Steel Sword",  Type = ItemType.Weapon, Slot = EquipSlot.Weapon, AttackBonus = 9,  GoldValue = 120 },
+            new ItemDefinition { Id = 5,  Name = "Worn Bow",     Type = ItemType.Weapon, Slot = EquipSlot.Weapon, AttackBonus = 2,  GoldValue = 4 },
+            new ItemDefinition { Id = 6,  Name = "Worn Staff",   Type = ItemType.Weapon, Slot = EquipSlot.Weapon, AttackBonus = 2,  GoldValue = 4 },
+            new ItemDefinition { Id = 7,  Name = "Hunting Bow",  Type = ItemType.Weapon, Slot = EquipSlot.Weapon, AttackBonus = 5,  GoldValue = 45 },
+            new ItemDefinition { Id = 8,  Name = "Oak Staff",    Type = ItemType.Weapon, Slot = EquipSlot.Weapon, AttackBonus = 6,  GoldValue = 60 },
+            new ItemDefinition { Id = 9,  Name = "Chain Mail",   Type = ItemType.Armor,  Slot = EquipSlot.Armor,  DefenseBonus = 7, HealthBonus = 20, GoldValue = 150 },
+            new ItemDefinition { Id = 12, Name = "Padded Robe",  Type = ItemType.Armor,  Slot = EquipSlot.Armor,  DefenseBonus = 2, HealthBonus = 15, GoldValue = 35 },
             new ItemDefinition { Id = 10, Name = "Wolf Pelt",    Type = ItemType.Material, Stackable = true, MaxStack = 20, GoldValue = 3 },
             new ItemDefinition { Id = 11, Name = "Goblin Ear",   Type = ItemType.Material, Stackable = true, MaxStack = 20, GoldValue = 2 },
             new ItemDefinition { Id = 20, Name = "Minor Healing Potion", Type = ItemType.Consumable, Stackable = true, MaxStack = 10, GoldValue = 5 },
