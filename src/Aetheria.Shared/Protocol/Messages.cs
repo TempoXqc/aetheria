@@ -435,9 +435,16 @@ public readonly struct EntitySnapshot
     /// <summary>Direction the entity faces, radians on the world plane (0 = +X).</summary>
     public readonly float FacingRadians;
 
+    /// <summary>Character/creature level (for nameplates and con-colouring).</summary>
+    public readonly byte Level;
+
+    /// <summary>Display name (player name or monster name), shown on nameplates.</summary>
+    public readonly string Name;
+
     public EntitySnapshot(
         int id, EntityKind kind, Faction faction, Vec2 position,
-        int health, int maxHealth, int resource, int maxResource, float facingRadians = 0f)
+        int health, int maxHealth, int resource, int maxResource, float facingRadians = 0f,
+        byte level = 1, string name = "")
     {
         Id = id;
         Kind = kind;
@@ -448,6 +455,8 @@ public readonly struct EntitySnapshot
         Resource = resource;
         MaxResource = maxResource;
         FacingRadians = facingRadians;
+        Level = level;
+        Name = name;
     }
 
     public void Write(PacketWriter w)
@@ -462,6 +471,8 @@ public readonly struct EntitySnapshot
         w.WriteInt(Resource);
         w.WriteInt(MaxResource);
         w.WriteFloat(FacingRadians);
+        w.WriteByte(Level);
+        w.WriteString(Name);
     }
 
     public static EntitySnapshot Read(ref PacketReader r)
@@ -476,7 +487,10 @@ public readonly struct EntitySnapshot
         int resource = r.ReadInt();
         int maxResource = r.ReadInt();
         float facing = r.ReadFloat();
-        return new EntitySnapshot(id, kind, faction, new Vec2(x, y), health, maxHealth, resource, maxResource, facing);
+        byte level = r.ReadByte();
+        string name = r.ReadString();
+        return new EntitySnapshot(
+            id, kind, faction, new Vec2(x, y), health, maxHealth, resource, maxResource, facing, level, name);
     }
 }
 
@@ -600,7 +614,7 @@ public readonly struct CombatEventMessage
     }
 }
 
-/// <summary>The caster's own progression + currency, sent to that client (not others).</summary>
+/// <summary>The caster's own progression + currency + combat stats, sent to that client (not others).</summary>
 public readonly struct PlayerStatus
 {
     public readonly int Level;
@@ -609,13 +623,18 @@ public readonly struct PlayerStatus
     /// <summary>Total XP needed for the next level, or -1 at the cap.</summary>
     public readonly int XpForNextLevel;
     public readonly int Gold;
+    public readonly int EffectiveAttack;
+    public readonly int EffectiveDefense;
 
-    public PlayerStatus(int level, int totalXp, int xpForNextLevel, int gold)
+    public PlayerStatus(int level, int totalXp, int xpForNextLevel, int gold,
+        int effectiveAttack = 0, int effectiveDefense = 0)
     {
         Level = level;
         TotalXp = totalXp;
         XpForNextLevel = xpForNextLevel;
         Gold = gold;
+        EffectiveAttack = effectiveAttack;
+        EffectiveDefense = effectiveDefense;
     }
 
     public void Write(PacketWriter w)
@@ -625,6 +644,8 @@ public readonly struct PlayerStatus
         w.WriteInt(TotalXp);
         w.WriteInt(XpForNextLevel);
         w.WriteInt(Gold);
+        w.WriteInt(EffectiveAttack);
+        w.WriteInt(EffectiveDefense);
     }
 
     public static PlayerStatus Read(ref PacketReader r)
@@ -633,7 +654,9 @@ public readonly struct PlayerStatus
         int totalXp = r.ReadInt();
         int xpForNext = r.ReadInt();
         int gold = r.ReadInt();
-        return new PlayerStatus(level, totalXp, xpForNext, gold);
+        int attack = r.ReadInt();
+        int defense = r.ReadInt();
+        return new PlayerStatus(level, totalXp, xpForNext, gold, attack, defense);
     }
 }
 

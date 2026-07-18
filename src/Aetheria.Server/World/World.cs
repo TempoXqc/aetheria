@@ -178,6 +178,7 @@ public sealed class World
         {
             Name = def.Name,
             MonsterId = def.Id,
+            Level = def.Level,
         };
 
         AddAlive(entity);
@@ -408,7 +409,7 @@ public sealed class World
                 result.Add(new EntitySnapshot(
                     e.Id, e.Kind, e.Faction, e.Position,
                     e.Health, e.EffectiveMaxHealth, (int)e.CurrentResource, e.EffectiveMaxResource,
-                    e.FacingRadians));
+                    e.FacingRadians, (byte)System.Math.Clamp(e.Level, 1, 255), e.Name));
             }
         }
 
@@ -591,8 +592,10 @@ public sealed class World
         }
         else if (victim.IsMonster && killer.Kind == EntityKind.Player)
         {
+            // XP scales with the level difference: fighting up pays more, farming greys pays little.
             MonsterDefinition def = _gameData.GetMonster(victim.MonsterId);
-            ApplyXp(killer, def.XpReward);
+            float mult = _gameData.Progression.XpMultiplierForKill(killer.Level, def.Level);
+            ApplyXp(killer, (int)MathF.Round(def.XpReward * mult));
             killer.Inventory.AddGold(def.GoldReward);
         }
     }

@@ -23,6 +23,9 @@ namespace Aetheria.UnityClient
         public int Health { get; private set; }
         public int MaxHealth { get; private set; }
         public bool IsBoss { get; private set; }
+        public string DisplayName { get; private set; } = "";
+        public int Level { get; private set; } = 1;
+        public Faction Faction { get; private set; }
 
         private Transform _body; // rotated child, so facing doesn't fight the position lerp
 
@@ -64,6 +67,9 @@ namespace Aetheria.UnityClient
         {
             Health = snapshot.Health;
             MaxHealth = snapshot.MaxHealth;
+            DisplayName = snapshot.Name;
+            Level = snapshot.Level;
+            Faction = snapshot.Faction;
 
             // Server plane (X, Y) maps onto Unity ground plane (X, Z).
             float y = Kind == EntityKind.Corpse ? 0.15f : 1f;

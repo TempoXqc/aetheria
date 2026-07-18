@@ -195,12 +195,12 @@ public sealed class GameData
         ],
         monsters:
         [
-            new MonsterDefinition { Id = 1, Name = "Goblin Grunt", MaxHealth = 60, MoveSpeed = 4.0f, AttackPower = 5, Defense = 2, AggroRadius = 15f, BasicAbilityId = 4, XpReward = 25, GoldReward = 5 },
-            new MonsterDefinition { Id = 2, Name = "Dire Wolf", MaxHealth = 90, MoveSpeed = 6.0f, AttackPower = 8, Defense = 3, AggroRadius = 20f, BasicAbilityId = 4, XpReward = 40, GoldReward = 10 },
+            new MonsterDefinition { Id = 1, Name = "Goblin Grunt", Level = 1, MaxHealth = 60, MoveSpeed = 4.0f, AttackPower = 5, Defense = 2, AggroRadius = 15f, BasicAbilityId = 4, XpReward = 25, GoldReward = 5 },
+            new MonsterDefinition { Id = 2, Name = "Dire Wolf", Level = 3, MaxHealth = 90, MoveSpeed = 6.0f, AttackPower = 8, Defense = 3, AggroRadius = 20f, BasicAbilityId = 4, XpReward = 40, GoldReward = 10 },
             // Elite: rules the open-world "dungeon" camp (non-instanced, so PvP can erupt around it).
-            new MonsterDefinition { Id = 3, Name = "Goblin King", MaxHealth = 350, MoveSpeed = 4.5f, AttackPower = 16, Defense = 6, AggroRadius = 18f, BasicAbilityId = 4, XpReward = 200, GoldReward = 80 },
+            new MonsterDefinition { Id = 3, Name = "Goblin King", Level = 6, MaxHealth = 350, MoveSpeed = 4.5f, AttackPower = 16, Defense = 6, AggroRadius = 18f, BasicAbilityId = 4, XpReward = 200, GoldReward = 80 },
             // World raid boss: raid-difficulty, lives in the OPEN world — never instanced, PvP possible.
-            new MonsterDefinition { Id = 4, Name = "Ashmaw the Devourer", MaxHealth = 2500, MoveSpeed = 5.0f, AttackPower = 35, Defense = 12, AggroRadius = 25f, BasicAbilityId = 4, XpReward = 1500, GoldReward = 600 },
+            new MonsterDefinition { Id = 4, Name = "Ashmaw the Devourer", Level = 10, MaxHealth = 2500, MoveSpeed = 5.0f, AttackPower = 35, Defense = 12, AggroRadius = 25f, BasicAbilityId = 4, XpReward = 1500, GoldReward = 600 },
         ],
         instances:
         [

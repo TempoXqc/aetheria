@@ -110,7 +110,10 @@ public sealed class MonsterDefinition
     public float AggroRadius { get; init; } = 15f;
     public byte BasicAbilityId { get; init; }
 
-    /// <summary>Experience granted to the player who lands the killing blow.</summary>
+    /// <summary>Creature level, used for nameplates and the level-difference XP multiplier.</summary>
+    public int Level { get; init; } = 1;
+
+    /// <summary>Experience granted to the player who lands the killing blow (before level scaling).</summary>
     public int XpReward { get; init; }
 
     /// <summary>Gold granted to the killer.</summary>

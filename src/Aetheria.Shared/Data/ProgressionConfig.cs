@@ -81,4 +81,27 @@ public sealed class ProgressionConfig
 
     /// <summary>Damage multiplier for an ability given the caster's skill in that ability's line.</summary>
     public float SkillDamageMultiplier(int skill) => 1f + (System.Math.Clamp(skill, 0, MaxSkill) * DamagePerSkillPoint);
+
+    /// <summary>XP bonus per monster level ABOVE the player (fighting up is rewarded).</summary>
+    public float XpBonusPerLevelAbove { get; init; } = 0.15f;
+
+    /// <summary>XP reduction per monster level BELOW the player (farming trivial mobs decays fast).</summary>
+    public float XpPenaltyPerLevelBelow { get; init; } = 0.20f;
+
+    /// <summary>Floor on the level-difference multiplier (a kill always gives a trickle).</summary>
+    public float MinXpMultiplier { get; init; } = 0.10f;
+
+    /// <summary>
+    /// Level-difference XP multiplier: monsters at your level give full XP, higher ones give more,
+    /// lower ones progressively less — so a low-level character levels fast on low-level camps while
+    /// a veteran can't farm them forever.
+    /// </summary>
+    public float XpMultiplierForKill(int playerLevel, int monsterLevel)
+    {
+        int diff = monsterLevel - playerLevel;
+        float mult = diff >= 0
+            ? 1f + (diff * XpBonusPerLevelAbove)
+            : 1f + (diff * XpPenaltyPerLevelBelow);
+        return System.Math.Clamp(mult, MinXpMultiplier, 2f);
+    }
 }

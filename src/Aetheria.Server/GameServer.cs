@@ -635,7 +635,8 @@ public sealed class GameServer
 
         ProgressionConfig progression = _worlds.GameData.Progression;
         Send(peer, new PlayerStatus(
-            self!.Level, self.TotalXp, progression.XpForNextLevel(self.TotalXp), self.Inventory.Gold));
+            self!.Level, self.TotalXp, progression.XpForNextLevel(self.TotalXp), self.Inventory.Gold,
+            self.EffectiveAttackPower, self.EffectiveDefense));
         Send(peer, new InventoryState(self.EquippedWeaponId, self.EquippedArmorId, self.Inventory.Stacks));
     }
 
@@ -704,7 +705,8 @@ public sealed class GameServer
             }
 
             Send(peer, new PlayerStatus(
-                self!.Level, self.TotalXp, progression.XpForNextLevel(self.TotalXp), self.Inventory.Gold));
+                self!.Level, self.TotalXp, progression.XpForNextLevel(self.TotalXp), self.Inventory.Gold,
+            self.EffectiveAttackPower, self.EffectiveDefense));
             Send(peer, new InventoryState(self.EquippedWeaponId, self.EquippedArmorId, self.Inventory.Stacks));
         }
     }

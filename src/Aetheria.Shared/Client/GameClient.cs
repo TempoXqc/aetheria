@@ -50,7 +50,11 @@ public sealed class GameClient
     public int XpForNextLevel { get; private set; } = -1;
     public int Gold { get; private set; }
     public byte EquippedWeaponId { get; private set; }
+    public byte EquippedArmorId { get; private set; }
     public int InventoryStackCount { get; private set; }
+    public IReadOnlyList<ItemStack> InventoryItems { get; private set; } = [];
+    public int EffectiveAttack { get; private set; }
+    public int EffectiveDefense { get; private set; }
 
     // --- Account bank (from BankState) ---
     public int BankGold { get; private set; }
@@ -227,11 +231,15 @@ public sealed class GameClient
                     TotalXp = status.TotalXp;
                     XpForNextLevel = status.XpForNextLevel;
                     Gold = status.Gold;
+                    EffectiveAttack = status.EffectiveAttack;
+                    EffectiveDefense = status.EffectiveDefense;
                     break;
 
                 case MessageType.InventoryState:
                     InventoryState inv = InventoryState.Read(ref reader);
                     EquippedWeaponId = inv.EquippedWeaponId;
+                    EquippedArmorId = inv.EquippedArmorId;
+                    InventoryItems = inv.Items;
                     InventoryStackCount = inv.Items.Count;
                     break;
 
