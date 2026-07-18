@@ -16,6 +16,15 @@ public static class SimulationConstants
     /// <summary>Default UDP port the server listens on.</summary>
     public const int DefaultPort = 27015;
 
+    /// <summary>Default server display name (servers are named, not numbered; override with --name).</summary>
+    public const string DefaultServerName = "Aetheria";
+
+    /// <summary>
+    /// Default player capacity (override with --max-players). A FULL server still lets existing
+    /// characters play; it only refuses creating NEW characters.
+    /// </summary>
+    public const int DefaultMaxPlayers = 100;
+
     /// <summary>Player movement speed in world units per second.</summary>
     public const float PlayerMoveSpeed = 5f;
 
@@ -59,7 +68,7 @@ public static class SimulationConstants
     public const int MaxPartySize = 40;
 
     /// <summary>Protocol version — bump on any wire-format change; handshake rejects mismatches.</summary>
-    public const byte ProtocolVersion = 12;
+    public const byte ProtocolVersion = 13;
 
     /// <summary>How close two players must be to trade (world units).</summary>
     public const float TradeRange = 6f;
@@ -78,5 +87,5 @@ public static class SimulationConstants
     /// in the in-game HUD, and in the server startup log, so "am I up to date?" has a one-glance
     /// answer on both sides.
     /// </summary>
-    public const string GameVersion = "0.15.0";
+    public const string GameVersion = "0.16.0";
 }

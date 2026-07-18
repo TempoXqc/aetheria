@@ -10,13 +10,15 @@ public static class ProtocolTests
     public static void LoginFlow_RoundTrips()
     {
         var w1 = new PacketWriter();
-        new Login(protocolVersion: 10, accountId: "acct-42", accountSecret: "hunter2").Write(w1);
+        new Login(protocolVersion: 10, accountId: "acct-42", accountSecret: "hunter2",
+            createAccount: true).Write(w1);
         var r1 = new PacketReader(w1.WrittenSpan);
         Assert.Equal(MessageType.Login, (MessageType)r1.ReadByte());
         Login login = Login.Read(ref r1);
         Assert.Equal((byte)10, login.ProtocolVersion);
         Assert.Equal("acct-42", login.AccountId);
         Assert.Equal("hunter2", login.AccountSecret);
+        Assert.True(login.CreateAccount);
 
         var w2 = new PacketWriter();
         new LoginResult(true, "", true, "Aria", 3, 2, Gender.Female, 4).Write(w2);
@@ -36,6 +38,31 @@ public static class ProtocolTests
         CreateCharacter create = CreateCharacter.Read(ref r3);
         Assert.Equal("Borin", create.Name);
         Assert.Equal((byte)4, create.RaceId);
+    }
+
+    [Test("ServerInfoRequest and ServerInfo (the server-browser card) round-trip.")]
+    public static void ServerInfo_RoundTrips()
+    {
+        var w1 = new PacketWriter();
+        new ServerInfoRequest(protocolVersion: 13, accountId: "tempo").Write(w1);
+        var r1 = new PacketReader(w1.WrittenSpan);
+        Assert.Equal(MessageType.ServerInfoRequest, (MessageType)r1.ReadByte());
+        ServerInfoRequest request = ServerInfoRequest.Read(ref r1);
+        Assert.Equal("tempo", request.AccountId);
+
+        var w2 = new PacketWriter();
+        new ServerInfo("Royaume du Nord", online: 87, capacity: 100, acceptsNewCharacters: true,
+            hasAccount: true, hasCharacter: true, characterName: "Thorgar", characterLevel: 7).Write(w2);
+        var r2 = new PacketReader(w2.WrittenSpan);
+        Assert.Equal(MessageType.ServerInfo, (MessageType)r2.ReadByte());
+        ServerInfo info = ServerInfo.Read(ref r2);
+        Assert.Equal("Royaume du Nord", info.Name);
+        Assert.Equal(87, info.Online);
+        Assert.Equal(100, info.Capacity);
+        Assert.True(info.AcceptsNewCharacters);
+        Assert.True(info.HasCharacter);
+        Assert.Equal("Thorgar", info.CharacterName);
+        Assert.Equal((byte)7, info.CharacterLevel);
     }
 
     [Test("UseAbility survives a write/read round trip.")]

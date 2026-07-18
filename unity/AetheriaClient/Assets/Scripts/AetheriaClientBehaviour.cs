@@ -40,6 +40,30 @@ namespace Aetheria.UnityClient
         private int _beardStyle;
         private int _beardColor;
 
+        // --- Lobby flow (auth → server browser → creation → world) ---
+        private enum LobbyScreen { Auth, Browser, Connecting, Creation }
+
+        private sealed class ServerEntry
+        {
+            public string Host;
+            public int Port;
+            public ServerProbe Probe;
+            public bool HasInfo;
+            public ServerInfo Info;
+            public bool Failed;
+
+            public string Address { get { return Host + ":" + Port; } }
+        }
+
+        private readonly LobbyStage _lobby = new LobbyStage();
+        private LobbyScreen _lobbyScreen = LobbyScreen.Auth;
+        private readonly List<ServerEntry> _servers = new List<ServerEntry>();
+        private string _newServerAddr = "";
+        private bool _registerMode;
+        private bool _enterSent;
+        private bool _lastServerSaved;
+        private int _previewKey = -1;
+
         private static readonly string[] SkinLabels = { "Clair", "Moyen", "Halé", "Sombre" };
         private static readonly string[] FaceLabels = { "Classique", "Nez fort", "Fin" };
         private static readonly string[] HairStyleLabels = { "Courte", "Longue", "Iroquoise", "Chauve" };
@@ -116,6 +140,21 @@ namespace Aetheria.UnityClient
 
         private void Update()
         {
+            bool inWorld = _connected && _client != null && _client.EntityId.HasValue;
+
+            // Lobby: 3D campsite backdrop + character preview + server probes.
+            if (!inWorld)
+            {
+                _lobby.EnsureBuilt();
+                UpdateLobbyPreview();
+                _lobby.Tick(Time.deltaTime);
+                PumpServerProbes();
+            }
+            else if (_lobby.Active)
+            {
+                _lobby.Teardown();
+            }
+
             if (!_connected)
             {
                 return;
@@ -130,10 +169,36 @@ namespace Aetheria.UnityClient
                 return;
             }
 
-            // Lobby phases (login / character screen): just pump the socket, no world logic yet.
+            // Lobby phases: drive the auto-flow, no world logic yet.
             if (!_client.EntityId.HasValue)
             {
+                if (_client.LoggedIn)
+                {
+                    if (_client.HasCharacter && !_enterSent)
+                    {
+                        EnterExisting(); // has a character here → straight into the world
+                        _enterSent = true;
+                    }
+                    else if (!_client.HasCharacter && _lobbyScreen == LobbyScreen.Connecting)
+                    {
+                        _lobbyScreen = LobbyScreen.Creation; // no character → direct creation screen
+                    }
+                }
+                else if (_client.LoginError.Length > 0 && _lobbyScreen == LobbyScreen.Connecting)
+                {
+                    _error = _client.LoginError; // sign-in refused → back to the auth screen
+                    Disconnect();
+                }
+
                 return;
+            }
+
+            // Just entered the world: remember this server as the account's last-played one.
+            if (!_lastServerSaved)
+            {
+                PlayerPrefs.SetString("aeth.last." + _account.Trim().ToLowerInvariant(), _host + ":" + _port);
+                PlayerPrefs.Save();
+                _lastServerSaved = true;
             }
 
             if (Input.GetKeyDown(KeyCode.Escape))
@@ -164,11 +229,30 @@ namespace Aetheria.UnityClient
 
         // ------------------------------------------------------------- Session
 
-        private void Connect()
+        /// <summary>The last server this account played on (the auto-connect target), or the default.</summary>
+        private string LastServerFor(string account)
         {
-            int.TryParse(_port, out int port);
-            if (port <= 0) { port = SimulationConstants.DefaultPort; }
+            string saved = PlayerPrefs.GetString("aeth.last." + account.ToLowerInvariant(), "");
+            return string.IsNullOrEmpty(saved) ? _host + ":" + _port : saved;
+        }
 
+        private static bool SplitAddress(string address, out string host, out int port)
+        {
+            host = address;
+            port = SimulationConstants.DefaultPort;
+            int colon = address.LastIndexOf(':');
+            if (colon > 0 && int.TryParse(address.Substring(colon + 1), out int p) && p > 0)
+            {
+                host = address.Substring(0, colon);
+                port = p;
+            }
+
+            return host.Trim().Length > 0;
+        }
+
+        /// <summary>Authenticate: sign in to the given server, or the account's last-played one.</summary>
+        private void Connect(string address, bool createAccount)
+        {
             string account = _account.Trim();
             if (account.Length == 0)
             {
@@ -176,15 +260,30 @@ namespace Aetheria.UnityClient
                 return;
             }
 
-            string secret = string.IsNullOrEmpty(_secret) ? account : _secret;
+            if (string.IsNullOrEmpty(_secret))
+            {
+                _error = "Entre ton secret de compte.";
+                return;
+            }
+
+            if (!SplitAddress(address, out string host, out int port))
+            {
+                _error = "Adresse de serveur invalide.";
+                return;
+            }
 
             try
             {
                 _transport = new UdpClientTransport();
                 _client = new GameClient(_transport);
-                _client.Connect(_host, port, account, secret);
+                _client.Connect(host, port, account, _secret, createAccount);
+                _host = host;
+                _port = port.ToString();
                 _connected = true;
                 _error = "";
+                _enterSent = false;
+                _lastServerSaved = false;
+                _lobbyScreen = LobbyScreen.Connecting;
             }
             catch (System.Exception ex)
             {
@@ -195,7 +294,123 @@ namespace Aetheria.UnityClient
             }
         }
 
-        /// <summary>Play the existing character shown on the character screen.</summary>
+        // --- Lobby helpers: 3D preview + server list/probes ---
+
+        /// <summary>Keep the 3D dais preview in sync with the creation-screen pickers.</summary>
+        private void UpdateLobbyPreview()
+        {
+            bool creating = _connected && _client != null && _lobbyScreen == LobbyScreen.Creation;
+            if (!creating)
+            {
+                if (_previewKey != -1) { _lobby.ClearPreview(); _previewKey = -1; }
+                return;
+            }
+
+            bool beardAllowed = _genderIndex == 0 || Races[_raceIndex].id == 4;
+            int beard = beardAllowed ? _beardStyle : 0;
+            int key = _raceIndex | (_classIndex << 3) | (_genderIndex << 6) | (_skinTone << 7) |
+                      (_faceIndex << 10) | (_hairStyle << 12) | (_hairColor << 15) |
+                      (beard << 18) | (_beardColor << 21);
+            if (key == _previewKey) { return; }
+
+            _previewKey = key;
+            byte raceId = Races[_raceIndex].id;
+            Faction faction = raceId == 2 || raceId == 3 ? Faction.Horde : Faction.Alliance;
+            var look = new Appearance((byte)_skinTone, (byte)_faceIndex, (byte)_hairStyle,
+                (byte)_hairColor, (byte)beard, (byte)_beardColor);
+            _lobby.ShowPreview(raceId, Classes[_classIndex].id,
+                _genderIndex == 1 ? Gender.Female : Gender.Male, look, faction);
+        }
+
+        private void LoadServerList()
+        {
+            if (_servers.Count > 0) { return; }
+
+            string saved = PlayerPrefs.GetString("aeth.servers", "");
+            foreach (string addr in saved.Split('|')) { AddServerEntry(addr); }
+            if (_servers.Count == 0) { AddServerEntry(_host + ":" + _port); }
+        }
+
+        private void AddServerEntry(string address)
+        {
+            if (string.IsNullOrEmpty(address) || !SplitAddress(address, out string host, out int port))
+            {
+                return;
+            }
+
+            foreach (ServerEntry e in _servers)
+            {
+                if (e.Host == host && e.Port == port) { return; }
+            }
+
+            _servers.Add(new ServerEntry { Host = host, Port = port });
+            SaveServerList();
+        }
+
+        private void SaveServerList()
+        {
+            var sb = new System.Text.StringBuilder();
+            for (int i = 0; i < _servers.Count; i++)
+            {
+                if (i > 0) { sb.Append('|'); }
+                sb.Append(_servers[i].Address);
+            }
+
+            PlayerPrefs.SetString("aeth.servers", sb.ToString());
+            PlayerPrefs.Save();
+        }
+
+        /// <summary>(Re)query every listed server: name, population, your character there.</summary>
+        private void RefreshServers()
+        {
+            foreach (ServerEntry e in _servers)
+            {
+                e.Probe?.Dispose();
+                e.Probe = null;
+                e.HasInfo = false;
+                e.Failed = false;
+                try
+                {
+                    e.Probe = new ServerProbe(new UdpClientTransport(), e.Host, e.Port, _account.Trim());
+                }
+                catch (System.Exception)
+                {
+                    e.Failed = true;
+                }
+            }
+        }
+
+        private void PumpServerProbes()
+        {
+            foreach (ServerEntry e in _servers)
+            {
+                if (e.Probe == null) { continue; }
+
+                e.Probe.Pump();
+                if (e.Probe.Completed)
+                {
+                    e.Info = e.Probe.Info;
+                    e.HasInfo = true;
+                    e.Probe.Dispose();
+                    e.Probe = null;
+                }
+                else if (e.Probe.TimedOut)
+                {
+                    e.Failed = true;
+                    e.Probe.Dispose();
+                    e.Probe = null;
+                }
+            }
+        }
+
+        private void OpenServerBrowser()
+        {
+            LoadServerList();
+            RefreshServers();
+            _lobbyScreen = LobbyScreen.Browser;
+        }
+
+        /// <summary>Map the existing character onto the HUD state, then enter the world.</summary>
         private void EnterExisting()
         {
             _name = _client.CharacterName;
@@ -235,6 +450,10 @@ namespace Aetheria.UnityClient
             _transport = null;
             _client = null;
             _connected = false;
+            _enterSent = false;
+            _lobbyScreen = LobbyScreen.Auth;
+            _previewKey = -1;
+            _lobby.ClearPreview();
             _targetId = -1;
             _autoAttack = false;
             _menuOpen = false;
@@ -256,6 +475,8 @@ namespace Aetheria.UnityClient
         {
             _cfg.Save();
             Disconnect();
+            foreach (ServerEntry e in _servers) { e.Probe?.Dispose(); }
+            _lobby.Teardown();
         }
 
         // --------------------------------------------------------------- World
@@ -714,28 +935,31 @@ namespace Aetheria.UnityClient
 
         private void DrawAuthScreens()
         {
-            if (!_connected || _client == null)
+            if (_connected && _client != null)
             {
-                DrawLoginScreen();
+                if (_lobbyScreen == LobbyScreen.Creation && _client.LoggedIn && !_client.HasCharacter)
+                {
+                    DrawCreationScreen();
+                }
+                else
+                {
+                    DrawWaitScreen(_client.LoggedIn ? "Entrée dans le monde…" : "Connexion au serveur…");
+                }
             }
-            else if (!_client.LoggedIn)
+            else if (_lobbyScreen == LobbyScreen.Browser)
             {
-                DrawWaitScreen("Connexion au serveur…");
-            }
-            else if (_client.HasCharacter)
-            {
-                DrawCharacterScreen();
+                DrawServerBrowser();
             }
             else
             {
-                DrawCreationScreen();
+                DrawLoginScreen();
             }
         }
 
-        private void DrawTitledBox(out Rect box, float height, string subtitle)
+        /// <summary>Auth panels sit on the LEFT so the 3D campsite (and preview) shows on the right.</summary>
+        private void DrawTitledBox(out Rect box, float height, string subtitle, float width = 360f)
         {
-            const int W = 360;
-            box = new Rect((VirtW - W) / 2f, VirtH * 0.14f, W, height);
+            box = new Rect(VirtW * 0.06f, VirtH * 0.10f, width, height);
             GUI.Box(box, "<size=16><b>AETHERIA</b></size>   <size=10>v" + SimulationConstants.GameVersion +
                          "</size>\n<size=11>" + subtitle + "</size>", RichCenteredBox());
         }
@@ -751,18 +975,11 @@ namespace Aetheria.UnityClient
             }
         }
 
-        /// <summary>Screen 1 — the account: server address, account id, secret.</summary>
+        /// <summary>Screen 1 — pure authentication: account + secret. The server comes from memory.</summary>
         private void DrawLoginScreen()
         {
-            DrawTitledBox(out Rect box, 240, "Connexion");
+            DrawTitledBox(out Rect box, 300, "Authentification");
             GUILayout.BeginArea(new Rect(box.x + 15, box.y + 48, box.width - 30, box.height - 60));
-
-            GUILayout.BeginHorizontal();
-            GUILayout.Label("Serveur", GUILayout.Width(70));
-            _host = GUILayout.TextField(_host);
-            GUILayout.Label(":", GUILayout.Width(8));
-            _port = GUILayout.TextField(_port, GUILayout.Width(56));
-            GUILayout.EndHorizontal();
 
             GUILayout.BeginHorizontal();
             GUILayout.Label("Compte", GUILayout.Width(70));
@@ -774,11 +991,117 @@ namespace Aetheria.UnityClient
             _secret = GUILayout.PasswordField(_secret, '*');
             GUILayout.EndHorizontal();
 
-            GUILayout.Space(10);
-            if (GUILayout.Button("SE CONNECTER", GUILayout.Height(34))) { Connect(); }
+            string target = LastServerFor(_account.Trim().Length > 0 ? _account.Trim() : "?");
+            GUILayout.Space(4);
+            GUILayout.Label("<size=10><i>Serveur : " + target +
+                            " (le dernier où tu as joué)</i></size>", Rich());
+
+            GUILayout.Space(6);
+            if (GUILayout.Button("SE CONNECTER", GUILayout.Height(34)))
+            {
+                Connect(LastServerFor(_account.Trim()), createAccount: false);
+            }
+
+            if (GUILayout.Button("CRÉER UN COMPTE", GUILayout.Height(26)))
+            {
+                Connect(LastServerFor(_account.Trim()), createAccount: true);
+            }
 
             GUILayout.Space(4);
-            GUILayout.Label("<size=10><i>Un personnage par serveur — change d'adresse pour jouer un autre héros.</i></size>", Rich());
+            if (GUILayout.Button("Liste des serveurs", GUILayout.Height(24))) { OpenServerBrowser(); }
+
+            GUILayout.Space(4);
+            GUILayout.Label("<size=10><i>Si tu as un personnage sur ce serveur, tu entres directement en jeu.</i></size>", Rich());
+            DrawErrors();
+            GUILayout.EndArea();
+        }
+
+        /// <summary>The server browser: NAMED servers, their population, and your character there.</summary>
+        private void DrawServerBrowser()
+        {
+            float height = 150f + (_servers.Count * 54f) + 70f;
+            DrawTitledBox(out Rect box, Mathf.Min(height, VirtH * 0.8f), "Liste des serveurs", 560f);
+            GUILayout.BeginArea(new Rect(box.x + 15, box.y + 48, box.width - 30, box.height - 60));
+
+            _registerMode = GUILayout.Toggle(_registerMode,
+                " Créer mon compte sur le serveur choisi (première visite)");
+            GUILayout.Space(6);
+
+            foreach (ServerEntry e in _servers)
+            {
+                GUILayout.BeginHorizontal(GUI.skin.box);
+
+                // Column 1: name + address.
+                GUILayout.BeginVertical(GUILayout.Width(190));
+                string name = e.HasInfo ? e.Info.Name : e.Failed ? "(injoignable)" : "(interrogation…)";
+                GUILayout.Label("<b>" + name + "</b>", Rich());
+                GUILayout.Label("<size=9>" + e.Address + "</size>", Rich());
+                GUILayout.EndVertical();
+
+                // Column 2: population badge.
+                GUILayout.BeginVertical(GUILayout.Width(130));
+                if (e.HasInfo)
+                {
+                    float fill = e.Info.Capacity > 0 ? e.Info.Online / (float)e.Info.Capacity : 0f;
+                    string badge = fill >= 1f ? "<color=#ff5050>Complet</color>"
+                        : fill >= 0.8f ? "<color=#ffa040>Presque complet</color>"
+                        : fill >= 0.3f ? "<color=#ffe060>Moyenne</color>"
+                        : "<color=#60e070>Faible</color>";
+                    GUILayout.Label(badge, Rich());
+                    GUILayout.Label("<size=9>" + e.Info.Online + " / " + e.Info.Capacity + " joueurs</size>", Rich());
+                }
+                else
+                {
+                    GUILayout.Label("<size=9>—</size>", Rich());
+                }
+
+                GUILayout.EndVertical();
+
+                // Column 3: your character on this server.
+                GUILayout.BeginVertical(GUILayout.Width(130));
+                if (e.HasInfo && e.Info.HasCharacter)
+                {
+                    GUILayout.Label("<size=10>" + e.Info.CharacterName + " (niv. " + e.Info.CharacterLevel + ")</size>", Rich());
+                }
+                else if (e.HasInfo)
+                {
+                    bool blocked = !e.Info.AcceptsNewCharacters;
+                    GUILayout.Label(blocked
+                        ? "<size=10><color=#ff7070>Création bloquée (complet)</color></size>"
+                        : "<size=10>Aucun personnage</size>", Rich());
+                }
+
+                GUILayout.EndVertical();
+
+                // Column 4: join. A full server still lets an EXISTING character play,
+                // but refuses newcomers (no character there + no room to create one).
+                bool canJoin = e.HasInfo && (e.Info.HasCharacter || e.Info.AcceptsNewCharacters);
+                GUI.enabled = canJoin;
+                if (GUILayout.Button("REJOINDRE", GUILayout.Width(90), GUILayout.Height(36)))
+                {
+                    Connect(e.Address, _registerMode);
+                }
+
+                GUI.enabled = true;
+                GUILayout.EndHorizontal();
+            }
+
+            GUILayout.Space(6);
+            GUILayout.BeginHorizontal();
+            GUILayout.Label("Ajouter :", GUILayout.Width(60));
+            _newServerAddr = GUILayout.TextField(_newServerAddr, GUILayout.Width(180));
+            if (GUILayout.Button("+", GUILayout.Width(28)))
+            {
+                AddServerEntry(_newServerAddr);
+                _newServerAddr = "";
+                RefreshServers();
+            }
+
+            GUILayout.FlexibleSpace();
+            if (GUILayout.Button("Actualiser", GUILayout.Width(90))) { RefreshServers(); }
+            if (GUILayout.Button("Retour", GUILayout.Width(80))) { _lobbyScreen = LobbyScreen.Auth; }
+            GUILayout.EndHorizontal();
+
             DrawErrors();
             GUILayout.EndArea();
         }
@@ -792,39 +1115,6 @@ namespace Aetheria.UnityClient
             GUILayout.EndArea();
         }
 
-        /// <summary>Screen 2a — the account already has its character on this server.</summary>
-        private void DrawCharacterScreen()
-        {
-            DrawTitledBox(out Rect box, 250, "Ton personnage");
-            GUILayout.BeginArea(new Rect(box.x + 15, box.y + 48, box.width - 30, box.height - 60));
-
-            string race = "?";
-            for (int i = 0; i < Races.Length; i++)
-            {
-                if (Races[i].id == _client.CharacterRaceId) { race = Races[i].label; }
-            }
-
-            string cls = "?";
-            for (int i = 0; i < Classes.Length; i++)
-            {
-                if (Classes[i].id == _client.CharacterClassId) { cls = Classes[i].label; }
-            }
-
-            GUILayout.Label("<size=15><b>" + _client.CharacterName + "</b></size>", Rich());
-            GUILayout.Label(race + " · " + cls + " · niveau " + _client.CharacterLevel);
-            GUILayout.Label("<size=10><i>" + _client.CharacterGender + "</i></size>", Rich());
-
-            GUILayout.Space(12);
-            if (GUILayout.Button("ENTRER EN JEU", GUILayout.Height(38))) { EnterExisting(); }
-
-            GUILayout.Space(6);
-            if (GUILayout.Button("Changer de serveur", GUILayout.Height(24))) { Disconnect(); }
-
-            DrawErrors();
-            GUILayout.EndArea();
-        }
-
-        /// <summary>Screen 2b — no character on this server yet: create and name it.</summary>
         /// <summary>One "◀ valeur ▶" row of the customisation panel, with an optional colour swatch.</summary>
         private int DrawOptionPicker(string label, int index, string[] options, Color? swatch)
         {
@@ -929,7 +1219,11 @@ namespace Aetheria.UnityClient
 
             GUILayout.Space(4);
             GUILayout.Label("<size=10><i>Tu apparaîtras dans le sanctuaire — une zone sans PvP ni monstres.</i></size>", Rich());
-            if (GUILayout.Button("Changer de serveur", GUILayout.Height(22))) { Disconnect(); }
+            if (GUILayout.Button("Liste des serveurs", GUILayout.Height(22)))
+            {
+                Disconnect();
+                OpenServerBrowser();
+            }
 
             DrawErrors();
             GUILayout.EndArea();

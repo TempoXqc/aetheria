@@ -103,11 +103,12 @@ public sealed class GameClient
     public byte CharacterLevel { get; private set; } = 1;
 
     /// <summary>Open the socket toward the server and authenticate the account.</summary>
-    public void Connect(string host, int port, string accountId, string accountSecret)
+    public void Connect(string host, int port, string accountId, string accountSecret,
+        bool createAccount = false)
     {
         _transport.Connect(host, port);
         LoginError = string.Empty;
-        Send(new Login(SimulationConstants.ProtocolVersion, accountId, accountSecret));
+        Send(new Login(SimulationConstants.ProtocolVersion, accountId, accountSecret, createAccount));
     }
 
     /// <summary>Create this server's one character for the account, then enter the world.</summary>

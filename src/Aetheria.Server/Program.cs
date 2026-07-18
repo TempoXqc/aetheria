@@ -18,7 +18,12 @@ Console.WriteLine($"State file: {statePath}");
 using var transport = new UdpServerTransport();
 transport.Start(port);
 
-var server = new GameServer(transport, gameData, Console.WriteLine, store);
+string serverName = ParseArg(args, "--name") ?? SimulationConstants.DefaultServerName;
+int maxPlayers = int.TryParse(ParseArg(args, "--max-players"), out int cap) && cap > 0
+    ? cap
+    : SimulationConstants.DefaultMaxPlayers;
+
+var server = new GameServer(transport, gameData, Console.WriteLine, store, serverName, maxPlayers);
 
 Console.WriteLine(
     $"Content loaded: {gameData.Races.Count} races, {gameData.Classes.Count} classes, " +
@@ -32,8 +37,9 @@ Console.CancelKeyPress += (_, e) =>
 };
 
 Console.WriteLine(
-    $"Aetheria server v{SimulationConstants.GameVersion} (protocol v{SimulationConstants.ProtocolVersion}) " +
-    $"listening on UDP {port} at {SimulationConstants.TickRate} Hz.");
+    $"Aetheria server « {server.ServerName} » v{SimulationConstants.GameVersion} " +
+    $"(protocol v{SimulationConstants.ProtocolVersion}) listening on UDP {port} " +
+    $"at {SimulationConstants.TickRate} Hz — capacity {server.MaxPlayers} players.");
 Console.WriteLine("Press Ctrl+C to stop.");
 
 var loop = new FixedStepLoop(SimulationConstants.TickRate, dt =>
@@ -67,6 +73,19 @@ static string? ParseStatePath(string[] args)
     for (int i = 0; i < args.Length - 1; i++)
     {
         if (args[i] == "--state")
+        {
+            return args[i + 1];
+        }
+    }
+
+    return null;
+}
+
+static string? ParseArg(string[] args, string name)
+{
+    for (int i = 0; i < args.Length - 1; i++)
+    {
+        if (args[i] == name)
         {
             return args[i + 1];
         }

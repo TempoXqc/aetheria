@@ -10,9 +10,35 @@ using Aetheria.Shared.Protocol;
 
 var options = HarnessOptions.Parse(args);
 
+// --probe: one-shot server-browser query (name, population, your character), then exit.
+if (options.Probe)
+{
+    using var probeTransport = new UdpClientTransport();
+    using var probe = new ServerProbe(probeTransport, options.Host, options.Port, options.AccountId);
+    var probeClock = Stopwatch.StartNew();
+    while (!probe.Completed && !probe.TimedOut && probeClock.Elapsed.TotalSeconds < 5)
+    {
+        probe.Pump();
+        Thread.Sleep(20);
+    }
+
+    if (probe.Completed)
+    {
+        ServerInfo info = probe.Info;
+        Console.WriteLine(
+            $"PROBE name=\"{info.Name}\" online={info.Online}/{info.Capacity} " +
+            $"acceptsNew={info.AcceptsNewCharacters} hasAccount={info.HasAccount} " +
+            $"character={(info.HasCharacter ? $"{info.CharacterName} (lvl {info.CharacterLevel})" : "none")}");
+        return 0;
+    }
+
+    Console.WriteLine("PROBE timeout");
+    return 0;
+}
+
 using var transport = new UdpClientTransport();
 var client = new GameClient(transport);
-client.Connect(options.Host, options.Port, options.AccountId, options.Secret);
+client.Connect(options.Host, options.Port, options.AccountId, options.Secret, options.Register);
 bool deposited = false;
 bool enterSent = false;
 
@@ -187,7 +213,7 @@ static void PrintStatus(GameClient client, string name)
 internal sealed record HarnessOptions(
     string Host, int Port, string Name, double Seconds, Vec2 Direction,
     byte RaceId, byte ClassId, byte AbilityId, bool Attack, Gender Gender, bool Racial, bool Loot,
-    string AccountId, int DepositGold, byte Instance, string Secret)
+    string AccountId, int DepositGold, byte Instance, string Secret, bool Register, bool Probe)
 {
     public static HarnessOptions Parse(string[] args)
     {
@@ -208,6 +234,8 @@ internal sealed record HarnessOptions(
         int depositGold = 0;
         byte instance = 0;
         string secret = "";
+        bool register = false;
+        bool probe = false;
 
         for (int i = 0; i < args.Length; i++)
         {
@@ -230,6 +258,8 @@ internal sealed record HarnessOptions(
                 case "--deposit" when HasNext() && int.TryParse(args[i + 1], out int dg): depositGold = dg; i++; break;
                 case "--instance" when HasNext() && byte.TryParse(args[i + 1], out byte inst): instance = inst; i++; break;
                 case "--secret" when HasNext(): secret = args[++i]; break;
+                case "--register": register = true; break;
+                case "--probe": probe = true; break;
                 case "--attack": attack = true; break;
                 case "--racial": racial = true; break;
                 case "--loot": loot = true; break;
@@ -248,7 +278,7 @@ internal sealed record HarnessOptions(
             secret = account; // sensible default for scripted tests
         }
 
-        return new HarnessOptions(host, port, name, seconds, new Vec2(dirX, dirY), race, cls, ability, attack, gender, racial, loot, account, depositGold, instance, secret);
+        return new HarnessOptions(host, port, name, seconds, new Vec2(dirX, dirY), race, cls, ability, attack, gender, racial, loot, account, depositGold, instance, secret, register, probe);
     }
 
     private static Gender ParseGender(string value) => value.ToLowerInvariant() switch

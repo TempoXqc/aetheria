@@ -54,15 +54,25 @@ public sealed class GameServer
     private readonly ServerState _state;
     private const int SaveIntervalTicks = SimulationConstants.TickRate * 5; // flush every ~5s
 
+    /// <summary>This server's display name (servers are named, not numbered).</summary>
+    public string ServerName { get; }
+
+    /// <summary>Player capacity. Full = no NEW characters; existing characters still play.</summary>
+    public int MaxPlayers { get; }
+
     public GameServer(
         IServerTransport transport, GameData? gameData = null, Action<string>? log = null,
-        IPersistenceStore? store = null)
+        IPersistenceStore? store = null,
+        string serverName = SimulationConstants.DefaultServerName,
+        int maxPlayers = SimulationConstants.DefaultMaxPlayers)
     {
         _transport = transport;
         _worlds = new WorldManager(gameData);
         _log = log ?? (_ => { });
         _store = store ?? new InMemoryPersistenceStore();
         _state = _store.Load();
+        ServerName = string.IsNullOrWhiteSpace(serverName) ? SimulationConstants.DefaultServerName : serverName;
+        MaxPlayers = maxPlayers > 0 ? maxPlayers : SimulationConstants.DefaultMaxPlayers;
 
         // Hydrate live banks from durable records.
         foreach (AccountRecord account in _state.Accounts.Values)
@@ -185,12 +195,16 @@ public sealed class GameServer
             var reader = new PacketReader(payload);
             var type = (MessageType)reader.ReadByte();
 
-            // Phase gate 1: before login, only Login is valid.
+            // Phase gate 1: before login, only Login and the unauthenticated info query are valid.
             if (session.Phase == SessionPhase.AwaitingLogin)
             {
                 if (type == MessageType.Login)
                 {
                     HandleLogin(peer, session, ref reader);
+                }
+                else if (type == MessageType.ServerInfoRequest)
+                {
+                    HandleServerInfo(peer, ref reader);
                 }
 
                 return;
@@ -383,12 +397,31 @@ public sealed class GameServer
             return;
         }
 
-        // First login sets the secret; later logins must match it.
+        // Explicit account creation vs sign-in — no silent auto-creation anymore.
+        bool exists = _state.Accounts.ContainsKey(accountId.ToLowerInvariant());
+        if (request.CreateAccount && exists)
+        {
+            Send(peer, LoginResult.Failure("Ce compte existe déjà sur ce serveur — connecte-toi."));
+            return;
+        }
+
+        if (!request.CreateAccount && !exists)
+        {
+            Send(peer, LoginResult.Failure("Compte inconnu sur ce serveur — utilise « Créer un compte »."));
+            return;
+        }
+
+        if (request.CreateAccount && string.IsNullOrWhiteSpace(request.AccountSecret))
+        {
+            Send(peer, LoginResult.Failure("Choisis un secret de compte (il protège ton compte)."));
+            return;
+        }
+
         AccountRecord account = GetOrCreateAccount(accountId);
         string secretHash = HashSecret(request.AccountSecret);
         if (string.IsNullOrEmpty(account.SecretHash))
         {
-            account.SecretHash = secretHash;
+            account.SecretHash = secretHash; // fresh account: this login sets the secret
         }
         else if (!string.Equals(account.SecretHash, secretHash, StringComparison.Ordinal))
         {
@@ -416,6 +449,35 @@ public sealed class GameServer
         _log($"Account '{accountId}' logged in ({peer}); character: {(existing?.Name ?? "none")}.");
     }
 
+    /// <summary>Answer the unauthenticated server-browser query: name, population, your character here.</summary>
+    private void HandleServerInfo(PeerId peer, ref PacketReader reader)
+    {
+        ServerInfoRequest request = ServerInfoRequest.Read(ref reader);
+
+        string key = (request.AccountId ?? string.Empty).Trim().ToLowerInvariant();
+        AccountRecord? account = null;
+        if (key.Length > 0)
+        {
+            _state.Accounts.TryGetValue(key, out account);
+        }
+
+        CharacterRecord? character = account?.Characters.Values.FirstOrDefault();
+        byte level = 1;
+        if (character is not null)
+        {
+            level = (byte)System.Math.Clamp(
+                _worlds.GameData.Progression.LevelForXp(character.TotalXp), 1, 255);
+        }
+
+        Send(peer, new ServerInfo(
+            ServerName, PlayerCount, MaxPlayers,
+            acceptsNewCharacters: PlayerCount < MaxPlayers,
+            hasAccount: account is not null,
+            hasCharacter: character is not null,
+            characterName: character?.Name ?? string.Empty,
+            characterLevel: level));
+    }
+
     /// <summary>Create this server's one character for the account, then enter the world.</summary>
     private void HandleCreateCharacter(PeerId peer, PlayerSession session, CreateCharacter request)
     {
@@ -425,6 +487,14 @@ public sealed class GameServer
         if (account.Characters.Count > 0)
         {
             Send(peer, LoginResult.Failure("Ce compte a déjà un personnage sur ce serveur."));
+            return;
+        }
+
+        // A full server refuses NEW characters (existing characters may still enter and play).
+        if (PlayerCount >= MaxPlayers)
+        {
+            Send(peer, LoginResult.Failure(
+                $"Serveur complet ({PlayerCount}/{MaxPlayers}) — impossible d'y créer un nouveau personnage."));
             return;
         }
 
@@ -1223,6 +1293,8 @@ public sealed class GameServer
     private void Send(PeerId peer, TradeNotice msg) => SendWith(peer, msg.Write);
     private void Send(PeerId peer, TradeState msg) => SendWith(peer, msg.Write);
     private void Send(PeerId peer, LoginResult msg) => SendWith(peer, msg.Write);
+
+    private void Send(PeerId peer, ServerInfo msg) => SendWith(peer, msg.Write);
 
     private void SendWith(PeerId peer, Action<PacketWriter> write)
     {

@@ -12,11 +12,18 @@ public readonly struct Login
     public readonly string AccountId;
     public readonly string AccountSecret;
 
-    public Login(byte protocolVersion, string accountId, string accountSecret)
+    /// <summary>
+    /// True: explicitly REGISTER this account (fails if it already exists). False: sign in to an
+    /// existing account (fails if unknown). No more silent account auto-creation on first login.
+    /// </summary>
+    public readonly bool CreateAccount;
+
+    public Login(byte protocolVersion, string accountId, string accountSecret, bool createAccount = false)
     {
         ProtocolVersion = protocolVersion;
         AccountId = accountId;
         AccountSecret = accountSecret;
+        CreateAccount = createAccount;
     }
 
     public void Write(PacketWriter w)
@@ -25,6 +32,7 @@ public readonly struct Login
         w.WriteByte(ProtocolVersion);
         w.WriteString(AccountId);
         w.WriteString(AccountSecret);
+        w.WriteBool(CreateAccount);
     }
 
     public static Login Read(ref PacketReader r)
@@ -32,7 +40,98 @@ public readonly struct Login
         byte version = r.ReadByte();
         string accountId = r.ReadString();
         string secret = r.ReadString();
-        return new Login(version, accountId, secret);
+        bool create = r.ReadBool();
+        return new Login(version, accountId, secret, create);
+    }
+}
+
+/// <summary>
+/// Asks a server to describe itself (name, population, whether this account has a character
+/// there). Answered in the AwaitingLogin phase, before any authentication — the server browser
+/// uses it to draw its table. Carries the protocol version so incompatible servers say so.
+/// </summary>
+public readonly struct ServerInfoRequest
+{
+    public readonly byte ProtocolVersion;
+    public readonly string AccountId; // may be empty: population info only
+
+    public ServerInfoRequest(byte protocolVersion, string accountId)
+    {
+        ProtocolVersion = protocolVersion;
+        AccountId = accountId;
+    }
+
+    public void Write(PacketWriter w)
+    {
+        w.WriteByte((byte)MessageType.ServerInfoRequest);
+        w.WriteByte(ProtocolVersion);
+        w.WriteString(AccountId);
+    }
+
+    public static ServerInfoRequest Read(ref PacketReader r)
+    {
+        byte version = r.ReadByte();
+        string accountId = r.ReadString();
+        return new ServerInfoRequest(version, accountId);
+    }
+}
+
+/// <summary>
+/// A server's card in the server browser: its NAME (servers are named, not numbered), its
+/// population, and — if the request carried an account — that account's character there.
+/// A full server still lets existing characters play, but refuses new character creation.
+/// </summary>
+public readonly struct ServerInfo
+{
+    public readonly string Name;
+    public readonly int Online;
+    public readonly int Capacity;
+
+    /// <summary>False when the server is full — you can still play an EXISTING character.</summary>
+    public readonly bool AcceptsNewCharacters;
+
+    public readonly bool HasAccount;
+    public readonly bool HasCharacter;
+    public readonly string CharacterName;
+    public readonly byte CharacterLevel;
+
+    public ServerInfo(string name, int online, int capacity, bool acceptsNewCharacters,
+        bool hasAccount, bool hasCharacter, string characterName, byte characterLevel)
+    {
+        Name = name;
+        Online = online;
+        Capacity = capacity;
+        AcceptsNewCharacters = acceptsNewCharacters;
+        HasAccount = hasAccount;
+        HasCharacter = hasCharacter;
+        CharacterName = characterName;
+        CharacterLevel = characterLevel;
+    }
+
+    public void Write(PacketWriter w)
+    {
+        w.WriteByte((byte)MessageType.ServerInfo);
+        w.WriteString(Name);
+        w.WriteInt(Online);
+        w.WriteInt(Capacity);
+        w.WriteBool(AcceptsNewCharacters);
+        w.WriteBool(HasAccount);
+        w.WriteBool(HasCharacter);
+        w.WriteString(CharacterName);
+        w.WriteByte(CharacterLevel);
+    }
+
+    public static ServerInfo Read(ref PacketReader r)
+    {
+        string name = r.ReadString();
+        int online = r.ReadInt();
+        int capacity = r.ReadInt();
+        bool accepts = r.ReadBool();
+        bool hasAccount = r.ReadBool();
+        bool hasCharacter = r.ReadBool();
+        string characterName = r.ReadString();
+        byte level = r.ReadByte();
+        return new ServerInfo(name, online, capacity, accepts, hasAccount, hasCharacter, characterName, level);
     }
 }
 
