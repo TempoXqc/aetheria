@@ -62,6 +62,7 @@ namespace Aetheria.UnityClient
         private string _secret2 = "";
         private bool _wasRegistering;
         private bool _serverChosen; // the player picked this realm in the browser (creation allowed)
+        private Vector3 _rightDownPos; // to tell a right-TAP (context click) from a camera drag
 
         // --- Bank (a physical chest in the sanctuary) ---
         private int _nearbyBankId = -1;
@@ -714,7 +715,6 @@ namespace Aetheria.UnityClient
             if (_cameraRig != null && _client.TryGetSelf(out self))
             {
                 _cameraRig.Target = new Vector3(self.Position.X, 0f, self.Position.Y);
-                _cameraRig.TargetFacingRadians = self.FacingRadians; // the camera trails your facing
             }
         }
 
@@ -745,7 +745,15 @@ namespace Aetheria.UnityClient
                 HandleLeftClick();
             }
 
+            // Right button doubles as WoW mouselook: a quick TAP is a context click,
+            // press-and-DRAG turns the camera (handled by the rig) without opening menus.
             if (Input.GetMouseButtonDown(1))
+            {
+                _rightDownPos = Input.mousePosition;
+            }
+
+            if (Input.GetMouseButtonUp(1) && _draggingItem == null &&
+                (Input.mousePosition - _rightDownPos).sqrMagnitude < 64f) // < 8 px: a tap
             {
                 HandleRightClick();
             }
@@ -945,30 +953,18 @@ namespace Aetheria.UnityClient
                 dir = new Vec2(world.x, world.z).Normalized();
             }
 
-            EntitySnapshot self;
-            Vector3 mouseGround;
-            if (_client.TryGetSelf(out self) && TryMouseGroundPoint(out mouseGround))
+            // WoW rules: the character faces where the CAMERA looks (mouselook via right-drag),
+            // or, when moving without touching the camera, the direction it is walking in.
+            if (_cameraRig != null && Input.GetMouseButton(1))
             {
-                float dx = mouseGround.x - self.Position.X;
-                float dz = mouseGround.z - self.Position.Y;
-                if ((dx * dx) + (dz * dz) > 0.04f) { _lastFacing = Mathf.Atan2(dz, dx); }
+                _lastFacing = _cameraRig.FacingRadians; // right-drag: turn with the camera
+            }
+            else if (dir.LengthSquared > 0.0001f)
+            {
+                _lastFacing = Mathf.Atan2(dir.Y, dir.X); // face your walking direction
             }
 
             _client.SendInput(dir, _lastFacing);
-        }
-
-        private static bool TryMouseGroundPoint(out Vector3 point)
-        {
-            point = Vector3.zero;
-            Camera cam = Camera.main;
-            if (cam == null) { return false; }
-
-            Ray ray = cam.ScreenPointToRay(Input.mousePosition);
-            var ground = new Plane(Vector3.up, Vector3.zero);
-            float enter;
-            if (!ground.Raycast(ray, out enter)) { return false; }
-            point = ray.GetPoint(enter);
-            return true;
         }
 
         // ----------------------------------------------------------------- HUD
@@ -2199,8 +2195,9 @@ namespace Aetheria.UnityClient
             GUI.Label(new Rect(m.x - 100, m.y - 6, 220, 18),
                 "<size=10>→ joueur allié : échanger · sol : poser</size>", RichCentered());
 
-            // Release: over an ally → propose a trade with this item pre-offered; elsewhere → drop.
-            if (Input.GetMouseButtonUp(0))
+            // Release (the drag is held on the RIGHT button): over an ally → propose a trade with
+            // this item pre-offered; elsewhere → drop it on the ground.
+            if (Input.GetMouseButtonUp(1))
             {
                 EntitySnapshot self;
                 bool haveSelf = _client.TryGetSelf(out self);

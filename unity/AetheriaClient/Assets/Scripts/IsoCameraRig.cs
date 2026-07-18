@@ -3,28 +3,43 @@ using UnityEngine;
 namespace Aetheria.UnityClient
 {
     /// <summary>
-    /// WoW-style third-person chase camera: perspective projection, hovering behind the character's
-    /// shoulder, smoothly following both position and facing. Mouse wheel zooms in and out. (The
-    /// class keeps its historical name — it started life as an isometric rig.)
+    /// WoW-style third-person camera. The camera owns its own yaw/pitch and only moves when YOU
+    /// move it: hold the RIGHT mouse button and drag to look around (the character turns with the
+    /// camera, exactly like WoW's mouselook); mouse wheel zooms. It never chases the cursor —
+    /// no more self-spinning view. (The class keeps its historical name.)
     /// </summary>
     public sealed class IsoCameraRig : MonoBehaviour
     {
-        private const float Pitch = 26f;          // downward tilt, WoW-like
-        private const float FollowLerp = 8f;      // position smoothing
-        private const float YawLerp = 4f;         // rotation smoothing (mouse-driven facing swings a lot)
+        private const float FollowLerp = 10f;   // position smoothing
         private const float MinZoom = 4f;
         private const float MaxZoom = 20f;
+        private const float MinPitch = 8f;
+        private const float MaxPitch = 65f;
+        private const float Sensitivity = 3.2f; // degrees per mouse-axis unit while right-dragging
 
         private Camera _camera;
         private Vector3 _focus;
-        private float _yaw;                       // smoothed camera yaw, degrees
         private float _distance = 11f;
 
-        /// <summary>World point the camera should keep centred (the player).</summary>
+        /// <summary>World point the camera keeps centred (the player).</summary>
         public Vector3 Target { get; set; }
 
-        /// <summary>The character's facing on the server plane, radians (0 = +X). Camera trails it.</summary>
-        public float TargetFacingRadians { get; set; }
+        /// <summary>Camera yaw in degrees. The character's facing is derived from this.</summary>
+        public float Yaw { get; private set; } = 45f;
+
+        /// <summary>Camera pitch in degrees (right-drag up/down).</summary>
+        public float Pitch { get; private set; } = 26f;
+
+        /// <summary>The camera yaw expressed as a server-plane facing angle (radians, 0 = +X).</summary>
+        public float FacingRadians
+        {
+            get
+            {
+                float yawRad = Yaw * Mathf.Deg2Rad;
+                // Unity forward for this yaw is (sin, 0, cos); server plane maps (X, Y) = (x, z).
+                return Mathf.Atan2(Mathf.Cos(yawRad), Mathf.Sin(yawRad));
+            }
+        }
 
         private void Awake()
         {
@@ -36,7 +51,6 @@ namespace Aetheria.UnityClient
             }
 
             _focus = Target;
-            _yaw = DesiredYaw();
             Place();
         }
 
@@ -48,21 +62,20 @@ namespace Aetheria.UnityClient
                 _distance = Mathf.Clamp(_distance - (scroll * 5f), MinZoom, MaxZoom);
             }
 
-            _focus = Vector3.Lerp(_focus, Target, Time.deltaTime * FollowLerp);
-            _yaw = Mathf.LerpAngle(_yaw, DesiredYaw(), Time.deltaTime * YawLerp);
-            Place();
-        }
+            // Mouselook: the camera turns ONLY while the right button is held.
+            if (Input.GetMouseButton(1))
+            {
+                Yaw += Input.GetAxis("Mouse X") * Sensitivity;
+                Pitch = Mathf.Clamp(Pitch - (Input.GetAxis("Mouse Y") * Sensitivity), MinPitch, MaxPitch);
+            }
 
-        /// <summary>Behind the character: camera yaw = the facing direction's yaw.</summary>
-        private float DesiredYaw()
-        {
-            var dir = new Vector3(Mathf.Cos(TargetFacingRadians), 0f, Mathf.Sin(TargetFacingRadians));
-            return Mathf.Atan2(dir.x, dir.z) * Mathf.Rad2Deg;
+            _focus = Vector3.Lerp(_focus, Target, Time.deltaTime * FollowLerp);
+            Place();
         }
 
         private void Place()
         {
-            Quaternion rot = Quaternion.Euler(Pitch, _yaw, 0f);
+            Quaternion rot = Quaternion.Euler(Pitch, Yaw, 0f);
             Vector3 eye = _focus + new Vector3(0f, 1.6f, 0f) - (rot * Vector3.forward * _distance);
             transform.position = eye;
             transform.rotation = rot;
