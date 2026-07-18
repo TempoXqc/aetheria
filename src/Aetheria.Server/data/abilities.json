@@ -1,9 +1,9 @@
 [
-  { "id": 1,  "name": "Slash",             "baseDamage": 10, "range": 2.5,  "cooldownTicks": 10,   "resourceCost": 0,  "skillLineId": 1 },
+  { "id": 1,  "name": "Slash",             "baseDamage": 18, "range": 2.5,  "cooldownTicks": 40,   "resourceCost": 0,  "skillLineId": 1 },
   { "id": 2,  "name": "Firebolt",          "baseDamage": 16, "range": 12.0, "cooldownTicks": 16,   "resourceCost": 20, "skillLineId": 2, "castTimeTicks": 30 },
-  { "id": 3,  "name": "Shot",              "baseDamage": 12, "range": 10.0, "cooldownTicks": 12,   "resourceCost": 30, "skillLineId": 3 },
-  { "id": 4,  "name": "Claw",              "baseDamage": 6,  "range": 2.5,  "cooldownTicks": 12,   "resourceCost": 0 },
-  { "id": 6,  "name": "Wand Shot",         "baseDamage": 6,  "range": 12.0, "cooldownTicks": 30,   "resourceCost": 0 },
+  { "id": 3,  "name": "Shot",              "baseDamage": 20, "range": 10.0, "cooldownTicks": 50,   "resourceCost": 30, "skillLineId": 3 },
+  { "id": 4,  "name": "Claw",              "baseDamage": 9,  "range": 2.5,  "cooldownTicks": 36,   "resourceCost": 0 },
+  { "id": 6,  "name": "Wand Shot",         "baseDamage": 10, "range": 12.0, "cooldownTicks": 30,   "resourceCost": 0 },
   { "id": 5,  "name": "Renew",             "baseDamage": 0,  "range": 0.0,  "cooldownTicks": 600,  "resourceCost": 0, "effect": 6, "effectMagnitude": 0.04, "effectDurationTicks": 200 },
 
   { "id": 20, "name": "Whirlwind",         "baseDamage": 25, "range": 3.0,  "cooldownTicks": 40,   "resourceCost": 25, "unlockLevel": 3, "skillLineId": 1 },

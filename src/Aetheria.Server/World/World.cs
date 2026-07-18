@@ -1018,17 +1018,18 @@ public sealed class World
             MonsterDefinition def = _gameData.GetMonster(victim.MonsterId);
             float mult = _gameData.Progression.XpMultiplierForKill(killer.Level, def.Level);
             ApplyXp(killer, (int)MathF.Round(def.XpReward * mult));
-            killer.Inventory.AddGold(def.GoldReward);
-            GrantBodyParts(killer, def, victim.Position);
-            SpawnMonsterCorpse(victim);
+
+            // NOTHING is auto-looted: gold, body parts and gear all wait inside the corpse
+            // on the ground — right-click it (or press Interact) to open its loot window.
+            SpawnMonsterCorpse(victim, def);
         }
     }
 
     /// <summary>
-    /// Leave the slain creature's remains on the ground for a while (cosmetic — the guaranteed
-    /// body parts already went to the killer's bags). Despawns on its own after ~45 seconds.
+    /// Leave the slain creature's remains on the ground as a LOOTABLE corpse holding its gold,
+    /// guaranteed body parts and rolled gear. Despawns after ~90 seconds or once emptied.
     /// </summary>
-    private void SpawnMonsterCorpse(ServerEntity victim)
+    private void SpawnMonsterCorpse(ServerEntity victim, MonsterDefinition def)
     {
         int id = _ids.Next();
         var remains = new ServerEntity(id, EntityKind.MonsterCorpse, victim.Position,
@@ -1038,7 +1039,8 @@ public sealed class World
             Faction = Faction.Neutral,
             MonsterId = victim.MonsterId,
             Level = victim.Level,
-            DespawnAtTick = Tick + (uint)(SimulationConstants.TickRate * 45),
+            LootContainer = BuildMonsterLoot(def),
+            DespawnAtTick = Tick + (uint)(SimulationConstants.TickRate * 90),
         };
 
         _entities[id] = remains;
@@ -1049,18 +1051,14 @@ public sealed class World
     public Random LootRng { get; set; } = new();
 
     /// <summary>
-    /// Kill loot: GUARANTEED body parts (no RNG — "bring me 10 goblin heads" is deterministic),
-    /// plus chance-rolled EQUIPMENT drops. Whatever doesn't fit the killer's bags drops at the
-    /// kill site as a lootable sack instead of vanishing.
+    /// Kill loot, WoW-style windowed: the monster's gold, its GUARANTEED body parts (no RNG —
+    /// "bring me 10 goblin heads" is deterministic), and one chance roll per listed gear piece.
     /// </summary>
-    private void GrantBodyParts(ServerEntity killer, MonsterDefinition def, Vec2 killSite)
+    private Inventory BuildMonsterLoot(MonsterDefinition def)
     {
-        if (def.BodyParts.Count == 0 && def.GearDrops.Count == 0)
-        {
-            return;
-        }
+        var loot = new Inventory(SimulationConstants.CorpseLootCapacity);
+        loot.AddGold(def.GoldReward);
 
-        Inventory? overflow = null;
         foreach (LootEntry part in def.BodyParts)
         {
             if (!_gameData.HasItem(part.ItemId) || part.Quantity <= 0)
@@ -1069,12 +1067,7 @@ public sealed class World
             }
 
             ItemDefinition item = _gameData.GetItem(part.ItemId);
-            int leftover = killer.Inventory.TryAdd(part.ItemId, part.Quantity, item.Stackable, item.MaxStack);
-            if (leftover > 0)
-            {
-                overflow ??= new Inventory(SimulationConstants.CorpseLootCapacity);
-                overflow.TryAdd(part.ItemId, leftover, item.Stackable, item.MaxStack);
-            }
+            loot.TryAdd(part.ItemId, part.Quantity, item.Stackable, item.MaxStack);
         }
 
         // Equipment: one roll per listed piece. This is where the loot thrill lives.
@@ -1086,27 +1079,10 @@ public sealed class World
             }
 
             ItemDefinition item = _gameData.GetItem(drop.ItemId);
-            int leftover = killer.Inventory.TryAdd(drop.ItemId, 1, item.Stackable, item.MaxStack);
-            if (leftover > 0)
-            {
-                overflow ??= new Inventory(SimulationConstants.CorpseLootCapacity);
-                overflow.TryAdd(drop.ItemId, leftover, item.Stackable, item.MaxStack);
-            }
+            loot.TryAdd(drop.ItemId, 1, item.Stackable, item.MaxStack);
         }
 
-        if (overflow != null)
-        {
-            int id = _ids.Next();
-            var sack = new ServerEntity(id, EntityKind.Corpse, killSite, new StatBlock(1, 0f, 0, 0, 0f), 0)
-            {
-                Name = $"Dépouille ({def.Name})",
-                Faction = Faction.Neutral,
-                LootContainer = overflow,
-            };
-
-            _entities[id] = sack;
-            _grid.InsertOrUpdate(id, sack.Position);
-        }
+        return loot;
     }
 
     private void SpawnCorpse(ServerEntity dead)
@@ -1261,7 +1237,8 @@ public sealed class World
         if (!_entities.TryGetValue(looterId, out ServerEntity? l) || l.IsDead ||
             l.Kind != EntityKind.Player ||
             !_entities.TryGetValue(corpseId, out ServerEntity? c) ||
-            c.Kind != EntityKind.Corpse || c.LootContainer is null)
+            (c.Kind != EntityKind.Corpse && c.Kind != EntityKind.MonsterCorpse) ||
+            c.LootContainer is null)
         {
             return false;
         }
@@ -1337,10 +1314,26 @@ public sealed class World
 
         if (loot.IsEmpty)
         {
-            Despawn(corpse.Id); // all loot recovered — the body disappears
+            OnLootEmptied(corpse);
         }
 
         return took;
+    }
+
+    /// <summary>
+    /// A fully looted container: sacks and player corpses vanish, but a monster's body STAYS on
+    /// the ground (WoW-style) until its own despawn timer — there is just nothing left to take.
+    /// </summary>
+    private void OnLootEmptied(ServerEntity corpse)
+    {
+        if (corpse.Kind == EntityKind.MonsterCorpse)
+        {
+            corpse.LootContainer = null;
+        }
+        else
+        {
+            Despawn(corpse.Id);
+        }
     }
 
     /// <summary>
@@ -1379,7 +1372,7 @@ public sealed class World
 
         if (loot.IsEmpty)
         {
-            Despawn(corpse.Id); // all loot recovered — the body disappears
+            OnLootEmptied(corpse);
         }
 
         return tookSomething;

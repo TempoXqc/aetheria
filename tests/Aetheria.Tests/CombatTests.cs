@@ -22,7 +22,7 @@ public static class CombatTests
         bool used = world.TryUseAbility(attacker.Id, attacker.BasicAbilityId, target.Id);
 
         Assert.True(used, "attack should land at spawn range");
-        Assert.Equal(maxHp - 17, target.Health);
+        Assert.Equal(maxHp - 25, target.Health); // Slash 18 at WoW swing pace hits harder per blow
     }
 
     [Test("An ability out of range does not land.")]

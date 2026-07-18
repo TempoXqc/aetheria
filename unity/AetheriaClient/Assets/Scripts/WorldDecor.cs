@@ -220,7 +220,6 @@ namespace Aetheria.UnityClient
         private Transform _slot;
         private Camera _camera;
         private int _key = -1;
-        private float _t;
 
         public RenderTexture Texture { get; private set; }
 
@@ -288,12 +287,14 @@ namespace Aetheria.UnityClient
             }
         }
 
+        /// <summary>Portrait yaw in degrees — driven by the player's right-button drag, never automatic.</summary>
+        public float Yaw;
+
         public void Tick(float dt)
         {
             if (_slot != null)
             {
-                _t += dt;
-                _slot.localRotation = Quaternion.Euler(0f, _t * 30f, 0f);
+                _slot.localRotation = Quaternion.Euler(0f, Yaw, 0f);
             }
         }
 

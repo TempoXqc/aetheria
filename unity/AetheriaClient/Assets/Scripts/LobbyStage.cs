@@ -176,7 +176,10 @@ namespace Aetheria.UnityClient
             }
         }
 
-        /// <summary>Animate flames and the slowly turning preview; keep the camera in place.</summary>
+        /// <summary>Preview yaw in degrees — driven by the player's right-button drag, never automatic.</summary>
+        public float PreviewYaw;
+
+        /// <summary>Animate flames and apply the player-driven preview yaw; keep the camera in place.</summary>
         public void Tick(float dt)
         {
             if (_root == null)
@@ -200,7 +203,7 @@ namespace Aetheria.UnityClient
 
             if (_previewSlot != null)
             {
-                _previewSlot.localRotation = Quaternion.Euler(0f, _t * 24f, 0f);
+                _previewSlot.localRotation = Quaternion.Euler(0f, PreviewYaw, 0f);
             }
 
             Camera cam = Camera.main;

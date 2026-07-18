@@ -130,6 +130,7 @@ namespace Aetheria.UnityClient
         private HudConfig.Bind? _awaitingBind;
         private bool _sheetOpen;
         private bool _bagsOpen;
+        private bool _uiPress; // the current mouse press began over the character sheet
         private readonly Dictionary<byte, float> _cooldownReadyAt = new Dictionary<byte, float>();
 
         // Right-click context menu on a friendly player.
@@ -166,6 +167,13 @@ namespace Aetheria.UnityClient
             {
                 _lobby.EnsureBuilt();
                 UpdateLobbyPreview();
+
+                // The preview never spins on its own: hold the RIGHT button and drag to turn it.
+                if (Input.GetMouseButton(1))
+                {
+                    _lobby.PreviewYaw += Input.GetAxis("Mouse X") * 6f;
+                }
+
                 _lobby.Tick(Time.deltaTime);
                 PumpServerProbes();
                 if (_decor.Active) { _decor.Teardown(); }
@@ -258,6 +266,20 @@ namespace Aetheria.UnityClient
                 else if (_targetId >= 0) { SetAttackIntent(-1); } // Escape drops the target first
                 else { _menuOpen = !_menuOpen; _optionsTab = -1; _layoutEditMode = false; }
             }
+
+            // A press that BEGINS over the character sheet belongs to the UI (portrait spin,
+            // slot clicks) — the camera must not steer with it, and taps must not hit the world.
+            if (Input.GetMouseButtonDown(0) || Input.GetMouseButtonDown(1))
+            {
+                _uiPress = _sheetOpen && SheetWindowRect().Contains(GuiMouse());
+            }
+            else if (!Input.GetMouseButton(0) && !Input.GetMouseButton(1) &&
+                     !Input.GetMouseButtonUp(0) && !Input.GetMouseButtonUp(1))
+            {
+                _uiPress = false;
+            }
+
+            if (_cameraRig != null) { _cameraRig.SuppressDrag = _uiPress; }
 
             SyncViews();
             PlayCombatAnimations();
@@ -680,7 +702,7 @@ namespace Aetheria.UnityClient
             for (int i = 0; i < visible.Count; i++)
             {
                 EntitySnapshot e = visible[i];
-                if (e.Kind != EntityKind.Corpse) { continue; }
+                if (e.Kind != EntityKind.Corpse && e.Kind != EntityKind.MonsterCorpse) { continue; }
                 float d = Vec2.DistanceSquared(self.Position, e.Position);
                 if (d <= best) { best = d; _nearbyCorpseId = e.Id; }
             }
@@ -809,7 +831,7 @@ namespace Aetheria.UnityClient
                 _leftDownPos = Input.mousePosition;
             }
 
-            if (Input.GetMouseButtonUp(0) &&
+            if (Input.GetMouseButtonUp(0) && !_uiPress &&
                 (Input.mousePosition - _leftDownPos).sqrMagnitude < 64f) // < 8 px: a tap
             {
                 _contextEntityId = -1; // any left tap closes a context menu
@@ -823,7 +845,7 @@ namespace Aetheria.UnityClient
                 _rightDownPos = Input.mousePosition;
             }
 
-            if (Input.GetMouseButtonUp(1) && _draggingItem == null &&
+            if (Input.GetMouseButtonUp(1) && !_uiPress && _draggingItem == null &&
                 (Input.mousePosition - _rightDownPos).sqrMagnitude < 64f) // < 8 px: a tap
             {
                 HandleRightClick();
@@ -872,6 +894,7 @@ namespace Aetheria.UnityClient
             switch (target.Kind)
             {
                 case EntityKind.Corpse:
+                case EntityKind.MonsterCorpse:
                     _client.SendOpenCorpse(target.Id); // range enforced server-side
                     break;
 
@@ -1086,10 +1109,12 @@ namespace Aetheria.UnityClient
         private void OnGUI()
         {
             GUI.matrix = Matrix4x4.Scale(new Vector3(_cfg.UiScale, _cfg.UiScale, 1f));
+            _tooltip = null; // rebuilt each frame by whatever the mouse is over
 
             if (!_connected || _client == null || !_client.EntityId.HasValue)
             {
                 DrawAuthScreens();
+                DrawTooltip();
                 return;
             }
 
@@ -1117,6 +1142,9 @@ namespace Aetheria.UnityClient
             DrawVersionTag();
             if (_layoutEditMode) { DrawLayoutEditor(); }
             if (_menuOpen) { DrawEscapeMenu(); }
+
+            SetWorldHoverTooltip(); // world entities only speak up when no UI element did
+            DrawTooltip();
         }
 
         // --- Auth flow screens: login → your character (or creation) → world ---
@@ -1620,6 +1648,11 @@ namespace Aetheria.UnityClient
 
                 GUI.enabled = true;
 
+                if (r.Contains(Event.current.mousePosition))
+                {
+                    _tooltip = AbilityTooltip(def); // WoW spell tooltip at the screen edge
+                }
+
                 GUI.Label(new Rect(r.x + 3, r.y + 2, r.width - 6, 16), "<size=10>" + def.Name + "</size>", Rich());
                 GUI.Label(new Rect(r.x + 3, r.y + r.height - 18, 30, 16), "<b>" + key + "</b>", Rich());
                 if (def.ResourceCost > 0)
@@ -1777,9 +1810,133 @@ namespace Aetheria.UnityClient
 
             if (rect.Contains(Event.current.mousePosition))
             {
-                GUI.Label(new Rect(rect.x - 40, rect.y - 18, rect.width + 120, 16),
-                    "<size=10>" + def.Name + "</size>", RichCentered());
+                _tooltip = ItemTooltip(def, quantity); // shown WoW-style at the screen edge
             }
+        }
+
+        // ------------------------------------------------- Tooltips (WoW-style)
+
+        /// <summary>The tooltip to show this frame (bottom-right corner), or null.</summary>
+        private string _tooltip;
+
+        private string ItemTooltip(ItemDefinition def, int quantity)
+        {
+            var sb = new System.Text.StringBuilder();
+            sb.Append("<b><color=#ffffff>").Append(def.Name).Append("</color></b>");
+            if (quantity > 1) { sb.Append(" ×").Append(quantity); }
+
+            sb.Append('\n');
+            if (def.IsEquippable)
+            {
+                sb.Append("<color=#a0a0a0>").Append(SlotLabel(def.Slot)).Append(" · ")
+                  .Append(ItemTypeLabel(def.Type)).Append("</color>");
+            }
+            else
+            {
+                sb.Append("<color=#a0a0a0>").Append(ItemTypeLabel(def.Type)).Append("</color>");
+            }
+
+            if (def.AttackBonus > 0) { sb.Append("\n<color=#80ff80>+").Append(def.AttackBonus).Append(" Attaque</color>"); }
+            if (def.DefenseBonus > 0) { sb.Append("\n<color=#80ff80>+").Append(def.DefenseBonus).Append(" Défense</color>"); }
+            if (def.HealthBonus > 0) { sb.Append("\n<color=#80ff80>+").Append(def.HealthBonus).Append(" PV</color>"); }
+            if (def.GoldValue > 0) { sb.Append("\nValeur : ").Append(FormatMoney(def.GoldValue)); }
+
+            return sb.ToString();
+        }
+
+        private static string ItemTypeLabel(ItemType type)
+        {
+            switch (type)
+            {
+                case ItemType.Weapon: return "Arme";
+                case ItemType.Armor: return "Armure";
+                case ItemType.Consumable: return "Consommable";
+                default: return "Butin";
+            }
+        }
+
+        private string AbilityTooltip(AbilityDefinition def)
+        {
+            var sb = new System.Text.StringBuilder();
+            sb.Append("<b><color=#ffffff>").Append(def.Name).Append("</color></b>");
+
+            if (def.CastTimeTicks > 0)
+            {
+                sb.Append("\n<color=#a0a0a0>Incantation : ")
+                  .Append((def.CastTimeTicks * SimulationConstants.TickDelta).ToString("0.#"))
+                  .Append("s</color>");
+            }
+            else
+            {
+                sb.Append("\n<color=#a0a0a0>Instantané</color>");
+            }
+
+            if (def.BaseDamage > 0) { sb.Append("\nDégâts : ").Append(def.BaseDamage); }
+            if (def.ResourceCost > 0) { sb.Append("\nCoût : ").Append(def.ResourceCost); }
+            if (def.Range > 0f) { sb.Append("\nPortée : ").Append(def.Range.ToString("0.#")).Append(" m"); }
+
+            float cd = def.CooldownTicks * SimulationConstants.TickDelta;
+            if (cd > 1.6f) { sb.Append("\nRecharge : ").Append(cd.ToString("0.#")).Append("s"); }
+            else { sb.Append("\nVitesse d'attaque : ").Append(cd.ToString("0.#")).Append("s"); }
+
+            return sb.ToString();
+        }
+
+        /// <summary>Hovering something in the WORLD (monster, player, corpse) — when no UI tooltip won.</summary>
+        private void SetWorldHoverTooltip()
+        {
+            if (_tooltip != null || _menuOpen || _chatInputActive) { return; }
+
+            EntitySnapshot? hovered = PickEntityUnderMouse(e => e.Kind != EntityKind.Npc);
+            if (hovered == null) { return; }
+
+            EntitySnapshot e = hovered.Value;
+            var sb = new System.Text.StringBuilder();
+            switch (e.Kind)
+            {
+                case EntityKind.Monster:
+                    sb.Append("<b><color=#ffd0a0>").Append(e.Name).Append("</color></b>");
+                    sb.Append("\n<color=#a0a0a0>Niveau ").Append(e.Level).Append("</color>");
+                    sb.Append("\nPV ").Append(e.Health).Append('/').Append(e.MaxHealth);
+                    break;
+
+                case EntityKind.Player when e.Id != (_client.EntityId ?? -1):
+                    sb.Append("<b><color=#a0c8ff>").Append(e.Name).Append("</color></b>");
+                    sb.Append("\n<color=#a0a0a0>Niveau ").Append(e.Level)
+                      .Append(" · ").Append(e.Faction == Faction.Horde ? "Horde" : "Alliance").Append("</color>");
+                    sb.Append("\nPV ").Append(e.Health).Append('/').Append(e.MaxHealth);
+                    break;
+
+                case EntityKind.Corpse:
+                case EntityKind.MonsterCorpse:
+                    sb.Append("<b><color=#c0c0c0>").Append(string.IsNullOrEmpty(e.Name) ? "Dépouille" : e.Name)
+                      .Append("</color></b>");
+                    sb.Append("\n<color=#a0a0a0>Clic droit : fouiller</color>");
+                    break;
+
+                default:
+                    return;
+            }
+
+            _tooltip = sb.ToString();
+        }
+
+        /// <summary>The WoW-style tooltip panel, anchored at the bottom-right edge of the screen.</summary>
+        private void DrawTooltip()
+        {
+            if (string.IsNullOrEmpty(_tooltip)) { return; }
+
+            int lines = 1;
+            for (int i = 0; i < _tooltip.Length; i++)
+            {
+                if (_tooltip[i] == '\n') { lines++; }
+            }
+
+            const float W = 240f;
+            float h = (lines * 17f) + 16f;
+            Rect win = new Rect(VirtW - W - 12, VirtH - h - 12, W, h);
+            Dim(win, 0.82f);
+            GUI.Label(new Rect(win.x + 9, win.y + 7, win.width - 18, win.height - 12), _tooltip, Rich());
         }
 
         private static readonly Dictionary<byte, Texture2D> IconCache = new Dictionary<byte, Texture2D>();
@@ -1964,9 +2121,8 @@ namespace Aetheria.UnityClient
             // WoW layout: the 3D portrait in the middle, five slots down each side,
             // stats + money in the footer. The bags live in their own window (B).
             const float Slot = 40f;
-            const float W = 342f;
-            const float H = 396f;
-            Rect win = new Rect(16, 60, W, H);
+            Rect win = SheetWindowRect();
+            float W = win.width;
             GUI.Box(win, "<b>" + _name + "</b> — niveau " + _client.Level, RichCenteredBox());
 
             if (GUI.Button(new Rect(win.x + win.width - 24, win.y + 4, 20, 20), "X"))
@@ -1982,6 +2138,14 @@ namespace Aetheria.UnityClient
             {
                 GUI.DrawTexture(new Rect(portrait.x + 2, portrait.y + 2, portrait.width - 4, portrait.height - 4),
                     _sheetPreview.Texture, ScaleMode.ScaleAndCrop);
+            }
+
+            // No automatic spin: RIGHT-drag over the portrait turns the character.
+            Event pe = Event.current;
+            if (pe.type == EventType.MouseDrag && pe.button == 1 && portrait.Contains(pe.mousePosition))
+            {
+                _sheetPreview.Yaw += pe.delta.x * 0.8f;
+                pe.Use();
             }
 
             // SIDES: five equipment slots per column, WoW order. Click a piece to unequip it.
@@ -2009,7 +2173,17 @@ namespace Aetheria.UnityClient
             GUI.Label(new Rect(win.x + 12, y, W - 24, 20), "<b>" + FormatMoney(_client.Gold) + "</b>", Rich());
             y += 24f;
             GUI.Label(new Rect(win.x + 12, y, W - 24, 18),
-                "<size=9><color=#909090>Clic sur une pièce : retirer · Sacs : " + _cfg.Key(HudConfig.Bind.Bags) + "</color></size>", Rich());
+                "<size=9><color=#909090>Clic sur une pièce : retirer · Clic droit sur le portrait : tourner · Sacs : " + _cfg.Key(HudConfig.Bind.Bags) + "</color></size>", Rich());
+        }
+
+        /// <summary>The character sheet's window rect in virtual GUI coordinates.</summary>
+        private static Rect SheetWindowRect() => new Rect(16, 60, 342, 396);
+
+        /// <summary>The mouse position in virtual GUI coordinates (same space as OnGUI rects).</summary>
+        private Vector2 GuiMouse()
+        {
+            return new Vector2(Input.mousePosition.x / _cfg.UiScale,
+                (Screen.height - Input.mousePosition.y) / _cfg.UiScale);
         }
 
         /// <summary>French display name for an equipment slot (the WoW sheet labels).</summary>

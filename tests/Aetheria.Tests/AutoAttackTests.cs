@@ -26,7 +26,16 @@ public static class AutoAttackTests
         Assert.True(goblin.IsDead, "the server must drive the swings to the kill");
         world.Step(SimulationConstants.TickDelta);   // next tick notices the dead target…
         Assert.Equal(0, warrior.AutoAttackTargetId); // …and clears the intent
-        Assert.Equal(1, warrior.Inventory.CountOf(30)); // loot flows as usual
+
+        // No auto-loot: the head waits inside the corpse's loot window.
+        Assert.Equal(0, warrior.Inventory.CountOf(30));
+        foreach (ServerEntity e in world.Entities.Values)
+        {
+            if (e.Kind == EntityKind.MonsterCorpse && e.LootContainer is not null)
+            {
+                Assert.Equal(1, e.LootContainer.CountOf(30));
+            }
+        }
     }
 
     [Test("A mage's attack intent auto-RECASTS its incantation (turret mode while standing).")]

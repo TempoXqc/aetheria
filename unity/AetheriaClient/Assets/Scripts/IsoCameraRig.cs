@@ -54,10 +54,14 @@ namespace Aetheria.UnityClient
             Place();
         }
 
+        /// <summary>Set by the UI each frame: while true, mouse drags belong to a window
+        /// (portrait spin, item drag) and must NOT steer the camera.</summary>
+        public bool SuppressDrag;
+
         /// <summary>True while either mouse button is steering the camera.</summary>
         public bool Dragging
         {
-            get { return Input.GetMouseButton(0) || Input.GetMouseButton(1); }
+            get { return !SuppressDrag && (Input.GetMouseButton(0) || Input.GetMouseButton(1)); }
         }
 
         private void LateUpdate()

@@ -3,6 +3,7 @@ using Aetheria.Shared;
 using Aetheria.Shared.Data;
 using Aetheria.Shared.Math;
 using Aetheria.Shared.Net;
+using Aetheria.Shared.Protocol;
 
 namespace Aetheria.Tests;
 
@@ -57,7 +58,17 @@ public static class ProgressionTests
         }
 
         Assert.True(goblin.IsDead, "hunter should have killed the goblin");
-        Assert.Equal(35, hunter.TotalXp);
+        Assert.Equal(35, hunter.TotalXp); // XP is immediate…
+        Assert.Equal(0, hunter.Inventory.Gold); // …but the gold waits in the corpse (no auto-loot)
+
+        foreach (ServerEntity e in world.Entities.Values)
+        {
+            if (e.Kind == EntityKind.MonsterCorpse && e.LootContainer is not null)
+            {
+                world.TryLootCorpse(hunter.Id, e.Id);
+            }
+        }
+
         Assert.Equal(5, hunter.Inventory.Gold);
         Assert.Equal(1, hunter.Level);
     }

@@ -14,7 +14,7 @@ namespace Aetheria.UnityClient
     public sealed class EntityView : MonoBehaviour
     {
         private const float LerpSpeed = 12f;
-        private const float AttackDuration = 0.35f;
+        private const float AttackDuration = 0.6f; // a full, weighty WoW-pace swing
         private const float HitFlashDuration = 0.18f;
         private const float JumpDuration = 0.6f;
         private const float JumpHeight = 1.1f;

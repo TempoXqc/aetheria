@@ -88,8 +88,8 @@ public static class WorldRulesTests
         Assert.Equal((byte)1, remains!.MonsterId);
         Assert.True(remains.DespawnAtTick > world.Tick);
 
-        // Fast-forward past the despawn timer: the remains are gone.
-        for (int i = 0; i < (SimulationConstants.TickRate * 46) + 5; i++)
+        // Fast-forward past the despawn timer (90 s for lootable bodies): the remains are gone.
+        for (int i = 0; i < (SimulationConstants.TickRate * 91) + 5; i++)
         {
             world.Step(SimulationConstants.TickDelta);
         }

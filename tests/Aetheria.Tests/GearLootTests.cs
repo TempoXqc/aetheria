@@ -54,6 +54,16 @@ public static class GearLootTests
         }
 
         Assert.True(king.IsDead, "the King must fall");
+
+        // The sword waits in the King's corpse (no auto-loot) — open it and take everything.
+        foreach (ServerEntity e in world.Entities.Values)
+        {
+            if (e.Kind == EntityKind.MonsterCorpse && e.LootContainer is not null)
+            {
+                world.TryLootCorpse(killer.Id, e.Id);
+            }
+        }
+
         Assert.True(killer.Inventory.CountOf(2) >= 1, "the King ALWAYS drops his Iron Sword");
     }
 
