@@ -212,3 +212,76 @@ public readonly struct LeaveInstance
 
     public static LeaveInstance Read(ref PacketReader r) => default;
 }
+
+/// <summary>
+/// Equip a weapon/armor item from the bags into its slot (swapping the current piece back into
+/// the bags), or unequip a slot when ItemId is 0. The server validates ownership and item type.
+/// </summary>
+public readonly struct EquipItem
+{
+    public readonly byte ItemId;      // 0 = unequip the given slot
+    public readonly byte Slot;        // (byte)EquipSlot — used for unequip; inferred from the item otherwise
+
+    public EquipItem(byte itemId, byte slot)
+    {
+        ItemId = itemId;
+        Slot = slot;
+    }
+
+    public void Write(PacketWriter w)
+    {
+        w.WriteByte((byte)MessageType.EquipItem);
+        w.WriteByte(ItemId);
+        w.WriteByte(Slot);
+    }
+
+    public static EquipItem Read(ref PacketReader r)
+    {
+        byte itemId = r.ReadByte();
+        byte slot = r.ReadByte();
+        return new EquipItem(itemId, slot);
+    }
+}
+
+/// <summary>A player speaks in the world chat. The chat carries ONLY player words — no system logs.</summary>
+public readonly struct ChatSend
+{
+    public readonly string Text;
+
+    public ChatSend(string text) => Text = text;
+
+    public void Write(PacketWriter w)
+    {
+        w.WriteByte((byte)MessageType.ChatSend);
+        w.WriteString(Text);
+    }
+
+    public static ChatSend Read(ref PacketReader r) => new(r.ReadString());
+}
+
+/// <summary>A chat line relayed to everyone in the same world: who said what.</summary>
+public readonly struct ChatMessage
+{
+    public readonly string From;
+    public readonly string Text;
+
+    public ChatMessage(string from, string text)
+    {
+        From = from;
+        Text = text;
+    }
+
+    public void Write(PacketWriter w)
+    {
+        w.WriteByte((byte)MessageType.ChatMessage);
+        w.WriteString(From);
+        w.WriteString(Text);
+    }
+
+    public static ChatMessage Read(ref PacketReader r)
+    {
+        string from = r.ReadString();
+        string text = r.ReadString();
+        return new ChatMessage(from, text);
+    }
+}

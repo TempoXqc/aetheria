@@ -167,10 +167,22 @@ public sealed class GameServer
     {
         World.World open = _worlds.OpenWorld;
 
-        // Starter camp just OUTSIDE the spawn sanctuary (radius 18): step out to find a fight.
+        // The sanctuary's BANK: a chest players stand next to to move goods/gold in and out.
+        open.SpawnNpc("Coffre de banque",
+            new Vec2(SimulationConstants.BankChestX, SimulationConstants.BankChestY));
+
+        // ZONE DE DÉPART — a goblin camp just OUTSIDE the sanctuary (radius 18), to the east.
         open.SpawnMonster(monsterId: 1, new Vec2(24f, 10f));
         open.SpawnMonster(monsterId: 1, new Vec2(27f, 13f));
-        open.SpawnMonster(monsterId: 2, new Vec2(-25f, 14f));
+        open.SpawnMonster(monsterId: 1, new Vec2(25f, 5f));
+
+        // CHAMP DES LOUPS — a wolf-infested field to the WEST. Each wolf leashes to its spot.
+        open.SpawnMonster(monsterId: 2, new Vec2(-40f, 2f));
+        open.SpawnMonster(monsterId: 2, new Vec2(-46f, 8f));
+        open.SpawnMonster(monsterId: 2, new Vec2(-52f, -1f));
+        open.SpawnMonster(monsterId: 2, new Vec2(-44f, -7f));
+        open.SpawnMonster(monsterId: 2, new Vec2(-50f, 12f));
+        open.SpawnMonster(monsterId: 2, new Vec2(-56f, 6f));
 
         // Open-world DUNGEON: a non-instanced elite camp. It lives in the shared world, so rival
         // factions can meet — and fight — over it.
@@ -282,6 +294,20 @@ public sealed class GameServer
                 case MessageType.BankTransaction:
                     BankTransaction tx = BankTransaction.Read(ref reader);
                     HandleBankTransaction(peer, session, tx);
+                    break;
+
+                case MessageType.EquipItem:
+                    EquipItem equip = EquipItem.Read(ref reader);
+                    if (world.TryEquipItem(session.EntityId, equip.ItemId, (EquipSlot)equip.Slot))
+                    {
+                        SendSelfState(peer, session);
+                    }
+
+                    break;
+
+                case MessageType.ChatSend:
+                    ChatSend say = ChatSend.Read(ref reader);
+                    HandleChat(session, say.Text);
                     break;
 
                 case MessageType.Inspect:
@@ -443,10 +469,36 @@ public sealed class GameServer
             byte level = (byte)System.Math.Clamp(
                 _worlds.GameData.Progression.LevelForXp(existing.TotalXp), 1, 255);
             Send(peer, new LoginResult(true, "", true, existing.Name,
-                existing.RaceId, existing.ClassId, (Gender)existing.Gender, level));
+                existing.RaceId, existing.ClassId, (Gender)existing.Gender, level,
+                new Appearance(existing.SkinTone, existing.Face, existing.HairStyle,
+                    existing.HairColor, existing.BeardStyle, existing.BeardColor)));
         }
 
         _log($"Account '{accountId}' logged in ({peer}); character: {(existing?.Name ?? "none")}.");
+    }
+
+    /// <summary>Relay a player's chat line to everyone in the same world. Chat carries ONLY player words.</summary>
+    private void HandleChat(PlayerSession sender, string text)
+    {
+        text = (text ?? string.Empty).Replace("\n", " ").Replace("\r", " ").Trim();
+        if (text.Length == 0)
+        {
+            return;
+        }
+
+        if (text.Length > 200)
+        {
+            text = text.Substring(0, 200);
+        }
+
+        var msg = new ChatMessage(sender.Name, text);
+        foreach ((PeerId peer, PlayerSession session) in _sessions)
+        {
+            if (session.HandshakeComplete && ReferenceEquals(session.CurrentWorld, sender.CurrentWorld))
+            {
+                SendWith(peer, msg.Write);
+            }
+        }
     }
 
     /// <summary>Answer the unauthenticated server-browser query: name, population, your character here.</summary>
@@ -1054,6 +1106,15 @@ public sealed class GameServer
     private void HandleBankTransaction(PeerId peer, PlayerSession session, BankTransaction tx)
     {
         if (!TryGetEntity(session, out ServerEntity? self) || self!.IsDead)
+        {
+            return;
+        }
+
+        // The bank is a PLACE now: you must stand at the sanctuary's chest (open world only).
+        var chest = new Vec2(SimulationConstants.BankChestX, SimulationConstants.BankChestY);
+        if (!ReferenceEquals(session.CurrentWorld, _worlds.OpenWorld) ||
+            Vec2.DistanceSquared(self.Position, chest) >
+                SimulationConstants.BankInteractRange * SimulationConstants.BankInteractRange)
         {
             return;
         }

@@ -91,7 +91,7 @@ namespace Aetheria.UnityClient
             }
 
             // Facing: server plane angle (0 = +X) → Unity yaw on the ground plane.
-            if (Kind != EntityKind.Corpse)
+            if (Kind == EntityKind.Player || Kind == EntityKind.Monster)
             {
                 var facingDir = new Vector3(
                     Mathf.Cos(snapshot.FacingRadians), 0f, Mathf.Sin(snapshot.FacingRadians));
@@ -149,7 +149,7 @@ namespace Aetheria.UnityClient
                 transform.position = Vector3.Lerp(transform.position, _targetPosition, dt * LerpSpeed);
             }
 
-            if (_body != null && Kind != EntityKind.Corpse)
+            if (_body != null && (Kind == EntityKind.Player || Kind == EntityKind.Monster))
             {
                 _body.rotation = Quaternion.Slerp(_body.rotation, _targetRotation, dt * 14f);
             }
@@ -172,9 +172,9 @@ namespace Aetheria.UnityClient
 
         private void Animate(float dt)
         {
-            if (_rig == null || Kind == EntityKind.Corpse)
+            if (_rig == null || (Kind != EntityKind.Player && Kind != EntityKind.Monster))
             {
-                return;
+                return; // corpses, remains and NPCs hold still
             }
 
             // Walk cycle: stride frequency and swing amplitude scale with measured speed.

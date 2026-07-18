@@ -151,8 +151,12 @@ public readonly struct LoginResult
     public readonly Gender Gender;
     public readonly byte Level;
 
+    /// <summary>The character's cosmetic customisation, so the lobby can render a 3D preview.</summary>
+    public readonly Appearance Appearance;
+
     public LoginResult(bool ok, string message, bool hasCharacter,
-        string characterName, byte raceId, byte classId, Gender gender, byte level)
+        string characterName, byte raceId, byte classId, Gender gender, byte level,
+        Appearance appearance = default)
     {
         Ok = ok;
         Message = message;
@@ -162,6 +166,7 @@ public readonly struct LoginResult
         ClassId = classId;
         Gender = gender;
         Level = level;
+        Appearance = appearance;
     }
 
     public static LoginResult Failure(string message)
@@ -178,6 +183,7 @@ public readonly struct LoginResult
         w.WriteByte(ClassId);
         w.WriteByte((byte)Gender);
         w.WriteByte(Level);
+        Appearance.Write(w);
     }
 
     public static LoginResult Read(ref PacketReader r)
@@ -190,7 +196,8 @@ public readonly struct LoginResult
         byte classId = r.ReadByte();
         var gender = (Gender)r.ReadByte();
         byte level = r.ReadByte();
-        return new LoginResult(ok, message, hasCharacter, name, raceId, classId, gender, level);
+        Appearance appearance = Appearance.Read(ref r);
+        return new LoginResult(ok, message, hasCharacter, name, raceId, classId, gender, level, appearance);
     }
 }
 

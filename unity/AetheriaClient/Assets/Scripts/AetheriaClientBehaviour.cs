@@ -40,8 +40,8 @@ namespace Aetheria.UnityClient
         private int _beardStyle;
         private int _beardColor;
 
-        // --- Lobby flow (auth → server browser → creation → world) ---
-        private enum LobbyScreen { Auth, Browser, Connecting, Creation }
+        // --- Lobby flow (auth → [register] → your character (or creation) → world) ---
+        private enum LobbyScreen { Auth, Register, Browser, Connecting, Character, Creation }
 
         private sealed class ServerEntry
         {
@@ -56,7 +56,20 @@ namespace Aetheria.UnityClient
         }
 
         private readonly LobbyStage _lobby = new LobbyStage();
+        private readonly WorldDecor _decor = new WorldDecor();
+        private readonly SheetPreview _sheetPreview = new SheetPreview();
         private LobbyScreen _lobbyScreen = LobbyScreen.Auth;
+        private string _secret2 = "";
+        private bool _wasRegistering;
+
+        // --- Bank (a physical chest in the sanctuary) ---
+        private int _nearbyBankId = -1;
+        private bool _bankOpen;
+
+        // --- Chat (players' words only) ---
+        private readonly List<string> _chatLog = new List<string>();
+        private string _chatInput = "";
+        private bool _chatInputActive;
         private readonly List<ServerEntry> _servers = new List<ServerEntry>();
         private string _newServerAddr = "";
         private bool _registerMode;
@@ -100,8 +113,6 @@ namespace Aetheria.UnityClient
         private bool _autoAttack;
         private float _inputTimer;
         private float _lastFacing;
-        private readonly List<string> _combatLog = new List<string>();
-        private int _lastLoggedCombatCount;
         private int _nearbyCorpseId = -1;
 
         // --- HUD state ---
@@ -149,10 +160,12 @@ namespace Aetheria.UnityClient
                 UpdateLobbyPreview();
                 _lobby.Tick(Time.deltaTime);
                 PumpServerProbes();
+                if (_decor.Active) { _decor.Teardown(); }
             }
-            else if (_lobby.Active)
+            else
             {
-                _lobby.Teardown();
+                if (_lobby.Active) { _lobby.Teardown(); }
+                _decor.EnsureBuilt(); // zone scenery: sanctuary, path, goblin camp, wolf field
             }
 
             if (!_connected)
@@ -172,22 +185,17 @@ namespace Aetheria.UnityClient
             // Lobby phases: drive the auto-flow, no world logic yet.
             if (!_client.EntityId.HasValue)
             {
-                if (_client.LoggedIn)
+                if (_client.LoggedIn && _lobbyScreen == LobbyScreen.Connecting)
                 {
-                    if (_client.HasCharacter && !_enterSent)
-                    {
-                        EnterExisting(); // has a character here → straight into the world
-                        _enterSent = true;
-                    }
-                    else if (!_client.HasCharacter && _lobbyScreen == LobbyScreen.Connecting)
-                    {
-                        _lobbyScreen = LobbyScreen.Creation; // no character → direct creation screen
-                    }
+                    // Your character (3D) with a JOUER button — or straight to creation if none.
+                    _lobbyScreen = _client.HasCharacter ? LobbyScreen.Character : LobbyScreen.Creation;
                 }
                 else if (_client.LoginError.Length > 0 && _lobbyScreen == LobbyScreen.Connecting)
                 {
-                    _error = _client.LoginError; // sign-in refused → back to the auth screen
+                    _error = _client.LoginError; // refused → back to where the attempt started
+                    bool wasRegistering = _wasRegistering;
                     Disconnect();
+                    _lobbyScreen = wasRegistering ? LobbyScreen.Register : LobbyScreen.Auth;
                 }
 
                 return;
@@ -201,10 +209,28 @@ namespace Aetheria.UnityClient
                 _lastServerSaved = true;
             }
 
+            // Chat input: Enter opens the box; Enter again sends; Escape cancels.
+            if (Input.GetKeyDown(KeyCode.Return) || Input.GetKeyDown(KeyCode.KeypadEnter))
+            {
+                if (_chatInputActive)
+                {
+                    string text = _chatInput.Trim();
+                    if (text.Length > 0) { _client.SendChat(text); }
+                    _chatInput = "";
+                    _chatInputActive = false;
+                }
+                else if (!_menuOpen && _awaitingBind == null)
+                {
+                    _chatInputActive = true;
+                }
+            }
+
             if (Input.GetKeyDown(KeyCode.Escape))
             {
-                if (_awaitingBind != null) { _awaitingBind = null; }
+                if (_chatInputActive) { _chatInputActive = false; _chatInput = ""; }
+                else if (_awaitingBind != null) { _awaitingBind = null; }
                 else if (_contextEntityId >= 0) { _contextEntityId = -1; }
+                else if (_bankOpen) { _bankOpen = false; }
                 else if (_client.OpenCorpseId >= 0) { _client.CloseCorpse(); }
                 else if (_sheetOpen) { _sheetOpen = false; }
                 else { _menuOpen = !_menuOpen; _optionsTab = -1; _layoutEditMode = false; }
@@ -213,15 +239,23 @@ namespace Aetheria.UnityClient
             SyncViews();
             PlayCombatAnimations();
             FindNearbyCorpse();
-            AppendCombatLog();
+            FindNearbyBank();
+            PumpChat();
             TrackSocialState();
 
-            if (!_menuOpen && _awaitingBind == null)
+            if (!_menuOpen && _awaitingBind == null && !_chatInputActive)
             {
                 HandleKeys();
                 HandleMouse();
                 AutoAttackTick();
                 SendMovement();
+            }
+
+            // Live 3D portrait while the character sheet is open.
+            if (_sheetOpen && _client.TryGetSelf(out EntitySnapshot sheetSelf))
+            {
+                _sheetPreview.EnsureFor(sheetSelf);
+                _sheetPreview.Tick(Time.deltaTime);
             }
 
             FollowSelf();
@@ -283,6 +317,7 @@ namespace Aetheria.UnityClient
                 _error = "";
                 _enterSent = false;
                 _lastServerSaved = false;
+                _wasRegistering = createAccount;
                 _lobbyScreen = LobbyScreen.Connecting;
             }
             catch (System.Exception ex)
@@ -296,10 +331,29 @@ namespace Aetheria.UnityClient
 
         // --- Lobby helpers: 3D preview + server list/probes ---
 
-        /// <summary>Keep the 3D dais preview in sync with the creation-screen pickers.</summary>
+        /// <summary>Keep the 3D dais preview in sync: your character, or the creation pickers.</summary>
         private void UpdateLobbyPreview()
         {
-            bool creating = _connected && _client != null && _lobbyScreen == LobbyScreen.Creation;
+            bool connected = _connected && _client != null;
+
+            // Character screen: show THE character (as saved on the server), slowly turning.
+            if (connected && _lobbyScreen == LobbyScreen.Character && _client.LoggedIn && _client.HasCharacter)
+            {
+                int charKey = 0x40000000 | _client.CharacterRaceId | (_client.CharacterClassId << 4) |
+                              ((byte)_client.CharacterGender << 8);
+                if (charKey != _previewKey)
+                {
+                    _previewKey = charKey;
+                    byte charRace = _client.CharacterRaceId;
+                    Faction charFaction = charRace == 2 || charRace == 3 ? Faction.Horde : Faction.Alliance;
+                    _lobby.ShowPreview(charRace, _client.CharacterClassId, _client.CharacterGender,
+                        _client.CharacterAppearance, charFaction);
+                }
+
+                return;
+            }
+
+            bool creating = connected && _lobbyScreen == LobbyScreen.Creation;
             if (!creating)
             {
                 if (_previewKey != -1) { _lobby.ClearPreview(); _previewKey = -1; }
@@ -410,6 +464,14 @@ namespace Aetheria.UnityClient
             _lobbyScreen = LobbyScreen.Browser;
         }
 
+        /// <summary>Leave the world but stay signed in: reconnect straight to the character screen.</summary>
+        private void DisconnectToCharacter()
+        {
+            string address = _host + ":" + _port;
+            Disconnect();
+            Connect(address, createAccount: false); // logs back in → lands on the character screen
+        }
+
         /// <summary>Map the existing character onto the HUD state, then enter the world.</summary>
         private void EnterExisting()
         {
@@ -467,8 +529,13 @@ namespace Aetheria.UnityClient
             }
 
             _views.Clear();
-            _combatLog.Clear();
-            _lastLoggedCombatCount = 0;
+            _chatLog.Clear();
+            _chatInput = "";
+            _chatInputActive = false;
+            _bankOpen = false;
+            _nearbyBankId = -1;
+            _sheetPreview.Teardown();
+            _wasRegistering = false;
         }
 
         private void OnDestroy()
@@ -477,6 +544,8 @@ namespace Aetheria.UnityClient
             Disconnect();
             foreach (ServerEntry e in _servers) { e.Probe?.Dispose(); }
             _lobby.Teardown();
+            _decor.Teardown();
+            _sheetPreview.Teardown();
         }
 
         // --------------------------------------------------------------- World
@@ -562,35 +631,54 @@ namespace Aetheria.UnityClient
             }
         }
 
-        private void AppendCombatLog()
+        /// <summary>The bank chest you stand next to, if any (the sanctuary's Npc chest).</summary>
+        private void FindNearbyBank()
         {
-            if (_client.CombatEventsSeen == _lastLoggedCombatCount || !(_client.LastCombat is CombatEventMessage c))
+            _nearbyBankId = -1;
+            EntitySnapshot self;
+            if (!_client.TryGetSelf(out self)) { return; }
+
+            IReadOnlyList<EntitySnapshot> visible = _client.Visible;
+            for (int i = 0; i < visible.Count; i++)
             {
-                return;
+                EntitySnapshot e = visible[i];
+                if (e.Kind != EntityKind.Npc) { continue; }
+                if (Vec2.DistanceSquared(self.Position, e.Position) <=
+                    SimulationConstants.BankInteractRange * SimulationConstants.BankInteractRange)
+                {
+                    _nearbyBankId = e.Id;
+                    break;
+                }
             }
 
-            _lastLoggedCombatCount = _client.CombatEventsSeen;
-            string line = c.AttackerId + " → " + c.TargetId + " : " + c.Damage +
-                          (c.TargetKilled ? "  — MORT !" : "  (" + c.TargetRemainingHealth + " pv)");
-            _combatLog.Add(line);
-            if (_combatLog.Count > 6) { _combatLog.RemoveAt(0); }
+            if (_bankOpen && _nearbyBankId < 0)
+            {
+                _bankOpen = false; // walked away: the chest closes
+            }
         }
 
-        /// <summary>Log duel/trade transitions and apply the drag-drop auto-offer when a trade opens.</summary>
+        /// <summary>Pull received player chat into the local log. Chat carries ONLY players' words.</summary>
+        private void PumpChat()
+        {
+            IReadOnlyList<ChatMessage> feed = _client.DrainChatFeed();
+            for (int i = 0; i < feed.Count; i++)
+            {
+                _chatLog.Add("<b>" + feed[i].From + " :</b> " + feed[i].Text);
+                if (_chatLog.Count > 40) { _chatLog.RemoveAt(0); }
+            }
+        }
+
+        /// <summary>Track duel/trade transitions and apply the drag-drop auto-offer when a trade opens.</summary>
         private void TrackSocialState()
         {
             if (_client.DuelMessage != _lastDuelMessage && !string.IsNullOrEmpty(_client.DuelMessage))
             {
-                _lastDuelMessage = _client.DuelMessage;
-                _combatLog.Add("<color=#f0c040>" + _client.DuelMessage + "</color>");
-                if (_combatLog.Count > 6) { _combatLog.RemoveAt(0); }
+                _lastDuelMessage = _client.DuelMessage; // shown by the duel notice UI, not the chat
             }
 
             if (_client.TradeMessage != _lastTradeMessage && !string.IsNullOrEmpty(_client.TradeMessage))
             {
-                _lastTradeMessage = _client.TradeMessage;
-                _combatLog.Add("<color=#40d0f0>" + _client.TradeMessage + "</color>");
-                if (_combatLog.Count > 6) { _combatLog.RemoveAt(0); }
+                _lastTradeMessage = _client.TradeMessage; // shown by the trade window, not the chat
             }
 
             if (_client.TradeActive && !_wasTradeActive)
@@ -748,6 +836,8 @@ namespace Aetheria.UnityClient
         {
             if (_client.OpenCorpseId >= 0) { _client.CloseCorpse(); }
             else if (_nearbyCorpseId >= 0) { _client.SendOpenCorpse(_nearbyCorpseId); }
+            else if (_bankOpen) { _bankOpen = false; }
+            else if (_nearbyBankId >= 0) { _bankOpen = true; }
         }
 
         private void TryCastOnTarget(byte abilityId)
@@ -913,12 +1003,15 @@ namespace Aetheria.UnityClient
 
             if (_cfg.ShowHealthBars || _cfg.ShowNameplates) { DrawNameplates(); }
             DrawCorpsePrompt();
+            DrawBankPrompt();
             DrawPlayerFrame();
             DrawTargetFrame();
             DrawXpBar();
             DrawActionBar();
             DrawMessages();
+            DrawChat();
             DrawLootWindow();
+            DrawBankWindow();
             DrawCharacterSheet();
             DrawContextMenu();
             DrawSocialNotices();
@@ -937,7 +1030,11 @@ namespace Aetheria.UnityClient
         {
             if (_connected && _client != null)
             {
-                if (_lobbyScreen == LobbyScreen.Creation && _client.LoggedIn && !_client.HasCharacter)
+                if (_lobbyScreen == LobbyScreen.Character && _client.LoggedIn && _client.HasCharacter)
+                {
+                    DrawCharacterScreen();
+                }
+                else if (_lobbyScreen == LobbyScreen.Creation && _client.LoggedIn && !_client.HasCharacter)
                 {
                     DrawCreationScreen();
                 }
@@ -949,6 +1046,10 @@ namespace Aetheria.UnityClient
             else if (_lobbyScreen == LobbyScreen.Browser)
             {
                 DrawServerBrowser();
+            }
+            else if (_lobbyScreen == LobbyScreen.Register)
+            {
+                DrawRegisterScreen();
             }
             else
             {
@@ -975,43 +1076,129 @@ namespace Aetheria.UnityClient
             }
         }
 
-        /// <summary>Screen 1 — pure authentication: account + secret. The server comes from memory.</summary>
+        /// <summary>Screen 1 — sign-in only: login + password. Nothing else.</summary>
         private void DrawLoginScreen()
         {
-            DrawTitledBox(out Rect box, 300, "Authentification");
+            DrawTitledBox(out Rect box, 235, "Connexion");
             GUILayout.BeginArea(new Rect(box.x + 15, box.y + 48, box.width - 30, box.height - 60));
 
             GUILayout.BeginHorizontal();
-            GUILayout.Label("Compte", GUILayout.Width(70));
+            GUILayout.Label("Identifiant", GUILayout.Width(90));
             _account = GUILayout.TextField(_account);
             GUILayout.EndHorizontal();
 
             GUILayout.BeginHorizontal();
-            GUILayout.Label("Secret", GUILayout.Width(70));
+            GUILayout.Label("Mot de passe", GUILayout.Width(90));
             _secret = GUILayout.PasswordField(_secret, '*');
             GUILayout.EndHorizontal();
 
-            string target = LastServerFor(_account.Trim().Length > 0 ? _account.Trim() : "?");
-            GUILayout.Space(4);
-            GUILayout.Label("<size=10><i>Serveur : " + target +
-                            " (le dernier où tu as joué)</i></size>", Rich());
-
-            GUILayout.Space(6);
+            GUILayout.Space(10);
             if (GUILayout.Button("SE CONNECTER", GUILayout.Height(34)))
             {
                 Connect(LastServerFor(_account.Trim()), createAccount: false);
             }
 
-            if (GUILayout.Button("CRÉER UN COMPTE", GUILayout.Height(26)))
+            GUILayout.Space(4);
+            if (GUILayout.Button("Créer un compte", GUILayout.Height(24)))
             {
-                Connect(LastServerFor(_account.Trim()), createAccount: true);
+                _secret2 = "";
+                _error = "";
+                _lobbyScreen = LobbyScreen.Register;
+            }
+
+            DrawErrors();
+            GUILayout.EndArea();
+        }
+
+        /// <summary>Screen 1b — its own registration modal: login + password + confirmation.</summary>
+        private void DrawRegisterScreen()
+        {
+            DrawTitledBox(out Rect box, 265, "Créer un compte");
+            GUILayout.BeginArea(new Rect(box.x + 15, box.y + 48, box.width - 30, box.height - 60));
+
+            GUILayout.BeginHorizontal();
+            GUILayout.Label("Identifiant", GUILayout.Width(110));
+            _account = GUILayout.TextField(_account);
+            GUILayout.EndHorizontal();
+
+            GUILayout.BeginHorizontal();
+            GUILayout.Label("Mot de passe", GUILayout.Width(110));
+            _secret = GUILayout.PasswordField(_secret, '*');
+            GUILayout.EndHorizontal();
+
+            GUILayout.BeginHorizontal();
+            GUILayout.Label("Confirmation", GUILayout.Width(110));
+            _secret2 = GUILayout.PasswordField(_secret2, '*');
+            GUILayout.EndHorizontal();
+
+            GUILayout.Space(10);
+            if (GUILayout.Button("CRÉER LE COMPTE", GUILayout.Height(34)))
+            {
+                if (_secret != _secret2)
+                {
+                    _error = "Les deux mots de passe ne correspondent pas.";
+                }
+                else
+                {
+                    Connect(LastServerFor(_account.Trim()), createAccount: true);
+                }
             }
 
             GUILayout.Space(4);
-            if (GUILayout.Button("Liste des serveurs", GUILayout.Height(24))) { OpenServerBrowser(); }
+            if (GUILayout.Button("Retour", GUILayout.Height(24)))
+            {
+                _error = "";
+                _lobbyScreen = LobbyScreen.Auth;
+            }
 
-            GUILayout.Space(4);
-            GUILayout.Label("<size=10><i>Si tu as un personnage sur ce serveur, tu entres directement en jeu.</i></size>", Rich());
+            DrawErrors();
+            GUILayout.EndArea();
+        }
+
+        /// <summary>Screen 2 — YOUR character in 3D, and a big JOUER button.</summary>
+        private void DrawCharacterScreen()
+        {
+            DrawTitledBox(out Rect box, 300, "Ton personnage");
+            GUILayout.BeginArea(new Rect(box.x + 15, box.y + 48, box.width - 30, box.height - 60));
+
+            string race = "?";
+            for (int i = 0; i < Races.Length; i++)
+            {
+                if (Races[i].id == _client.CharacterRaceId) { race = Races[i].label; }
+            }
+
+            string cls = "?";
+            for (int i = 0; i < Classes.Length; i++)
+            {
+                if (Classes[i].id == _client.CharacterClassId) { cls = Classes[i].label; }
+            }
+
+            GUILayout.Label("<size=15><b>" + _client.CharacterName + "</b></size>", Rich());
+            GUILayout.Label(race + " · " + cls + " · niveau " + _client.CharacterLevel);
+
+            GUILayout.Space(14);
+            if (GUILayout.Button("JOUER", GUILayout.Height(40))) { EnterExisting(); }
+
+            GUILayout.FlexibleSpace();
+            if (GUILayout.Button("Changer de serveur", GUILayout.Height(24)))
+            {
+                Disconnect();
+                OpenServerBrowser();
+            }
+
+            GUILayout.BeginHorizontal();
+            if (GUILayout.Button("Déconnexion", GUILayout.Height(26))) { Disconnect(); }
+            if (GUILayout.Button("Quitter le jeu", GUILayout.Height(26)))
+            {
+                _cfg.Save();
+#if UNITY_EDITOR
+                UnityEditor.EditorApplication.isPlaying = false;
+#else
+                Application.Quit();
+#endif
+            }
+
+            GUILayout.EndHorizontal();
             DrawErrors();
             GUILayout.EndArea();
         }
@@ -1392,7 +1579,11 @@ namespace Aetheria.UnityClient
 
             foreach (EntityView view in _views.Values)
             {
-                if (view == null || view.Kind == EntityKind.Corpse || view.MaxHealth <= 0) { continue; }
+                if (view == null || view.Kind == EntityKind.Corpse ||
+                    view.Kind == EntityKind.MonsterCorpse || view.MaxHealth <= 0)
+                {
+                    continue;
+                }
 
                 Vector3 screen = cam.WorldToScreenPoint(view.transform.position + (Vector3.up * (view.HeadHeight + 0.5f)));
                 if (screen.z < 0f) { continue; }
@@ -1405,13 +1596,16 @@ namespace Aetheria.UnityClient
                     bool isSelf = _client.EntityId.HasValue && view.EntityId == _client.EntityId.Value;
                     bool hostile = view.Kind == EntityKind.Monster ||
                                    (view.Kind == EntityKind.Player && view.Faction != myFaction);
-                    string colour = isSelf ? "#50e060" : hostile ? "#ff6060" : "#60a0ff";
+                    string colour = isSelf ? "#50e060" : hostile ? "#ff6060" :
+                        view.Kind == EntityKind.Npc ? "#f0d060" : "#60a0ff";
+                    string levelTag = view.Kind == EntityKind.Npc
+                        ? "" : "  <size=9>niv." + view.Level + "</size>";
                     string label = "<color=" + colour + "><size=11>" + view.DisplayName +
-                                   "  <size=9>niv." + view.Level + "</size></size></color>";
+                                   levelTag + "</size></color>";
                     GUI.Label(new Rect(x - 80, y - 18, 160, 16), label, RichCentered());
                 }
 
-                if (_cfg.ShowHealthBars)
+                if (_cfg.ShowHealthBars && view.Kind != EntityKind.Npc)
                 {
                     DrawBar(new Rect(x - 22, y, 44, 6), view.Health / (float)view.MaxHealth,
                         new Color(0.2f, 0.8f, 0.25f), "");
@@ -1433,6 +1627,146 @@ namespace Aetheria.UnityClient
 
             Rect r = new Rect((screen.x / _cfg.UiScale) - 100, ((Screen.height - screen.y) / _cfg.UiScale) - 14, 200, 24);
             GUI.Box(r, "[" + KeyLabel(HudConfig.Bind.Interact) + "] ou clic droit : fouiller");
+        }
+
+        // --- Bank chest: prompt + window ---
+
+        private void DrawBankPrompt()
+        {
+            if (_nearbyBankId < 0 || _bankOpen || _nearbyCorpseId >= 0) { return; }
+
+            EntityView view;
+            if (!_views.TryGetValue(_nearbyBankId, out view) || view == null || Camera.main == null) { return; }
+
+            Vector3 screen = Camera.main.WorldToScreenPoint(
+                view.transform.position + (Vector3.up * (view.HeadHeight + 0.35f)));
+            if (screen.z < 0f) { return; }
+
+            Rect r = new Rect((screen.x / _cfg.UiScale) - 100,
+                ((Screen.height - screen.y) / _cfg.UiScale) - 14, 200, 24);
+            GUI.Box(r, "[" + KeyLabel(HudConfig.Bind.Interact) + "] Ouvrir la banque");
+        }
+
+        /// <summary>An item as an ICON tile: coloured square, abbreviation, stack count, hover name.</summary>
+        private void DrawItemIcon(Rect rect, byte itemId, int quantity)
+        {
+            ItemDefinition def = Data.GetItem(itemId);
+
+            GUI.Box(rect, "");
+            Color prev = GUI.color;
+            GUI.color = ItemColor(def);
+            GUI.DrawTexture(new Rect(rect.x + 2, rect.y + 2, rect.width - 4, rect.height - 4),
+                Texture2D.whiteTexture);
+            GUI.color = prev;
+
+            string abbrev = def.Name.Length <= 2 ? def.Name : def.Name.Substring(0, 2);
+            GUI.Label(new Rect(rect.x, rect.y + 2, rect.width, 16),
+                "<size=11><b><color=#101010>" + abbrev + "</color></b></size>", RichCentered());
+            if (quantity > 1)
+            {
+                GUI.Label(new Rect(rect.x, rect.y + rect.height - 16, rect.width - 3, 14),
+                    "<size=10><b><color=#101010>" + quantity + "</color></b></size>",
+                    new GUIStyle(GUI.skin.label) { richText = true, alignment = TextAnchor.LowerRight });
+            }
+
+            if (rect.Contains(Event.current.mousePosition))
+            {
+                GUI.Label(new Rect(rect.x - 40, rect.y - 18, rect.width + 120, 16),
+                    "<size=10>" + def.Name + "</size>", RichCentered());
+            }
+        }
+
+        private static Color ItemColor(ItemDefinition def)
+        {
+            switch (def.Type)
+            {
+                case ItemType.Weapon: return new Color(0.75f, 0.78f, 0.85f);
+                case ItemType.Armor: return new Color(0.62f, 0.45f, 0.28f);
+                case ItemType.Consumable: return new Color(0.85f, 0.35f, 0.35f);
+                default:
+                    // Materials: a stable hue per item id so goblin ears never look like wolf pelts.
+                    float hue = (def.Id * 47 % 256) / 256f;
+                    return Color.HSVToRGB(hue, 0.45f, 0.85f);
+            }
+        }
+
+        private void DrawBankWindow()
+        {
+            if (!_bankOpen) { return; }
+
+            const float W = 460f;
+            const float Icon = 34f;
+            const int Cols = 10;
+
+            int bagRows = Mathf.Max(1, ((_client.InventoryItems.Count - 1) / Cols) + 1);
+            int bankRows = Mathf.Max(1, ((_client.BankItems.Count - 1) / Cols) + 1);
+            float height = 150f + ((bagRows + bankRows) * (Icon + 4f)) + 40f;
+            Rect win = new Rect((VirtW - W) / 2f, (VirtH - height) / 2f, W, height);
+            GUI.Box(win, "<b>Coffre de banque</b>", RichCenteredBox());
+
+            if (GUI.Button(new Rect(win.x + win.width - 24, win.y + 4, 20, 20), "X"))
+            {
+                _bankOpen = false;
+                return;
+            }
+
+            float y = win.y + 30f;
+
+            // Gold, both sides.
+            GUI.Label(new Rect(win.x + 14, y, 220, 20),
+                "Or sur toi : <b>" + _client.Gold + "</b> · au coffre : <b>" + _client.BankGold + "</b>", Rich());
+            if (GUI.Button(new Rect(win.x + W - 224, y - 2, 68, 22), "Dép. 10"))
+            {
+                _client.SendBank(BankOp.DepositGold, 0, 10);
+            }
+
+            if (GUI.Button(new Rect(win.x + W - 152, y - 2, 68, 22), "Dép. tout"))
+            {
+                _client.SendBank(BankOp.DepositGold, 0, _client.Gold);
+            }
+
+            if (GUI.Button(new Rect(win.x + W - 80, y - 2, 68, 22), "Ret. 10"))
+            {
+                _client.SendBank(BankOp.WithdrawGold, 0, 10);
+            }
+
+            y += 30f;
+            GUI.Label(new Rect(win.x + 14, y, 300, 18), "<b>Ton sac</b> <size=9>(clic : déposer)</size>", Rich());
+            y += 20f;
+            y = DrawIconGrid(win.x + 14, y, Cols, Icon, _client.InventoryItems,
+                itemId => _client.SendBank(BankOp.DepositItem, itemId, 1));
+
+            y += 8f;
+            GUI.Label(new Rect(win.x + 14, y, 300, 18), "<b>Le coffre</b> <size=9>(clic : retirer)</size>", Rich());
+            y += 20f;
+            DrawIconGrid(win.x + 14, y, Cols, Icon, _client.BankItems,
+                itemId => _client.SendBank(BankOp.WithdrawItem, itemId, 1));
+        }
+
+        /// <summary>Lay a list of stacks out as clickable icon tiles; returns the next free y.</summary>
+        private float DrawIconGrid(float x, float y, int cols, float icon,
+            IReadOnlyList<ItemStack> items, System.Action<byte> onClick)
+        {
+            if (items.Count == 0)
+            {
+                GUI.Label(new Rect(x, y, 200, 18), "<i><size=10>(vide)</size></i>", Rich());
+                return y + icon + 4f;
+            }
+
+            for (int i = 0; i < items.Count; i++)
+            {
+                Rect cell = new Rect(x + ((i % cols) * (icon + 4f)), y + ((i / cols) * (icon + 4f)), icon, icon);
+                DrawItemIcon(cell, items[i].ItemId, items[i].Quantity);
+                if (Event.current.type == EventType.MouseDown && Event.current.button == 0 &&
+                    cell.Contains(Event.current.mousePosition))
+                {
+                    onClick(items[i].ItemId);
+                    Event.current.Use();
+                }
+            }
+
+            int rows = ((items.Count - 1) / cols) + 1;
+            return y + (rows * (icon + 4f));
         }
 
         private void DrawLootWindow()
@@ -1492,9 +1826,12 @@ namespace Aetheria.UnityClient
             EntitySnapshot self;
             bool haveSelf = _client.TryGetSelf(out self);
 
-            int invRows = Mathf.Max(1, _client.InventoryItems.Count);
-            float height = 210f + (invRows * 22f);
-            Rect win = new Rect(VirtW - 320, 40, 300, Mathf.Min(height, VirtH - 80));
+            const float W = 470f;
+            const float Icon = 34f;
+            const int Cols = 7;
+            int invRows = Mathf.Max(1, ((_client.InventoryItems.Count - 1) / Cols) + 1);
+            float height = 250f + (invRows * (Icon + 4f)) + 130f;
+            Rect win = new Rect(VirtW - W - 16, 40, W, Mathf.Min(height, VirtH - 70));
             GUI.Box(win, "<b>Fiche de personnage</b>", RichCenteredBox());
 
             if (GUI.Button(new Rect(win.x + win.width - 24, win.y + 4, 20, 20), "X"))
@@ -1503,69 +1840,95 @@ namespace Aetheria.UnityClient
                 return;
             }
 
-            float y = win.y + 28f;
-            GUI.Label(new Rect(win.x + 12, y, win.width - 24, 20),
+            // LEFT: the live 3D portrait.
+            Rect portrait = new Rect(win.x + 12, win.y + 30, 170, 226);
+            GUI.Box(portrait, "");
+            if (_sheetPreview.Texture != null)
+            {
+                GUI.DrawTexture(new Rect(portrait.x + 2, portrait.y + 2, portrait.width - 4, portrait.height - 4),
+                    _sheetPreview.Texture, ScaleMode.ScaleAndCrop);
+            }
+
+            // RIGHT: identity, stats, equipment slots.
+            float rx = portrait.xMax + 12f;
+            float y = win.y + 32f;
+            GUI.Label(new Rect(rx, y, win.xMax - rx - 12, 20),
                 "<b>" + _name + "</b> — niveau " + _client.Level, Rich());
             y += 20f;
-            GUI.Label(new Rect(win.x + 12, y, win.width - 24, 20),
-                "PV " + (haveSelf ? self.Health + "/" + self.MaxHealth : "—") +
-                "    Attaque " + _client.EffectiveAttack + "    Défense " + _client.EffectiveDefense);
-            y += 20f;
-            GUI.Label(new Rect(win.x + 12, y, win.width - 24, 20),
+            GUI.Label(new Rect(rx, y, win.xMax - rx - 12, 20),
+                "PV " + (haveSelf ? self.Health + "/" + self.MaxHealth : "—"));
+            y += 18f;
+            GUI.Label(new Rect(rx, y, win.xMax - rx - 12, 20),
+                "Attaque " + _client.EffectiveAttack + " · Défense " + _client.EffectiveDefense);
+            y += 18f;
+            GUI.Label(new Rect(rx, y, win.xMax - rx - 12, 20),
                 "XP " + _client.TotalXp + (_client.XpForNextLevel > 0 ? " / " + _client.XpForNextLevel : " (max)"));
-            y += 24f;
-
-            // Equipment slots.
-            string weapon = _client.EquippedWeaponId != 0 ? Data.GetItem(_client.EquippedWeaponId).Name : "(aucune)";
-            string armor = _client.EquippedArmorId != 0 ? Data.GetItem(_client.EquippedArmorId).Name : "(aucune)";
-            GUI.Label(new Rect(win.x + 12, y, win.width - 24, 20), "Arme : " + weapon, Rich());
-            y += 20f;
-            GUI.Label(new Rect(win.x + 12, y, win.width - 24, 20), "Armure : " + armor, Rich());
-            y += 24f;
-
-            // Gold + bank.
-            GUI.Label(new Rect(win.x + 12, y, 140, 20), "Or " + _client.Gold + " · Banque " + _client.BankGold);
-            if (GUI.Button(new Rect(win.x + win.width - 140, y - 2, 62, 22), "Dép. 10"))
-            {
-                _client.SendBank(BankOp.DepositGold, 0, 10);
-            }
-
-            if (GUI.Button(new Rect(win.x + win.width - 74, y - 2, 62, 22), "Ret. 10"))
-            {
-                _client.SendBank(BankOp.WithdrawGold, 0, 10);
-            }
-
+            y += 18f;
+            GUI.Label(new Rect(rx, y, win.xMax - rx - 12, 20), "Or : <b>" + _client.Gold + "</b>", Rich());
             y += 26f;
-            GUI.Label(new Rect(win.x + 12, y, win.width - 24, 20), "<b>Sac</b>", Rich());
+
+            // Equipment slots: icon squares; click a slot to UNEQUIP into the bags.
+            GUI.Label(new Rect(rx, y, 200, 18), "<b>Équipement</b> <size=9>(clic : retirer)</size>", Rich());
             y += 20f;
+            DrawEquipSlot(new Rect(rx, y, Icon + 6, Icon + 6), _client.EquippedWeaponId, EquipSlot.Weapon, "Arme");
+            DrawEquipSlot(new Rect(rx + Icon + 16, y, Icon + 6, Icon + 6), _client.EquippedArmorId, EquipSlot.Armor, "Armure");
+            y += Icon + 30f;
+
+            // BOTTOM: the bags as an icon grid. Click an equippable piece to WEAR it;
+            // drag any item onto an ally (trade) or the ground (drop).
+            float gy = Mathf.Max(y, portrait.yMax + 10f);
+            GUI.Label(new Rect(win.x + 12, gy, 320, 18),
+                "<b>Sac</b> <size=9>(clic : équiper · glisser : échanger/poser)</size>", Rich());
+            gy += 20f;
 
             if (_client.InventoryItems.Count == 0)
             {
-                GUI.Label(new Rect(win.x + 12, y, win.width - 24, 20), "<i>(vide)</i>", Rich());
+                GUI.Label(new Rect(win.x + 12, gy, 200, 18), "<i><size=10>(vide)</size></i>", Rich());
+            }
+
+            for (int i = 0; i < _client.InventoryItems.Count; i++)
+            {
+                ItemStack stack = _client.InventoryItems[i];
+                Rect cell = new Rect(win.x + 12 + ((i % Cols) * (Icon + 4f)),
+                    gy + ((i / Cols) * (Icon + 4f)), Icon, Icon);
+                DrawItemIcon(cell, stack.ItemId, stack.Quantity);
+
+                Event e = Event.current;
+                if (e.type == EventType.MouseDown && cell.Contains(e.mousePosition))
+                {
+                    ItemDefinition def = Data.GetItem(stack.ItemId);
+                    if (e.button == 0 && def.Slot != EquipSlot.None && !_client.TradeActive)
+                    {
+                        _client.SendEquipItem(stack.ItemId, (byte)def.Slot); // wear it
+                        e.Use();
+                    }
+                    else if (e.button == 1 && _draggingItem == null && !_client.TradeActive)
+                    {
+                        _draggingItem = stack; // right-button grab starts the drag
+                        e.Use();
+                    }
+                }
+            }
+        }
+
+        /// <summary>One equipment slot tile; click to unequip the piece back into the bags.</summary>
+        private void DrawEquipSlot(Rect rect, byte equippedId, EquipSlot slot, string label)
+        {
+            GUI.Box(rect, "");
+            if (equippedId != 0)
+            {
+                DrawItemIcon(new Rect(rect.x + 3, rect.y + 3, rect.width - 6, rect.height - 6), equippedId, 1);
+                if (Event.current.type == EventType.MouseDown && Event.current.button == 0 &&
+                    rect.Contains(Event.current.mousePosition))
+                {
+                    _client.SendEquipItem(0, (byte)slot);
+                    Event.current.Use();
+                }
             }
             else
             {
-                for (int i = 0; i < _client.InventoryItems.Count && y < win.y + win.height - 26; i++)
-                {
-                    ItemStack stack = _client.InventoryItems[i];
-                    Rect row = new Rect(win.x + 12, y, win.width - 24, 20);
-                    GUI.Label(row,
-                        "· " + Data.GetItem(stack.ItemId).Name + (stack.Quantity > 1 ? " ×" + stack.Quantity : ""));
-
-                    // Grab to drag: release on an ally to trade it, on the ground to drop it.
-                    Event e = Event.current;
-                    if (e.type == EventType.MouseDown && e.button == 0 && row.Contains(e.mousePosition) &&
-                        _draggingItem == null && !_client.TradeActive)
-                    {
-                        _draggingItem = stack;
-                        e.Use();
-                    }
-
-                    y += 22f;
-                }
-
-                GUI.Label(new Rect(win.x + 12, win.y + win.height - 22, win.width - 24, 18),
-                    "<size=9><i>Glisse un objet vers un allié (échange) ou le sol (poser)</i></size>", Rich());
+                GUI.Label(new Rect(rect.x, rect.y + 10, rect.width, 18),
+                    "<size=9><color=#909090>" + label + "</color></size>", RichCentered());
             }
         }
 
@@ -1886,7 +2249,7 @@ namespace Aetheria.UnityClient
         {
             if (GUILayout.Button("Retour au jeu", GUILayout.Height(28))) { _menuOpen = false; }
             if (GUILayout.Button("Options", GUILayout.Height(28))) { _optionsTab = 0; }
-            if (GUILayout.Button("Se déconnecter", GUILayout.Height(28))) { Disconnect(); }
+            if (GUILayout.Button("Se déconnecter", GUILayout.Height(28))) { DisconnectToCharacter(); }
             if (GUILayout.Button("Quitter le jeu", GUILayout.Height(28)))
             {
                 _cfg.Save();
@@ -2048,10 +2411,42 @@ namespace Aetheria.UnityClient
                 GUI.Label(new Rect(area.x, y, area.width, 22), _client.LastInstanceMessage);
             }
 
-            for (int i = 0; i < _combatLog.Count; i++)
+        }
+
+        /// <summary>
+        /// The world chat: ONLY what players write — no combat spam, no system noise. Enter opens
+        /// the input, Enter sends, Escape cancels.
+        /// </summary>
+        private void DrawChat()
+        {
+            const float W = 360f;
+            const float LineH = 17f;
+            int lines = Mathf.Min(_chatLog.Count, 8);
+            float historyH = lines * LineH;
+            float inputH = _chatInputActive ? 24f : 0f;
+            float y0 = VirtH - 34f - inputH - historyH;
+
+            if (lines > 0)
             {
-                GUI.Label(new Rect(area.x, y + 22 + (i * 17), area.width, 18),
-                    "<size=11>" + _combatLog[i] + "</size>", Rich());
+                Dim(new Rect(8f, y0 - 4f, W, historyH + 8f), 0.35f);
+                for (int i = 0; i < lines; i++)
+                {
+                    string line = _chatLog[_chatLog.Count - lines + i];
+                    GUI.Label(new Rect(14f, y0 + (i * LineH), W - 12f, LineH + 2f),
+                        "<size=11>" + line + "</size>", Rich());
+                }
+            }
+
+            if (_chatInputActive)
+            {
+                GUI.SetNextControlName("ChatInput");
+                _chatInput = GUI.TextField(new Rect(8f, VirtH - 32f, W, 24f), _chatInput, 200);
+                GUI.FocusControl("ChatInput");
+            }
+            else
+            {
+                GUI.Label(new Rect(10f, VirtH - 28f, W, 18f),
+                    "<size=9><color=#9a9a9a>[Entrée] pour parler</color></size>", Rich());
             }
         }
 

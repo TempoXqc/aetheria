@@ -77,6 +77,7 @@ public sealed class GameClient
 
     // --- Account bank (from BankState) ---
     public int BankGold { get; private set; }
+    public IReadOnlyList<ItemStack> BankItems { get; private set; } = [];
     public int BankStackCount { get; private set; }
 
     // --- Party & instance state ---
@@ -101,6 +102,23 @@ public sealed class GameClient
     public byte CharacterClassId { get; private set; }
     public Gender CharacterGender { get; private set; }
     public byte CharacterLevel { get; private set; } = 1;
+    public Appearance CharacterAppearance { get; private set; }
+
+    /// <summary>Player chat lines received since the last drain (world chat, players only).</summary>
+    private readonly List<ChatMessage> _chatFeed = [];
+
+    /// <summary>Return the chat lines received since the last call, then clear the feed.</summary>
+    public IReadOnlyList<ChatMessage> DrainChatFeed()
+    {
+        if (_chatFeed.Count == 0)
+        {
+            return [];
+        }
+
+        var copy = _chatFeed.ToArray();
+        _chatFeed.Clear();
+        return copy;
+    }
 
     /// <summary>Open the socket toward the server and authenticate the account.</summary>
     public void Connect(string host, int port, string accountId, string accountSecret,
@@ -127,6 +145,12 @@ public sealed class GameClient
     }
 
     public void SendBank(BankOp op, byte itemId, int amount) => Send(new BankTransaction(op, itemId, amount));
+
+    /// <summary>Equip a weapon/armor from the bags (or unequip a slot with itemId 0).</summary>
+    public void SendEquipItem(byte itemId, byte slot) => Send(new EquipItem(itemId, slot));
+
+    /// <summary>Say something in the world chat.</summary>
+    public void SendChat(string text) => Send(new ChatSend(text ?? string.Empty));
 
     public void SendPartyInvite(int targetEntityId) => Send(new PartyInvite(targetEntityId));
 
@@ -348,6 +372,7 @@ public sealed class GameClient
                 case MessageType.BankState:
                     BankState bankState = BankState.Read(ref reader);
                     BankGold = bankState.Gold;
+                    BankItems = bankState.Items;
                     BankStackCount = bankState.Items.Count;
                     break;
 
@@ -383,10 +408,20 @@ public sealed class GameClient
                         CharacterClassId = login.ClassId;
                         CharacterGender = login.Gender;
                         CharacterLevel = login.Level;
+                        CharacterAppearance = login.Appearance;
                     }
                     else
                     {
                         LoginError = login.Message;
+                    }
+
+                    break;
+
+                case MessageType.ChatMessage:
+                    ChatMessage chat = ChatMessage.Read(ref reader);
+                    if (_chatFeed.Count < 128)
+                    {
+                        _chatFeed.Add(chat);
                     }
 
                     break;
@@ -525,6 +560,8 @@ public sealed class GameClient
     private void Send(TradeCancel msg) => SendWith(msg.Write);
     private void Send(DropItem msg) => SendWith(msg.Write);
     private void Send(BankTransaction msg) => SendWith(msg.Write);
+    private void Send(EquipItem msg) => SendWith(msg.Write);
+    private void Send(ChatSend msg) => SendWith(msg.Write);
     private void Send(PartyInvite msg) => SendWith(msg.Write);
     private void Send(PartyRespond msg) => SendWith(msg.Write);
     private void Send(PartyLeave msg) => SendWith(msg.Write);

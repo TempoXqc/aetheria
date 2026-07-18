@@ -87,6 +87,12 @@ public sealed class ServerEntity
 
     public int? AiTargetId { get; set; }
 
+    /// <summary>Monster is running back to its spawn after a leash break (drops aggro on the way).</summary>
+    public bool IsEvading { get; set; }
+
+    /// <summary>Tick at which this entity is removed outright (0 = never). Used by monster corpses.</summary>
+    public uint DespawnAtTick { get; set; }
+
     // --- Inventory, equipment & currency (players) ---
     public Inventory Inventory { get; }
     public byte EquippedWeaponId { get; set; }
@@ -298,6 +304,7 @@ public sealed class ServerEntity
         Position = SpawnPosition;
         MoveIntent = Vec2.Zero;
         AiTargetId = null;
+        IsEvading = false;
         _effects.Clear();
         _abilityReadyTick.Clear();
         CurrentResource = ResourceType == ResourceType.Rage ? 0f : EffectiveMaxResource;

@@ -99,9 +99,61 @@ namespace Aetheria.UnityClient
                     return BuildCorpse(parent);
                 case EntityKind.Monster:
                     return BuildMonster(parent, snapshot.RaceId); // RaceId carries the monster def id
+                case EntityKind.MonsterCorpse:
+                    return BuildMonsterRemains(parent, snapshot.RaceId);
+                case EntityKind.Npc:
+                    return BuildBankChest(parent);
                 default:
                     return BuildPlayer(parent, snapshot.RaceId, snapshot.ClassId, snapshot.Gender, snapshot.Appearance);
             }
+        }
+
+        /// <summary>The slain creature lying on its side, darkened — cosmetic remains on a timer.</summary>
+        private static ModelRig BuildMonsterRemains(Transform parent, byte defId)
+        {
+            // A tilt node rolls the whole body onto its side just above the ground.
+            var tilt = new GameObject("Remains");
+            tilt.transform.SetParent(parent, false);
+            tilt.transform.localPosition = new Vector3(0f, 0.28f, 0f);
+            tilt.transform.localRotation = Quaternion.Euler(0f, 0f, 82f);
+
+            _ = BuildMonster(tilt.transform, defId);
+
+            // Death pallor: darken every part.
+            Renderer[] parts = tilt.GetComponentsInChildren<Renderer>();
+            for (int i = 0; i < parts.Length; i++)
+            {
+                Color c = parts[i].material.color;
+                parts[i].material.color = new Color(c.r * 0.45f, c.g * 0.45f, c.b * 0.45f);
+            }
+
+            // Remains never animate: hand back an empty rig (pivots stay at rest).
+            return new ModelRig { HeadHeight = 0.9f };
+        }
+
+        /// <summary>The sanctuary's bank chest: sturdy wood, iron bands, a golden lock.</summary>
+        private static ModelRig BuildBankChest(Transform parent)
+        {
+            var rig = new ModelRig { HeadHeight = 1.6f };
+
+            var model = new GameObject("Model");
+            model.transform.SetParent(parent, false);
+
+            Color wood = new Color(0.42f, 0.27f, 0.13f);
+            Color iron = new Color(0.35f, 0.35f, 0.40f);
+
+            Cube(model.transform, "Base", new Vector3(0f, 0.30f, 0f), new Vector3(1.15f, 0.60f, 0.75f), wood);
+            var lid = Cube(model.transform, "Lid", new Vector3(0f, 0.68f, -0.06f), new Vector3(1.15f, 0.26f, 0.72f),
+                new Color(0.48f, 0.32f, 0.16f));
+            lid.transform.localRotation = Quaternion.Euler(-14f, 0f, 0f);
+            Cube(model.transform, "BandL", new Vector3(-0.36f, 0.38f, 0f), new Vector3(0.10f, 0.82f, 0.80f), iron);
+            Cube(model.transform, "BandR", new Vector3(0.36f, 0.38f, 0f), new Vector3(0.10f, 0.82f, 0.80f), iron);
+            Cube(model.transform, "Lock", new Vector3(0f, 0.52f, 0.40f), new Vector3(0.16f, 0.20f, 0.08f),
+                new Color(0.95f, 0.80f, 0.20f));
+            Cube(model.transform, "Plinth", new Vector3(0f, 0.03f, 0f), new Vector3(1.5f, 0.06f, 1.1f),
+                new Color(0.45f, 0.45f, 0.50f));
+
+            return rig;
         }
 
         // ------------------------------------------------------------- Players
@@ -347,7 +399,7 @@ namespace Aetheria.UnityClient
                 case 1: // Warrior: a sword held ready, blade forward.
                 {
                     var w = Pivot(rig.ArmR, "Sword", new Vector3(0f, -0.66f, 0.10f));
-                    w.localRotation = Quaternion.Euler(-90f, 0f, 0f);
+                    w.localRotation = Quaternion.Euler(90f, 0f, 0f); // +Y of the blade → forward (+Z)
                     Color steel = new Color(0.75f, 0.78f, 0.82f);
                     Cube(w, "Blade", new Vector3(0f, 0.38f, 0f), new Vector3(0.06f, 0.66f, 0.10f), steel);
                     Cube(w, "Guard", new Vector3(0f, 0.08f, 0f), new Vector3(0.20f, 0.05f, 0.06f), new Color(0.55f, 0.45f, 0.20f));

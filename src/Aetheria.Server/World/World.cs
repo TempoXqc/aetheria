@@ -138,6 +138,69 @@ public sealed class World
         RecomputeEquipment(entity);
     }
 
+    /// <summary>
+    /// Equip a weapon/armor from the bags into its slot, swapping the current piece back into the
+    /// bags — or unequip a slot (itemId 0) if the bags have room. Server-validated: the item must
+    /// really be in the bags and really be equippable.
+    /// </summary>
+    public bool TryEquipItem(int playerId, byte itemId, EquipSlot slot)
+    {
+        if (!_entities.TryGetValue(playerId, out ServerEntity? player) ||
+            player.IsDead || player.Kind != EntityKind.Player)
+        {
+            return false;
+        }
+
+        if (itemId == 0)
+        {
+            // Unequip the given slot back into the bags.
+            byte current = slot == EquipSlot.Weapon ? player.EquippedWeaponId
+                : slot == EquipSlot.Armor ? player.EquippedArmorId : (byte)0;
+            if (current == 0)
+            {
+                return false;
+            }
+
+            ItemDefinition currentDef = _gameData.GetItem(current);
+            if (player.Inventory.TryAdd(current, 1, currentDef.Stackable, currentDef.MaxStack) > 0)
+            {
+                return false; // bags full: the piece stays on
+            }
+
+            if (slot == EquipSlot.Weapon) { player.EquippedWeaponId = 0; }
+            else { player.EquippedArmorId = 0; }
+
+            RecomputeEquipment(player);
+            return true;
+        }
+
+        if (!_gameData.HasItem(itemId) || player.Inventory.CountOf(itemId) <= 0)
+        {
+            return false;
+        }
+
+        ItemDefinition def = _gameData.GetItem(itemId);
+        if (def.Slot == EquipSlot.None)
+        {
+            return false; // not equippable
+        }
+
+        // Take the new piece out first — that frees the bag slot the old piece falls back into.
+        player.Inventory.RemoveQuantity(itemId, 1);
+        byte old = def.Slot == EquipSlot.Weapon ? player.EquippedWeaponId : player.EquippedArmorId;
+        if (old != 0)
+        {
+            ItemDefinition oldDef = _gameData.GetItem(old);
+            player.Inventory.TryAdd(old, 1, oldDef.Stackable, oldDef.MaxStack);
+        }
+
+        if (def.Slot == EquipSlot.Weapon) { player.EquippedWeaponId = itemId; }
+        else { player.EquippedArmorId = itemId; }
+
+        RecomputeEquipment(player);
+        return true;
+    }
+
     /// <summary>Recompute an entity's equipment stat bonuses from its currently equipped gear.</summary>
     private void RecomputeEquipment(ServerEntity entity)
     {
@@ -202,6 +265,20 @@ public sealed class World
 
         AddAlive(entity);
         return entity;
+    }
+
+    /// <summary>Spawn a friendly interactive NPC/object (bank chest, future vendors). Invulnerable.</summary>
+    public ServerEntity SpawnNpc(string name, Vec2 position)
+    {
+        int id = _ids.Next();
+        var npc = new ServerEntity(id, EntityKind.Npc, position, new StatBlock(1, 0f, 0, 0, 0f), 0)
+        {
+            Name = name,
+            Faction = Faction.Neutral,
+        };
+
+        AddAlive(npc);
+        return npc;
     }
 
     /// <summary>
@@ -301,7 +378,9 @@ public sealed class World
         if (!_entities.TryGetValue(attackerId, out ServerEntity? attacker) || attacker.IsDead ||
             !_entities.TryGetValue(targetId, out ServerEntity? target) || target.IsDead ||
             attackerId == targetId ||
-            target.Kind == EntityKind.Corpse) // corpses are looted, not attacked
+            target.Kind == EntityKind.Corpse ||        // corpses are looted, not attacked
+            target.Kind == EntityKind.MonsterCorpse || // cosmetic remains
+            target.Kind == EntityKind.Npc)             // bank chests & friends are invulnerable
         {
             return false;
         }
@@ -415,8 +494,30 @@ public sealed class World
         }
 
         ProcessRespawns();
+        ProcessDespawns();
         RunMonsterAi();
         IntegrateMovement(dt);
+    }
+
+    /// <summary>Remove timed entities (monster corpses) whose despawn tick has passed.</summary>
+    private void ProcessDespawns()
+    {
+        _respawnScratch.Clear();
+        foreach (ServerEntity e in _entities.Values)
+        {
+            if (e.DespawnAtTick != 0 && Tick >= e.DespawnAtTick)
+            {
+                _respawnScratch.Add(e.Id);
+            }
+        }
+
+        foreach (int id in _respawnScratch)
+        {
+            _entities.Remove(id);
+            _grid.Remove(id);
+        }
+
+        _respawnScratch.Clear();
     }
 
     /// <summary>
@@ -432,9 +533,11 @@ public sealed class World
         {
             if (_entities.TryGetValue(id, out ServerEntity? e) && e.IsAlive)
             {
-                // Appearance: for monsters the "race" slot carries the monster definition id so the
-                // client can pick the right model; players send their real race/class/gender.
-                byte raceOrDef = e.Kind == EntityKind.Monster ? e.MonsterId : e.RaceId;
+                // Appearance: for monsters (and their remains) the "race" slot carries the monster
+                // definition id so the client picks the right model; players send race/class/gender.
+                byte raceOrDef = e.Kind == EntityKind.Monster || e.Kind == EntityKind.MonsterCorpse
+                    ? e.MonsterId
+                    : e.RaceId;
                 result.Add(new EntitySnapshot(
                     e.Id, e.Kind, e.Faction, e.Position,
                     e.Health, e.EffectiveMaxHealth, (int)e.CurrentResource, e.EffectiveMaxResource,
@@ -491,6 +594,8 @@ public sealed class World
             }
         }
 
+        float leashSq = SimulationConstants.MonsterLeashRadius * SimulationConstants.MonsterLeashRadius;
+
         foreach (ServerEntity monster in _aiScratch)
         {
             if (monster.IsDead)
@@ -498,11 +603,44 @@ public sealed class World
                 continue;
             }
 
-            ServerEntity? target = AcquireOrKeepTarget(monster);
+            // LEASH: dragged too far from home → drop aggro and run back (classic evade).
+            if (monster.AiTargetId is not null &&
+                Vec2.DistanceSquared(monster.Position, monster.SpawnPosition) > leashSq)
+            {
+                monster.AiTargetId = null;
+                monster.IsEvading = true;
+            }
+
+            ServerEntity? target = monster.IsEvading ? null : AcquireOrKeepTarget(monster);
             if (target is null)
             {
-                monster.MoveIntent = Vec2.Zero; // Idle.
+                // No prey: walk back to the spawn point if away from it, then stand fresh.
+                Vec2 home = monster.SpawnPosition - monster.Position;
+                if (home.LengthSquared > 2f)
+                {
+                    monster.IsEvading = true;
+                    monster.MoveIntent = home.Normalized();
+                    monster.FacingRadians = MathF.Atan2(monster.MoveIntent.Y, monster.MoveIntent.X);
+                }
+                else
+                {
+                    if (monster.IsEvading)
+                    {
+                        monster.IsEvading = false;
+                        monster.RestoreToFull(); // back home: wounds shrugged off
+                    }
+
+                    monster.MoveIntent = Vec2.Zero;
+                }
+
                 continue;
+            }
+
+            // Face the prey — chasing or striking, the model looks where it acts.
+            Vec2 toTarget = target.Position - monster.Position;
+            if (toTarget.LengthSquared > 0.0001f)
+            {
+                monster.FacingRadians = MathF.Atan2(toTarget.Y, toTarget.X);
             }
 
             AbilityDefinition ability = _gameData.GetAbility(monster.BasicAbilityId);
@@ -519,7 +657,7 @@ public sealed class World
             }
             else
             {
-                monster.MoveIntent = (target.Position - monster.Position).Normalized(); // Chase.
+                monster.MoveIntent = toTarget.Normalized(); // Chase.
             }
         }
     }
@@ -652,7 +790,29 @@ public sealed class World
             ApplyXp(killer, (int)MathF.Round(def.XpReward * mult));
             killer.Inventory.AddGold(def.GoldReward);
             GrantBodyParts(killer, def, victim.Position);
+            SpawnMonsterCorpse(victim);
         }
+    }
+
+    /// <summary>
+    /// Leave the slain creature's remains on the ground for a while (cosmetic — the guaranteed
+    /// body parts already went to the killer's bags). Despawns on its own after ~45 seconds.
+    /// </summary>
+    private void SpawnMonsterCorpse(ServerEntity victim)
+    {
+        int id = _ids.Next();
+        var remains = new ServerEntity(id, EntityKind.MonsterCorpse, victim.Position,
+            new StatBlock(1, 0f, 0, 0, 0f), 0)
+        {
+            Name = victim.Name,
+            Faction = Faction.Neutral,
+            MonsterId = victim.MonsterId,
+            Level = victim.Level,
+            DespawnAtTick = Tick + (uint)(SimulationConstants.TickRate * 45),
+        };
+
+        _entities[id] = remains;
+        _grid.InsertOrUpdate(id, remains.Position);
     }
 
     /// <summary>

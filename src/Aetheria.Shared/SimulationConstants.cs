@@ -25,6 +25,19 @@ public static class SimulationConstants
     /// </summary>
     public const int DefaultMaxPlayers = 100;
 
+    /// <summary>
+    /// A monster dragged farther than this from its spawn point drops aggro, runs home and heals
+    /// (classic leash/evade — no dragging wolves across the map).
+    /// </summary>
+    public const float MonsterLeashRadius = 30f;
+
+    /// <summary>Where the sanctuary's bank chest stands (inside the safe zone).</summary>
+    public const float BankChestX = 8f;
+    public const float BankChestY = 6f;
+
+    /// <summary>How close a player must stand to the bank chest to move goods in or out.</summary>
+    public const float BankInteractRange = 6f;
+
     /// <summary>Player movement speed in world units per second.</summary>
     public const float PlayerMoveSpeed = 5f;
 
@@ -68,7 +81,7 @@ public static class SimulationConstants
     public const int MaxPartySize = 40;
 
     /// <summary>Protocol version — bump on any wire-format change; handshake rejects mismatches.</summary>
-    public const byte ProtocolVersion = 13;
+    public const byte ProtocolVersion = 14;
 
     /// <summary>How close two players must be to trade (world units).</summary>
     public const float TradeRange = 6f;
@@ -87,5 +100,5 @@ public static class SimulationConstants
     /// in the in-game HUD, and in the server startup log, so "am I up to date?" has a one-glance
     /// answer on both sides.
     /// </summary>
-    public const string GameVersion = "0.16.0";
+    public const string GameVersion = "0.17.0";
 }

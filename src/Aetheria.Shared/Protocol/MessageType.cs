@@ -36,6 +36,8 @@ public enum MessageType : byte
     CreateCharacter = 26,
     EnterWorld = 27,
     ServerInfoRequest = 28,
+    EquipItem = 29,
+    ChatSend = 30,
 
     // --- Server -> Client ---
     ConnectAccepted = 128,
@@ -57,13 +59,21 @@ public enum MessageType : byte
     TradeState = 144,
     LoginResult = 145,
     ServerInfo = 146,
+    ChatMessage = 147,
 }
 
 /// <summary>Coarse kind of an entity, so the client knows how to represent it. Extended over time.</summary>
 public enum EntityKind : byte
 {
     Player = 0,
+
+    /// <summary>Friendly interactive object/person (e.g. the bank chest). Invulnerable.</summary>
     Npc = 1,
     Monster = 2,
+
+    /// <summary>A dead PLAYER's lootable corpse (full-loot rules).</summary>
     Corpse = 3,
+
+    /// <summary>A slain creature's cosmetic remains; despawns on a timer, cannot be looted.</summary>
+    MonsterCorpse = 4,
 }
