@@ -348,6 +348,12 @@ public sealed class World
         entity.MoveIntent = ClampToUnit(moveDirection);
         entity.FacingRadians = facingRadians;
 
+        // WoW rule: MOVING breaks the incantation.
+        if (entity.IsCasting && entity.MoveIntent.LengthSquared > 0.0001f)
+        {
+            entity.CancelCast();
+        }
+
         if (jump && !entity.IsJumpingAt(Tick))
         {
             entity.JumpStartTick = Tick == 0 ? 1 : Tick; // cosmetic hop, relayed via snapshot flags
@@ -441,6 +447,28 @@ public sealed class World
             return false;
         }
 
+        // One incantation at a time: while casting, further requests are refused (the auto-attack
+        // loop simply retries after the cast lands).
+        if (attacker.IsCasting)
+        {
+            return false;
+        }
+
+        // Cast-time spell (players): start the INCANTATION. Resource and cooldown are only paid
+        // when the cast completes; moving cancels it — see ProcessCasts/ApplyInput.
+        if (ability.CastTimeTicks > 0 && attacker.Kind == EntityKind.Player)
+        {
+            attacker.BeginCast(ability.Id, targetId, Tick, ability.CastTimeTicks);
+            return true;
+        }
+
+        ExecuteAbility(attacker, target, ability);
+        return true;
+    }
+
+    /// <summary>Pay the costs and land the ability (shared by instant casts and finished incantations).</summary>
+    private void ExecuteAbility(ServerEntity attacker, ServerEntity target, AbilityDefinition ability)
+    {
         attacker.StartCooldown(ability.Id, Tick + (uint)ability.CooldownTicks);
         attacker.SpendResource(ability.ResourceCost);
 
@@ -448,8 +476,58 @@ public sealed class World
         {
             DealDamage(attacker, target, ability);
         }
+    }
 
-        return true;
+    /// <summary>
+    /// Resolve finished incantations: re-validate the world (alive, range with a small grace,
+    /// sanctuary, resource) and land the spell — or fizzle silently if the world moved on.
+    /// </summary>
+    private void ProcessCasts()
+    {
+        foreach (ServerEntity caster in _entities.Values)
+        {
+            if (!caster.IsCasting)
+            {
+                continue;
+            }
+
+            if (caster.IsDead)
+            {
+                caster.CancelCast();
+                continue;
+            }
+
+            if (Tick < caster.CastEndTick)
+            {
+                continue; // still incanting
+            }
+
+            AbilityDefinition ability = _gameData.GetAbility(caster.CastAbilityId);
+            int targetId = caster.CastTargetId;
+            caster.CancelCast();
+
+            if (!_entities.TryGetValue(targetId, out ServerEntity? target) || target.IsDead ||
+                (ability.ResourceCost > 0 && !caster.HasResource(ability.ResourceCost)))
+            {
+                continue; // target gone or resource drained: the cast fizzles
+            }
+
+            // Range check with a small grace (the target may have stepped back mid-cast).
+            float slack = ability.Range + 2f;
+            if (Vec2.DistanceSquared(caster.Position, target.Position) > slack * slack)
+            {
+                continue;
+            }
+
+            // Sanctuary still protects.
+            if ((caster.Kind == EntityKind.Player && IsSafePosition(caster.Position)) ||
+                (target.Kind == EntityKind.Player && IsSafePosition(target.Position)))
+            {
+                continue;
+            }
+
+            ExecuteAbility(caster, target, ability);
+        }
     }
 
     /// <summary>
@@ -509,6 +587,7 @@ public sealed class World
 
         ProcessRespawns();
         ProcessDespawns();
+        ProcessCasts();
         RunMonsterAi();
         IntegrateMovement(dt);
     }
@@ -557,7 +636,8 @@ public sealed class World
                     e.Id, e.Kind, e.Faction, e.Position,
                     e.Health, e.EffectiveMaxHealth, (int)e.CurrentResource, e.EffectiveMaxResource,
                     e.FacingRadians, (byte)System.Math.Clamp(e.Level, 1, 255), e.Name,
-                    raceOrDef, e.ClassId, e.Gender, e.Appearance, flags));
+                    raceOrDef, e.ClassId, e.Gender, e.Appearance, flags,
+                    e.CastAbilityId, e.CastProgressAt(Tick)));
             }
         }
 

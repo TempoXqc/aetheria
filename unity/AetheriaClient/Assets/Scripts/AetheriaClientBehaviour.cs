@@ -63,6 +63,7 @@ namespace Aetheria.UnityClient
         private bool _wasRegistering;
         private bool _serverChosen; // the player picked this realm in the browser (creation allowed)
         private Vector3 _rightDownPos; // to tell a right-TAP (context click) from a camera drag
+        private Vector3 _leftDownPos;  // same for the left button (tap = select, drag = orbit)
         private bool _jumpQueued;      // Space pressed since the last input packet
 
         // --- Bank (a physical chest in the sanctuary) ---
@@ -728,6 +729,13 @@ namespace Aetheria.UnityClient
             if (_cameraRig != null && _client.TryGetSelf(out self))
             {
                 _cameraRig.Target = new Vector3(self.Position.X, 0f, self.Position.Y);
+
+                // Running with no drag: the camera drifts back behind the character, WoW-style.
+                bool moving = Input.GetAxisRaw("Horizontal") != 0f || Input.GetAxisRaw("Vertical") != 0f;
+                if (moving && !_menuOpen && !_chatInputActive)
+                {
+                    _cameraRig.RecenterBehind(_lastFacing, Time.deltaTime);
+                }
             }
         }
 
@@ -752,9 +760,17 @@ namespace Aetheria.UnityClient
 
         private void HandleMouse()
         {
+            // Left button doubles as free camera orbit: a quick TAP selects a target, a DRAG
+            // orbits (handled by the rig) without selecting anything.
             if (Input.GetMouseButtonDown(0))
             {
-                _contextEntityId = -1; // any left click closes a context menu
+                _leftDownPos = Input.mousePosition;
+            }
+
+            if (Input.GetMouseButtonUp(0) &&
+                (Input.mousePosition - _leftDownPos).sqrMagnitude < 64f) // < 8 px: a tap
+            {
+                _contextEntityId = -1; // any left tap closes a context menu
                 HandleLeftClick();
             }
 
@@ -951,27 +967,24 @@ namespace Aetheria.UnityClient
             if (_inputTimer < SimulationConstants.TickDelta) { return; }
             _inputTimer = 0f;
 
+            // WoW grammar:
+            //  - RIGHT drag = mouselook: the character turns with the camera.
+            //  - LEFT drag  = free camera orbit: the character keeps its own direction.
+            //  - Movement is relative to the CHARACTER's facing: W forward, S backpedal, A/D strafe.
+            if (_cameraRig != null && Input.GetMouseButton(1))
+            {
+                _lastFacing = _cameraRig.FacingRadians;
+            }
+
             float h = Input.GetAxisRaw("Horizontal");
             float v = Input.GetAxisRaw("Vertical");
 
             Vec2 dir = Vec2.Zero;
             if (h != 0f || v != 0f)
             {
-                Transform camT = Camera.main != null ? Camera.main.transform : null;
-                Vector3 fwd = camT != null ? camT.forward : Vector3.forward;
-                Vector3 right = camT != null ? camT.right : Vector3.right;
-                fwd.y = 0f;
-                right.y = 0f;
-                Vector3 world = (fwd.normalized * v) + (right.normalized * h);
-                dir = new Vec2(world.x, world.z).Normalized();
-            }
-
-            // WoW rules: the character ALWAYS faces where the camera looks. A/D therefore STRAFE
-            // (side-step) instead of turning the body, S backpedals — and right-drag mouselook
-            // turns body and camera together.
-            if (_cameraRig != null && (Input.GetMouseButton(1) || dir.LengthSquared > 0.0001f))
-            {
-                _lastFacing = _cameraRig.FacingRadians;
+                var forward = new Vec2(Mathf.Cos(_lastFacing), Mathf.Sin(_lastFacing));
+                var strafe = new Vec2(Mathf.Sin(_lastFacing), -Mathf.Cos(_lastFacing));
+                dir = ((forward * v) + (strafe * h)).Normalized();
             }
 
             _client.SendInput(dir, _lastFacing, _jumpQueued);
@@ -1016,6 +1029,7 @@ namespace Aetheria.UnityClient
             DrawXpBar();
             DrawActionBar();
             DrawMessages();
+            DrawCastBar();
             DrawChat();
             DrawLootWindow();
             DrawBankWindow();
@@ -1442,7 +1456,7 @@ namespace Aetheria.UnityClient
             }
 
             GUI.Label(new Rect(frame.x + 8, frame.y + 64, frame.width - 16, 26),
-                "Or " + _client.Gold +
+                FormatMoney(_client.Gold) +
                 (_client.InInstance ? "   [INSTANCE]" : "") +
                 (inSanctuary ? "   <color=#70d0ff>⛨ Sanctuaire</color>" : "") +
                 (_client.PartySize > 0 ? "   Groupe " + _client.PartySize : ""), Rich());
@@ -1605,6 +1619,13 @@ namespace Aetheria.UnityClient
                 {
                     DrawBar(new Rect(x - 22, y, 44, 6), view.Health / (float)view.MaxHealth,
                         new Color(0.2f, 0.8f, 0.25f), "");
+
+                    // Incantation: a small golden bar under the health bar.
+                    if (view.CastAbilityId != 0)
+                    {
+                        DrawBar(new Rect(x - 22, y + 7, 44, 4), view.CastFraction,
+                            new Color(0.95f, 0.8f, 0.25f), "");
+                    }
                 }
             }
         }
@@ -1710,10 +1731,10 @@ namespace Aetheria.UnityClient
 
             // Gold, both sides.
             GUI.Label(new Rect(win.x + 14, y, 220, 20),
-                "Or sur toi : <b>" + _client.Gold + "</b> · au coffre : <b>" + _client.BankGold + "</b>", Rich());
-            if (GUI.Button(new Rect(win.x + W - 224, y - 2, 68, 22), "Dép. 10"))
+                "Sur toi : <b>" + FormatMoney(_client.Gold) + "</b> · au coffre : <b>" + FormatMoney(_client.BankGold) + "</b>", Rich());
+            if (GUI.Button(new Rect(win.x + W - 224, y - 2, 68, 22), "Dép. 1pa"))
             {
-                _client.SendBank(BankOp.DepositGold, 0, 10);
+                _client.SendBank(BankOp.DepositGold, 0, 100);
             }
 
             if (GUI.Button(new Rect(win.x + W - 152, y - 2, 68, 22), "Dép. tout"))
@@ -1721,9 +1742,9 @@ namespace Aetheria.UnityClient
                 _client.SendBank(BankOp.DepositGold, 0, _client.Gold);
             }
 
-            if (GUI.Button(new Rect(win.x + W - 80, y - 2, 68, 22), "Ret. 10"))
+            if (GUI.Button(new Rect(win.x + W - 80, y - 2, 68, 22), "Ret. 1pa"))
             {
-                _client.SendBank(BankOp.WithdrawGold, 0, 10);
+                _client.SendBank(BankOp.WithdrawGold, 0, 100);
             }
 
             y += 30f;
@@ -1799,7 +1820,7 @@ namespace Aetheria.UnityClient
 
             if (_client.OpenCorpseGold > 0)
             {
-                GUI.Label(new Rect(win.x + 12, y + 3, 160, 20), "Or : " + _client.OpenCorpseGold);
+                GUI.Label(new Rect(win.x + 12, y + 3, 160, 20), FormatMoney(_client.OpenCorpseGold), Rich());
                 if (GUI.Button(new Rect(win.x + win.width - 86, y, 74, 22), "Prendre"))
                 {
                     _client.SendLootItem(_client.OpenCorpseId, 0);
@@ -1875,7 +1896,7 @@ namespace Aetheria.UnityClient
             GUI.Label(new Rect(rx, y, win.xMax - rx - 12, 20),
                 "XP " + _client.TotalXp + (_client.XpForNextLevel > 0 ? " / " + _client.XpForNextLevel : " (max)"));
             y += 18f;
-            GUI.Label(new Rect(rx, y, win.xMax - rx - 12, 20), "Or : <b>" + _client.Gold + "</b>", Rich());
+            GUI.Label(new Rect(rx, y, win.xMax - rx - 12, 20), "<b>" + FormatMoney(_client.Gold) + "</b>", Rich());
             y += 26f;
 
             // Equipment slots: icon squares; click a slot to UNEQUIP into the bags.
@@ -2065,7 +2086,7 @@ namespace Aetheria.UnityClient
             // My side.
             GUI.Label(new Rect(leftX, topY, colW, 18), "<b>Mon offre</b>" +
                 (_client.TradeMyAccepted ? "  <color=#50e060>✔</color>" : ""), Rich());
-            GUI.Label(new Rect(leftX, topY + 20, 90, 20), "Or : " + _myOfferGold);
+            GUI.Label(new Rect(leftX, topY + 20, 110, 20), FormatMoney(_myOfferGold), Rich());
             if (GUI.Button(new Rect(leftX + 92, topY + 19, 30, 20), "+10") && _client.Gold >= _myOfferGold + 10)
             {
                 _myOfferGold += 10;
@@ -2122,7 +2143,7 @@ namespace Aetheria.UnityClient
             // Their side.
             GUI.Label(new Rect(rightX, topY, colW, 18), "<b>Son offre</b>" +
                 (_client.TradeTheirAccepted ? "  <color=#50e060>✔</color>" : ""), Rich());
-            GUI.Label(new Rect(rightX, topY + 20, colW, 20), "Or : " + _client.TradeTheirGold);
+            GUI.Label(new Rect(rightX, topY + 20, colW, 20), FormatMoney(_client.TradeTheirGold), Rich());
             float ty = topY + 44f;
             IReadOnlyList<ItemStack> theirs = _client.TradeTheirItems;
             for (int i = 0; i < theirs.Count; i++)
@@ -2424,6 +2445,20 @@ namespace Aetheria.UnityClient
 
         }
 
+        /// <summary>Your own WoW-style cast bar: ability name + golden progress, bottom-centre.</summary>
+        private void DrawCastBar()
+        {
+            EntitySnapshot self;
+            if (!_client.TryGetSelf(out self) || self.CastAbilityId == 0) { return; }
+
+            const float W = 260f;
+            var rect = new Rect((VirtW - W) / 2f, VirtH - 150f, W, 22f);
+            string name = Data.GetAbility(self.CastAbilityId).Name;
+            DrawBar(rect, self.CastProgress / 255f, new Color(0.95f, 0.78f, 0.20f), "");
+            GUI.Label(new Rect(rect.x, rect.y + 1, rect.width, 20),
+                "<size=11><b>" + name + "</b></size>", RichCentered());
+        }
+
         /// <summary>
         /// The world chat: ONLY what players write — no combat spam, no system noise. Enter opens
         /// the input, Enter sends, Escape cancels.
@@ -2462,6 +2497,31 @@ namespace Aetheria.UnityClient
                 "<size=10>v" + SimulationConstants.GameVersion + " · proto " +
                 SimulationConstants.ProtocolVersion + "</size>",
                 new GUIStyle(GUI.skin.label) { richText = true, alignment = TextAnchor.UpperRight });
+        }
+
+        /// <summary>
+        /// WoW-style money: the stored integer is COPPER; 100 pc = 1 pa (argent), 100 pa = 1 po
+        /// (or). Shows only the coins you actually have: "3po 12pa 45pc", "8pa 20pc", "35pc".
+        /// </summary>
+        private static string FormatMoney(int copper)
+        {
+            if (copper < 0) { copper = 0; }
+            int gold = copper / 10000;
+            int silver = copper % 10000 / 100;
+            int cents = copper % 100;
+
+            if (gold > 0)
+            {
+                return "<color=#ffd700>" + gold + "po</color> <color=#c0c0c0>" + silver +
+                       "pa</color> <color=#b87333>" + cents + "pc</color>";
+            }
+
+            if (silver > 0)
+            {
+                return "<color=#c0c0c0>" + silver + "pa</color> <color=#b87333>" + cents + "pc</color>";
+            }
+
+            return "<color=#b87333>" + cents + "pc</color>";
         }
 
         private static void DrawBar(Rect rect, float fill, Color color, string caption)

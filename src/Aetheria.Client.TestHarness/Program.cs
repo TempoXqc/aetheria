@@ -114,8 +114,15 @@ while (clock.Elapsed.TotalSeconds < options.Seconds)
             int target = client.FindNearestMonster();
             if (target >= 0 && client.TryGetSelf(out var self) && client.TryGetEntity(target, out var mob))
             {
-                moveDir = (mob.Position - self.Position).Normalized(); // close in on the monster
-                client.SendUseAbility(options.AbilityId, target);       // server enforces range/cooldown
+                // Ranged abilities (Firebolt/Shot…) are INCANTED: stand still in range so the
+                // cast can complete (moving cancels it, WoW rules). Melee walks all the way in.
+                float distSq = Vec2.DistanceSquared(self.Position, mob.Position);
+                bool ranged = options.AbilityId is 2 or 3 or 21 or 22;
+                float standAt = ranged ? 9f : 2.0f;
+                moveDir = distSq > standAt * standAt
+                    ? (mob.Position - self.Position).Normalized()
+                    : Vec2.Zero;
+                client.SendUseAbility(options.AbilityId, target); // server enforces range/cooldown
             }
         }
 

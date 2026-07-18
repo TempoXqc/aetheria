@@ -178,15 +178,15 @@ public sealed class GameData
         [
             // Basic attacks (level 1). SkillLineId ties each to a proficiency: 1 Swords, 2 Fire, 3 Marksmanship.
             new AbilityDefinition { Id = 1, Name = "Slash",    BaseDamage = 10, Range = 2.5f, CooldownTicks = 10, ResourceCost = 0,  SkillLineId = 1 },
-            new AbilityDefinition { Id = 2, Name = "Firebolt", BaseDamage = 16, Range = 12f,  CooldownTicks = 16, ResourceCost = 20, SkillLineId = 2 },
+            new AbilityDefinition { Id = 2, Name = "Firebolt", BaseDamage = 16, Range = 12f,  CooldownTicks = 16, ResourceCost = 20, SkillLineId = 2, CastTimeTicks = 30 },
             new AbilityDefinition { Id = 3, Name = "Shot",     BaseDamage = 12, Range = 10f,  CooldownTicks = 12, ResourceCost = 30, SkillLineId = 3 },
             new AbilityDefinition { Id = 4, Name = "Claw",     BaseDamage = 6,  Range = 2.5f, CooldownTicks = 12, ResourceCost = 0 },
             // Self-cast recovery, all classes: 4%/s of max health (and max mana) for 10s, 30s cooldown.
             new AbilityDefinition { Id = 5, Name = "Renew", Range = 0f, CooldownTicks = 600, ResourceCost = 0, Effect = EffectType.Regen, EffectMagnitude = 0.04f, EffectDurationTicks = 200 },
             // Advanced abilities (unlock at level 3)
             new AbilityDefinition { Id = 20, Name = "Whirlwind",  BaseDamage = 25, Range = 3f,  CooldownTicks = 40, ResourceCost = 25, UnlockLevel = 3, SkillLineId = 1 },
-            new AbilityDefinition { Id = 21, Name = "Frostbolt",  BaseDamage = 24, Range = 12f, CooldownTicks = 24, ResourceCost = 30, UnlockLevel = 3, SkillLineId = 2 },
-            new AbilityDefinition { Id = 22, Name = "Aimed Shot", BaseDamage = 22, Range = 12f, CooldownTicks = 30, ResourceCost = 50, UnlockLevel = 3, SkillLineId = 3 },
+            new AbilityDefinition { Id = 21, Name = "Frostbolt",  BaseDamage = 24, Range = 12f, CooldownTicks = 24, ResourceCost = 30, UnlockLevel = 3, SkillLineId = 2, CastTimeTicks = 40 },
+            new AbilityDefinition { Id = 22, Name = "Aimed Shot", BaseDamage = 22, Range = 12f, CooldownTicks = 30, ResourceCost = 50, UnlockLevel = 3, SkillLineId = 3, CastTimeTicks = 30 },
             // Racials (self-cast, no resource cost, long cooldown)
             new AbilityDefinition { Id = 10, Name = "Second Wind",       Range = 0f, CooldownTicks = 1200, Effect = EffectType.Heal,          EffectMagnitude = 0.25f, EffectDurationTicks = 0 },
             new AbilityDefinition { Id = 11, Name = "Stoneform",         Range = 0f, CooldownTicks = 1200, Effect = EffectType.BuffDefense,   EffectMagnitude = 0.50f, EffectDurationTicks = 160 },

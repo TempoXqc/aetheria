@@ -55,6 +55,10 @@ namespace Aetheria.UnityClient
         public int Level { get; private set; } = 1;
         public Faction Faction { get; private set; }
 
+        /// <summary>Ability being incanted (0 = none) and its progress, for nameplate cast bars.</summary>
+        public byte CastAbilityId { get; private set; }
+        public float CastFraction { get; private set; }
+
         /// <summary>Where nameplates and prompts should anchor, above the model's head.</summary>
         public float HeadHeight
         {
@@ -108,6 +112,8 @@ namespace Aetheria.UnityClient
             Level = snapshot.Level;
             Faction = snapshot.Faction;
             IsBoss = Kind == EntityKind.Monster && snapshot.MaxHealth >= 300;
+            CastAbilityId = snapshot.CastAbilityId;
+            CastFraction = snapshot.CastProgress / 255f;
 
             // Server plane (X, Y) maps onto Unity ground plane (X, Z); models stand on y=0.
             _targetPosition = new Vector3(snapshot.Position.X, 0f, snapshot.Position.Y);

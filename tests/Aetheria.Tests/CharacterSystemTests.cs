@@ -64,7 +64,14 @@ public static class CharacterSystemTests
 
         int startMana = (int)mage.CurrentResource;
         Assert.True(world.TryUseAbility(mage.Id, mage.BasicAbilityId, target.Id));
-        Assert.Equal(startMana - 20, (int)mage.CurrentResource);
+
+        // Firebolt is an INCANTATION now: the mana is paid when the cast completes.
+        for (int i = 0; i <= 31 && mage.IsCasting; i++)
+        {
+            world.Step(SimulationConstants.TickDelta);
+        }
+
+        Assert.True((int)mage.CurrentResource < startMana, "mana must be spent at cast completion");
 
         // Drain the pool: the next cast must fail and deal no damage.
         mage.SpendResource(mage.MaxResource);

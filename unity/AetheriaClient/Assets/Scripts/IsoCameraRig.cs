@@ -54,6 +54,12 @@ namespace Aetheria.UnityClient
             Place();
         }
 
+        /// <summary>True while either mouse button is steering the camera.</summary>
+        public bool Dragging
+        {
+            get { return Input.GetMouseButton(0) || Input.GetMouseButton(1); }
+        }
+
         private void LateUpdate()
         {
             float scroll = Input.GetAxis("Mouse ScrollWheel");
@@ -62,8 +68,9 @@ namespace Aetheria.UnityClient
                 _distance = Mathf.Clamp(_distance - (scroll * 5f), MinZoom, MaxZoom);
             }
 
-            // Mouselook: the camera turns ONLY while the right button is held.
-            if (Input.GetMouseButton(1))
+            // WoW mouselook: RIGHT drag turns camera AND character (the behaviour reads our yaw);
+            // LEFT drag orbits the camera freely WITHOUT touching the character's direction.
+            if (Dragging)
             {
                 Yaw += Input.GetAxis("Mouse X") * Sensitivity;
                 Pitch = Mathf.Clamp(Pitch - (Input.GetAxis("Mouse Y") * Sensitivity), MinPitch, MaxPitch);
@@ -71,6 +78,22 @@ namespace Aetheria.UnityClient
 
             _focus = Vector3.Lerp(_focus, Target, Time.deltaTime * FollowLerp);
             Place();
+        }
+
+        /// <summary>
+        /// Softly swing the camera back behind the character (called while running with no drag,
+        /// like WoW's camera-follow). Never fights an active drag.
+        /// </summary>
+        public void RecenterBehind(float facingRadians, float dt)
+        {
+            if (Dragging)
+            {
+                return;
+            }
+
+            var dir = new Vector3(Mathf.Cos(facingRadians), 0f, Mathf.Sin(facingRadians));
+            float desired = Mathf.Atan2(dir.x, dir.z) * Mathf.Rad2Deg;
+            Yaw = Mathf.LerpAngle(Yaw, desired, dt * 2.2f);
         }
 
         private void Place()

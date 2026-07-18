@@ -202,11 +202,17 @@ public readonly struct EntitySnapshot
 
     public bool IsJumping => (Flags & 1) != 0;
 
+    /// <summary>Ability currently being INCANTED (0 = not casting). Drives cast bars.</summary>
+    public readonly byte CastAbilityId;
+
+    /// <summary>Cast progress, 0..255 over the incantation.</summary>
+    public readonly byte CastProgress;
+
     public EntitySnapshot(
         int id, EntityKind kind, Faction faction, Vec2 position,
         int health, int maxHealth, int resource, int maxResource, float facingRadians = 0f,
         byte level = 1, string name = "", byte raceId = 0, byte classId = 0, Gender gender = Gender.Male,
-        Appearance appearance = default, byte flags = 0)
+        Appearance appearance = default, byte flags = 0, byte castAbilityId = 0, byte castProgress = 0)
     {
         Id = id;
         Kind = kind;
@@ -224,6 +230,8 @@ public readonly struct EntitySnapshot
         Gender = gender;
         Appearance = appearance;
         Flags = flags;
+        CastAbilityId = castAbilityId;
+        CastProgress = castProgress;
     }
 
     public void Write(PacketWriter w)
@@ -245,6 +253,8 @@ public readonly struct EntitySnapshot
         w.WriteByte((byte)Gender);
         Appearance.Write(w);
         w.WriteByte(Flags);
+        w.WriteByte(CastAbilityId);
+        w.WriteByte(CastProgress);
     }
 
     public static EntitySnapshot Read(ref PacketReader r)
@@ -266,9 +276,11 @@ public readonly struct EntitySnapshot
         var gender = (Gender)r.ReadByte();
         Appearance appearance = Appearance.Read(ref r);
         byte flags = r.ReadByte();
+        byte castAbilityId = r.ReadByte();
+        byte castProgress = r.ReadByte();
         return new EntitySnapshot(
             id, kind, faction, new Vec2(x, y), health, maxHealth, resource, maxResource, facing, level, name,
-            raceId, classId, gender, appearance, flags);
+            raceId, classId, gender, appearance, flags, castAbilityId, castProgress);
     }
 }
 

@@ -23,6 +23,12 @@ public sealed class AbilityDefinition
     /// <summary>Cooldown in simulation ticks between uses.</summary>
     public int CooldownTicks { get; init; } = 10;
 
+    /// <summary>
+    /// Incantation time in ticks (0 = instant). Cast-time spells start a visible cast bar; MOVING
+    /// cancels the cast; resource and cooldown are only paid when the cast completes — like WoW.
+    /// </summary>
+    public int CastTimeTicks { get; init; }
+
     /// <summary>Resource spent to use the ability (rage/mana/energy). 0 for free abilities.</summary>
     public int ResourceCost { get; init; }
 

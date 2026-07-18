@@ -93,6 +93,42 @@ public sealed class ServerEntity
     /// <summary>Tick at which this entity is removed outright (0 = never). Used by monster corpses.</summary>
     public uint DespawnAtTick { get; set; }
 
+    // --- Incantation (cast-time spells) ---
+    public byte CastAbilityId { get; private set; }
+    public int CastTargetId { get; private set; }
+    public uint CastStartTick { get; private set; }
+    public uint CastEndTick { get; private set; }
+
+    public bool IsCasting => CastAbilityId != 0;
+
+    public void BeginCast(byte abilityId, int targetId, uint now, int castTicks)
+    {
+        CastAbilityId = abilityId;
+        CastTargetId = targetId;
+        CastStartTick = now;
+        CastEndTick = now + (uint)castTicks;
+    }
+
+    public void CancelCast()
+    {
+        CastAbilityId = 0;
+        CastTargetId = 0;
+        CastStartTick = 0;
+        CastEndTick = 0;
+    }
+
+    /// <summary>Cast progress 0..255 at the given tick (for cast bars in snapshots).</summary>
+    public byte CastProgressAt(uint tick)
+    {
+        if (!IsCasting || CastEndTick <= CastStartTick)
+        {
+            return 0;
+        }
+
+        float t = (tick - CastStartTick) / (float)(CastEndTick - CastStartTick);
+        return (byte)System.Math.Clamp((int)(t * 255f), 0, 255);
+    }
+
     /// <summary>Tick the current cosmetic jump started at (0 = not jumping).</summary>
     public uint JumpStartTick { get; set; }
 
