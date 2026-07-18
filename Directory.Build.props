@@ -27,6 +27,14 @@
     <!-- Single artifacts/ output tree (SDK-native layout, restore-safe). -->
     <UseArtifactsOutput>true</UseArtifactsOutput>
     <ArtifactsPath>$(MSBuildThisFileDirectory)artifacts</ArtifactsPath>
+
+    <!--
+      No native apphost .exe: `dotnet run` launches the app through the SIGNED dotnet host
+      instead of an unsigned freshly-built executable. This keeps Windows Application Control /
+      Smart App Control happy on dev machines. (Steam builds will ship a properly signed
+      apphost via `dotnet publish` with UseAppHost=true when the time comes.)
+    -->
+    <UseAppHost>false</UseAppHost>
   </PropertyGroup>
 
 </Project>
