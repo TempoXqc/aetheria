@@ -5,7 +5,7 @@ using Aetheria.Shared.Math;
 using Aetheria.Shared.Net;
 using Aetheria.Shared.Protocol;
 
-namespace Aetheria.Client.TestHarness;
+namespace Aetheria.Shared.Client;
 
 /// <summary>
 /// A headless client connection state machine used to exercise the server end-to-end without a
@@ -122,7 +122,7 @@ public sealed class GameClient
         return nearest;
     }
 
-    public void SendPing() => Send(new Ping(Environment.TickCount64));
+    public void SendPing() => Send(new Ping(SharedClock.NowMs));
 
     public void SendDisconnect() => Send(new Disconnect());
 
@@ -196,7 +196,7 @@ public sealed class GameClient
 
                 case MessageType.Pong:
                     Pong pong = Pong.Read(ref reader);
-                    LastRttMs = Environment.TickCount64 - pong.ClientTimeMs;
+                    LastRttMs = SharedClock.NowMs - pong.ClientTimeMs;
                     break;
 
                 case MessageType.PlayerStatus:

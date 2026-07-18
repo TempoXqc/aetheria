@@ -61,14 +61,19 @@ public sealed class PacketWriter
     public void WriteFloat(float value)
     {
         Ensure(4);
+#if NETSTANDARD2_1
+        // WriteSingleLittleEndian is .NET 5+; reinterpret through the int bits instead.
+        BinaryPrimitives.WriteInt32LittleEndian(_buffer.AsSpan(_length), BitConverter.SingleToInt32Bits(value));
+#else
         BinaryPrimitives.WriteSingleLittleEndian(_buffer.AsSpan(_length), value);
+#endif
         _length += 4;
     }
 
     /// <summary>Write a UTF-8 string prefixed with a 16-bit byte-length (max 65535 bytes).</summary>
     public void WriteString(string value)
     {
-        ArgumentNullException.ThrowIfNull(value);
+        Guard.NotNull(value, nameof(value));
         int byteCount = Encoding.UTF8.GetByteCount(value);
         if (byteCount > ushort.MaxValue)
         {

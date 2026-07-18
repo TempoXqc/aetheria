@@ -1,4 +1,6 @@
+#if !NETSTANDARD2_1
 using System.Text.Json;
+#endif
 using Aetheria.Shared.Combat;
 using Aetheria.Shared.Items;
 
@@ -87,6 +89,12 @@ public sealed class GameData
     /// </summary>
     public static GameData LoadFromDirectoryOrDefault(string directory)
     {
+#if NETSTANDARD2_1
+        // System.Text.Json is not in-box on netstandard2.1 (Unity). Clients render, they do not
+        // author content — the built-in defaults match the server's shipped JSON.
+        _ = directory;
+        return CreateDefault();
+#else
         GameData defaults = CreateDefault();
 
         var races = LoadList<RaceDefinition>(Path.Combine(directory, "races.json")) ?? defaults.Races.ToList();
@@ -98,8 +106,10 @@ public sealed class GameData
         var instances = LoadList<InstanceDefinition>(Path.Combine(directory, "instances.json")) ?? defaults.Instances.ToList();
 
         return new GameData(races, classes, abilities, monsters, items, progression, instances);
+#endif
     }
 
+#if !NETSTANDARD2_1
     private static readonly JsonSerializerOptions JsonOptions = new()
     {
         PropertyNameCaseInsensitive = true,
@@ -142,6 +152,7 @@ public sealed class GameData
             return null;
         }
     }
+#endif
 
     /// <summary>True if the race is allowed to play the class (the balance matrix).</summary>
     public bool IsClassAllowedForRace(byte raceId, byte classId) => GetRace(raceId).AllowsClass(classId);

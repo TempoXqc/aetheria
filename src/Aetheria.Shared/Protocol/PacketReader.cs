@@ -57,7 +57,12 @@ public ref struct PacketReader
     public float ReadFloat()
     {
         Require(4);
+#if NETSTANDARD2_1
+        // ReadSingleLittleEndian is .NET 5+; reinterpret through the int bits instead.
+        float value = BitConverter.Int32BitsToSingle(BinaryPrimitives.ReadInt32LittleEndian(_data.Slice(_position)));
+#else
         float value = BinaryPrimitives.ReadSingleLittleEndian(_data.Slice(_position));
+#endif
         _position += 4;
         return value;
     }

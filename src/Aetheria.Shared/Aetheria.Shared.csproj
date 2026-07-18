@@ -3,6 +3,15 @@
   <PropertyGroup>
     <RootNamespace>Aetheria.Shared</RootNamespace>
     <AssemblyName>Aetheria.Shared</AssemblyName>
+
+    <!--
+      Dual-target: net10.0 for the server/tools, netstandard2.1 for the Unity client (Unity 2022.2+
+      consumes netstandard2.1 assemblies and supports the C# language features we use). The few
+      runtime APIs missing from netstandard2.1 are shimmed in Polyfills.cs / #if blocks.
+      Clearing TargetFramework overrides the single-target default from Directory.Build.props.
+    -->
+    <TargetFramework></TargetFramework>
+    <TargetFrameworks>net10.0;netstandard2.1</TargetFrameworks>
   </PropertyGroup>
 
 </Project>

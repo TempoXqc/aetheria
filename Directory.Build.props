@@ -17,6 +17,9 @@
     <AnalysisLevel>latest-recommended</AnalysisLevel>
     <EnforceCodeStyleInBuild>true</EnforceCodeStyleInBuild>
 
+    <!-- Offline-friendly restore: don't fetch vulnerability data from nuget.org. -->
+    <NuGetAudit>false</NuGetAudit>
+
     <!-- Deterministic, reproducible builds. -->
     <Deterministic>true</Deterministic>
     <ContinuousIntegrationBuild Condition="'$(CI)' == 'true'">true</ContinuousIntegrationBuild>

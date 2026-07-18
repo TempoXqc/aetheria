@@ -80,7 +80,7 @@ public sealed class SpatialGrid
     /// </summary>
     public void QueryRadius(Vec2 center, float radius, ICollection<int> results)
     {
-        ArgumentNullException.ThrowIfNull(results);
+        Guard.NotNull(results, nameof(results));
         results.Clear();
 
         if (radius < 0f)

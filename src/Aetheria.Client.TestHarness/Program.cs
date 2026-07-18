@@ -1,6 +1,6 @@
 using System.Diagnostics;
 using System.Globalization;
-using Aetheria.Client.TestHarness;
+using Aetheria.Shared.Client;
 using Aetheria.Shared;
 using Aetheria.Shared.Combat;
 using Aetheria.Shared.Items;

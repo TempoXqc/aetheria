@@ -41,7 +41,11 @@ public sealed class UdpClientTransport : IClientTransport
 
         try
         {
+#if NETSTANDARD2_1
+            _socket.Send(data.ToArray(), SocketFlags.None); // conservative: span Send varies pre-.NET5
+#else
             _socket.Send(data, SocketFlags.None);
+#endif
         }
         catch (SocketException)
         {

@@ -70,7 +70,11 @@ public sealed class UdpServerTransport : IServerTransport
 
         try
         {
+#if NETSTANDARD2_1
+            _socket.SendTo(data.ToArray(), SocketFlags.None, conn.EndPoint); // span SendTo is .NET 6+
+#else
             _socket.SendTo(data, SocketFlags.None, conn.EndPoint);
+#endif
         }
         catch (SocketException)
         {
@@ -135,21 +139,21 @@ public sealed class UdpServerTransport : IServerTransport
     {
         if (_peersByEndpoint.TryGetValue(remote, out PeerId existing))
         {
-            _peers[existing].LastSeenMs = Environment.TickCount64;
+            _peers[existing].LastSeenMs = SharedClock.NowMs;
             return existing;
         }
 
         var peer = new PeerId(_nextPeerId++);
         var clonedEndpoint = (EndPoint)remote; // ReceiveFrom hands back a fresh IPEndPoint each call.
         _peersByEndpoint[clonedEndpoint] = peer;
-        _peers[peer] = new PeerConnection(clonedEndpoint) { LastSeenMs = Environment.TickCount64 };
+        _peers[peer] = new PeerConnection(clonedEndpoint) { LastSeenMs = SharedClock.NowMs };
         _events.Enqueue(ServerTransportEvent.Connected(peer));
         return peer;
     }
 
     private void CheckTimeouts()
     {
-        long now = Environment.TickCount64;
+        long now = SharedClock.NowMs;
         List<PeerId>? expired = null;
 
         foreach ((PeerId peer, PeerConnection conn) in _peers)
