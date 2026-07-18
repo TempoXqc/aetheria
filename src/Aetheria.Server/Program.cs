@@ -31,7 +31,9 @@ Console.CancelKeyPress += (_, e) =>
     cts.Cancel();
 };
 
-Console.WriteLine($"Aetheria server listening on UDP {port} at {SimulationConstants.TickRate} Hz.");
+Console.WriteLine(
+    $"Aetheria server v{SimulationConstants.GameVersion} (protocol v{SimulationConstants.ProtocolVersion}) " +
+    $"listening on UDP {port} at {SimulationConstants.TickRate} Hz.");
 Console.WriteLine("Press Ctrl+C to stop.");
 
 var loop = new FixedStepLoop(SimulationConstants.TickRate, dt =>

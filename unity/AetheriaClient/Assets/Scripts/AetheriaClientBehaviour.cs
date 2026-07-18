@@ -672,6 +672,7 @@ namespace Aetheria.UnityClient
             DrawActionBar();
             DrawMessages();
             DrawLootWindow();
+            DrawVersionTag();
 
             if (_showHelp)
             {
@@ -690,7 +691,8 @@ namespace Aetheria.UnityClient
         {
             const int W = 340;
             Rect box = new Rect((VirtW - W) / 2f, VirtH * 0.16f, W, 360);
-            GUI.Box(box, "AETHERIA — Connexion");
+            GUI.Box(box, "AETHERIA — Connexion   <size=10>v" + SimulationConstants.GameVersion +
+                         " · proto " + SimulationConstants.ProtocolVersion + "</size>", RichCenteredBox());
 
             GUILayout.BeginArea(new Rect(box.x + 15, box.y + 30, W - 30, box.height - 45));
 
@@ -1080,6 +1082,14 @@ namespace Aetheria.UnityClient
                 GUI.Label(new Rect(12, y + 22 + (i * 17), 480, 18),
                     "<size=11>" + _combatLog[i] + "</size>", Rich());
             }
+        }
+
+        private void DrawVersionTag()
+        {
+            GUI.Label(new Rect(VirtW - 150, 8, 142, 18),
+                "<size=10>v" + SimulationConstants.GameVersion + " · proto " +
+                SimulationConstants.ProtocolVersion + "</size>",
+                new GUIStyle(GUI.skin.label) { richText = true, alignment = TextAnchor.UpperRight });
         }
 
         private void DrawHelp()
