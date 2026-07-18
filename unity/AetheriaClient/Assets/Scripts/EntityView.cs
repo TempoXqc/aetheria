@@ -15,6 +15,7 @@ namespace Aetheria.UnityClient
 
         private Renderer _renderer;
         private Vector3 _targetPosition;
+        private Quaternion _targetRotation = Quaternion.identity;
         private bool _hasTarget;
 
         public int EntityId { get; private set; }
@@ -23,21 +24,36 @@ namespace Aetheria.UnityClient
         public int MaxHealth { get; private set; }
         public bool IsBoss { get; private set; }
 
+        private Transform _body; // rotated child, so facing doesn't fight the position lerp
+
         public static EntityView Create(int entityId, EntityKind kind)
         {
-            PrimitiveType shape = kind == EntityKind.Corpse ? PrimitiveType.Cube : PrimitiveType.Capsule;
-            GameObject go = GameObject.CreatePrimitive(shape);
-            go.name = kind + "#" + entityId;
-            Object.Destroy(go.GetComponent<Collider>()); // visuals only; the server owns physics/hits
-
+            var go = new GameObject(kind + "#" + entityId);
             var view = go.AddComponent<EntityView>();
             view.EntityId = entityId;
             view.Kind = kind;
-            view._renderer = go.GetComponent<Renderer>();
+
+            PrimitiveType shape = kind == EntityKind.Corpse ? PrimitiveType.Cube : PrimitiveType.Capsule;
+            GameObject body = GameObject.CreatePrimitive(shape);
+            body.name = "Body";
+            Object.Destroy(body.GetComponent<Collider>()); // visuals only; the server owns physics/hits
+            body.transform.SetParent(go.transform, false);
+            view._body = body.transform;
+            view._renderer = body.GetComponent<Renderer>();
 
             if (kind == EntityKind.Corpse)
             {
-                go.transform.localScale = new Vector3(0.9f, 0.25f, 0.9f);
+                body.transform.localScale = new Vector3(0.9f, 0.25f, 0.9f);
+            }
+            else
+            {
+                // A small "nose" so the facing direction is readable at a glance.
+                GameObject nose = GameObject.CreatePrimitive(PrimitiveType.Cube);
+                nose.name = "Nose";
+                Object.Destroy(nose.GetComponent<Collider>());
+                nose.transform.SetParent(body.transform, false);
+                nose.transform.localScale = new Vector3(0.22f, 0.22f, 0.45f);
+                nose.transform.localPosition = new Vector3(0f, 0.35f, 0.5f);
             }
 
             return view;
@@ -56,6 +72,17 @@ namespace Aetheria.UnityClient
             {
                 transform.position = _targetPosition; // first sight: snap, don't glide across the map
                 _hasTarget = true;
+            }
+
+            // Facing: server plane angle (0 = +X) → Unity yaw on the ground plane.
+            if (Kind != EntityKind.Corpse)
+            {
+                var facingDir = new Vector3(
+                    Mathf.Cos(snapshot.FacingRadians), 0f, Mathf.Sin(snapshot.FacingRadians));
+                if (facingDir.sqrMagnitude > 0.001f)
+                {
+                    _targetRotation = Quaternion.LookRotation(facingDir, Vector3.up);
+                }
             }
 
             // Raid-scale monsters read as bosses: bulk them up.
@@ -101,6 +128,11 @@ namespace Aetheria.UnityClient
             if (_hasTarget)
             {
                 transform.position = Vector3.Lerp(transform.position, _targetPosition, Time.deltaTime * LerpSpeed);
+            }
+
+            if (_body != null && Kind != EntityKind.Corpse)
+            {
+                _body.rotation = Quaternion.Slerp(_body.rotation, _targetRotation, Time.deltaTime * 14f);
             }
         }
     }

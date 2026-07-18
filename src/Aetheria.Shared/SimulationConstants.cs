@@ -59,5 +59,5 @@ public static class SimulationConstants
     public const int MaxPartySize = 40;
 
     /// <summary>Protocol version — bump on any wire-format change; handshake rejects mismatches.</summary>
-    public const byte ProtocolVersion = 6;
+    public const byte ProtocolVersion = 7;
 }

@@ -226,7 +226,7 @@ public sealed class World
     /// Record a movement intent for a living entity, ignoring inputs that arrive out of order and
     /// clamping the direction to unit length (so a client cannot move faster with an oversized vector).
     /// </summary>
-    public void ApplyInput(int entityId, uint sequence, Vec2 moveDirection)
+    public void ApplyInput(int entityId, uint sequence, Vec2 moveDirection, float facingRadians = 0f)
     {
         if (!_entities.TryGetValue(entityId, out ServerEntity? entity) || entity.IsDead)
         {
@@ -240,6 +240,7 @@ public sealed class World
 
         entity.LastInputSequence = sequence;
         entity.MoveIntent = ClampToUnit(moveDirection);
+        entity.FacingRadians = facingRadians;
     }
 
     /// <summary>
@@ -377,7 +378,8 @@ public sealed class World
             {
                 result.Add(new EntitySnapshot(
                     e.Id, e.Kind, e.Faction, e.Position,
-                    e.Health, e.EffectiveMaxHealth, (int)e.CurrentResource, e.EffectiveMaxResource));
+                    e.Health, e.EffectiveMaxHealth, (int)e.CurrentResource, e.EffectiveMaxResource,
+                    e.FacingRadians));
             }
         }
 
@@ -605,6 +607,97 @@ public sealed class World
         }
     }
 
+    /// <summary>Common validation for all corpse interactions: living player, real corpse, in range.</summary>
+    private bool ValidateLooter(int looterId, int corpseId, out ServerEntity looter, out ServerEntity corpse)
+    {
+        looter = null!;
+        corpse = null!;
+
+        if (!_entities.TryGetValue(looterId, out ServerEntity? l) || l.IsDead ||
+            l.Kind != EntityKind.Player ||
+            !_entities.TryGetValue(corpseId, out ServerEntity? c) ||
+            c.Kind != EntityKind.Corpse || c.LootContainer is null)
+        {
+            return false;
+        }
+
+        if (Vec2.DistanceSquared(l.Position, c.Position)
+            > SimulationConstants.LootRange * SimulationConstants.LootRange)
+        {
+            return false; // too far away
+        }
+
+        looter = l;
+        corpse = c;
+        return true;
+    }
+
+    /// <summary>
+    /// Inspect a corpse's contents (for the loot window). Range-validated; returns false if the
+    /// corpse cannot be opened by this looter.
+    /// </summary>
+    public bool TryOpenCorpse(int looterId, int corpseId, out int gold, out List<ItemStack> items)
+    {
+        gold = 0;
+        items = new List<ItemStack>();
+
+        if (!ValidateLooter(looterId, corpseId, out _, out ServerEntity corpse))
+        {
+            return false;
+        }
+
+        gold = corpse.LootContainer!.Gold;
+        items.AddRange(corpse.LootContainer.Stacks);
+        return true;
+    }
+
+    /// <summary>
+    /// Take ONE thing from a corpse: all of the given item id, or the gold when itemId is 0.
+    /// The corpse despawns once fully emptied. Returns true if something was taken.
+    /// </summary>
+    public bool TryLootItem(int looterId, int corpseId, byte itemId)
+    {
+        if (!ValidateLooter(looterId, corpseId, out ServerEntity looter, out ServerEntity corpse))
+        {
+            return false;
+        }
+
+        Inventory loot = corpse.LootContainer!;
+        bool took = false;
+
+        if (itemId == 0)
+        {
+            int gold = loot.TakeAllGold();
+            if (gold > 0)
+            {
+                looter.Inventory.AddGold(gold);
+                took = true;
+            }
+        }
+        else
+        {
+            int available = loot.CountOf(itemId);
+            if (available > 0)
+            {
+                ItemDefinition def = _gameData.GetItem(itemId);
+                int leftover = looter.Inventory.TryAdd(itemId, available, def.Stackable, def.MaxStack);
+                int moved = available - leftover;
+                if (moved > 0)
+                {
+                    loot.RemoveQuantity(itemId, moved);
+                    took = true;
+                }
+            }
+        }
+
+        if (loot.IsEmpty)
+        {
+            Despawn(corpse.Id); // all loot recovered — the body disappears
+        }
+
+        return took;
+    }
+
     /// <summary>
     /// Loot everything from a corpse into the looter's inventory (gold + as many items as fit).
     /// Validates the looter is a living player within range. The corpse despawns once emptied.
@@ -612,21 +705,12 @@ public sealed class World
     /// </summary>
     public bool TryLootCorpse(int looterId, int corpseId)
     {
-        if (!_entities.TryGetValue(looterId, out ServerEntity? looter) || looter.IsDead ||
-            looter.Kind != EntityKind.Player ||
-            !_entities.TryGetValue(corpseId, out ServerEntity? corpse) ||
-            corpse.Kind != EntityKind.Corpse || corpse.LootContainer is null)
+        if (!ValidateLooter(looterId, corpseId, out ServerEntity looter, out ServerEntity corpse))
         {
             return false;
         }
 
-        if (Vec2.DistanceSquared(looter.Position, corpse.Position)
-            > SimulationConstants.LootRange * SimulationConstants.LootRange)
-        {
-            return false; // too far away
-        }
-
-        Inventory loot = corpse.LootContainer;
+        Inventory loot = corpse.LootContainer!;
         bool tookSomething = false;
 
         int gold = loot.TakeAllGold();

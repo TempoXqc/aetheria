@@ -189,7 +189,7 @@ public sealed class GameServer
             {
                 case MessageType.InputCommand:
                     InputCommand input = InputCommand.Read(ref reader);
-                    world.ApplyInput(session.EntityId, input.Sequence, input.MoveDirection);
+                    world.ApplyInput(session.EntityId, input.Sequence, input.MoveDirection, input.FacingRadians);
                     break;
 
                 case MessageType.UseAbility:
@@ -205,6 +205,20 @@ public sealed class GameServer
                 case MessageType.LootCorpse:
                     LootCorpse loot = LootCorpse.Read(ref reader);
                     world.TryLootCorpse(session.EntityId, loot.CorpseEntityId);
+                    SendCorpseContents(peer, session, loot.CorpseEntityId); // now empty → client closes
+                    SendSelfState(peer, session);
+                    break;
+
+                case MessageType.OpenCorpse:
+                    OpenCorpse open = OpenCorpse.Read(ref reader);
+                    SendCorpseContents(peer, session, open.CorpseEntityId);
+                    break;
+
+                case MessageType.LootItem:
+                    LootItem lootItem = LootItem.Read(ref reader);
+                    world.TryLootItem(session.EntityId, lootItem.CorpseEntityId, lootItem.ItemId);
+                    SendCorpseContents(peer, session, lootItem.CorpseEntityId);
+                    SendSelfState(peer, session);
                     break;
 
                 case MessageType.BankTransaction:
@@ -598,6 +612,33 @@ public sealed class GameServer
         Send(peer, new BankState(bank.Gold, bank.Stacks));
     }
 
+    /// <summary>Send a corpse's current contents (empty contents = spent; the client closes its window).</summary>
+    private void SendCorpseContents(PeerId peer, PlayerSession session, int corpseId)
+    {
+        if (session.CurrentWorld.TryOpenCorpse(session.EntityId, corpseId, out int gold, out var items))
+        {
+            Send(peer, new CorpseContentsMessage(corpseId, gold, items));
+        }
+        else
+        {
+            Send(peer, new CorpseContentsMessage(corpseId, 0, []));
+        }
+    }
+
+    /// <summary>Push the player's own status + inventory right away (after loot/bank changes).</summary>
+    private void SendSelfState(PeerId peer, PlayerSession session)
+    {
+        if (!TryGetEntity(session, out ServerEntity? self))
+        {
+            return;
+        }
+
+        ProgressionConfig progression = _worlds.GameData.Progression;
+        Send(peer, new PlayerStatus(
+            self!.Level, self.TotalXp, progression.XpForNextLevel(self.TotalXp), self.Inventory.Gold));
+        Send(peer, new InventoryState(self.EquippedWeaponId, self.EquippedArmorId, self.Inventory.Stacks));
+    }
+
     // ------------------------------------------------------------- Broadcast
 
     private void BroadcastSnapshots()
@@ -763,6 +804,7 @@ public sealed class GameServer
     private void Send(PeerId peer, PartyState msg) => SendWith(peer, msg.Write);
     private void Send(PeerId peer, PartyInviteNotice msg) => SendWith(peer, msg.Write);
     private void Send(PeerId peer, InstanceResult msg) => SendWith(peer, msg.Write);
+    private void Send(PeerId peer, CorpseContentsMessage msg) => SendWith(peer, msg.Write);
 
     private void SendWith(PeerId peer, Action<PacketWriter> write)
     {

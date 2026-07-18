@@ -44,6 +44,9 @@ public sealed class ServerEntity
     public Vec2 SpawnPosition { get; set; }
     public Vec2 MoveIntent { get; set; } = Vec2.Zero;
 
+    /// <summary>Direction the entity faces, radians on the world plane (mouse-driven for players).</summary>
+    public float FacingRadians { get; set; }
+
     public PeerId? Owner { get; set; }
     public uint LastInputSequence { get; set; }
 

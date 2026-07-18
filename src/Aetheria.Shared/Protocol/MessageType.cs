@@ -21,6 +21,8 @@ public enum MessageType : byte
     PartyLeave = 11,
     EnterInstance = 12,
     LeaveInstance = 13,
+    OpenCorpse = 14,
+    LootItem = 15,
 
     // --- Server -> Client ---
     ConnectAccepted = 128,
@@ -34,6 +36,7 @@ public enum MessageType : byte
     PartyState = 136,
     InstanceResult = 137,
     PartyInviteNotice = 138,
+    CorpseContents = 139,
 }
 
 /// <summary>Coarse kind of an entity, so the client knows how to represent it. Extended over time.</summary>

@@ -22,16 +22,17 @@ peut pas diverger** entre Unity et le serveur : c'est littéralement le même co
 | Touche | Action |
 |--------|--------|
 | WASD / flèches | Se déplacer (relatif à la caméra) |
+| Souris | Le personnage **s'oriente vers le curseur** |
+| Clic gauche | **Sélectionner l'ennemi** sous le curseur (sol vide = désélection) |
 | Tab | Cibler l'ennemi suivant (monstres + joueurs adverses) |
-| 1 | Attaque de base sur la cible |
-| 2 | Sort avancé (débloqué niveau 3) |
+| 1 / 2 | Attaque de base / sort avancé (barre d'action cliquable, cooldowns affichés) |
 | R | Capacité raciale |
-| F | Looter le cadavre le plus proche |
+| F | **Fouiller le cadavre proche** (tooltip « [F] » affiché) → fenêtre de loot par objet |
 | G / H / J | Inviter la cible / accepter l'invitation / quitter le groupe |
 | I / O / L | Entrer donjon (instance 1) / raid (instance 2) / sortir |
 | B / N | Déposer / retirer 10 or en banque |
 | Molette | Zoom |
-| Échap | Se déconnecter |
+| Échap | **Menu** (retour au jeu / options d'interface / se déconnecter / quitter) |
 
 Code couleur : **vert** = toi · **bleu** = allié · **rouge** = faction adverse (PvP !) · **orange** =
 monstre · **violet (gros)** = boss · **gris plat** = cadavre lootable.

@@ -196,6 +196,96 @@ public readonly struct LootCorpse
     public static LootCorpse Read(ref PacketReader r) => new(r.ReadInt());
 }
 
+/// <summary>Ask to inspect a corpse's contents (opens the loot window). Range-validated server-side.</summary>
+public readonly struct OpenCorpse
+{
+    public readonly int CorpseEntityId;
+
+    public OpenCorpse(int corpseEntityId) => CorpseEntityId = corpseEntityId;
+
+    public void Write(PacketWriter w)
+    {
+        w.WriteByte((byte)MessageType.OpenCorpse);
+        w.WriteInt(CorpseEntityId);
+    }
+
+    public static OpenCorpse Read(ref PacketReader r) => new(r.ReadInt());
+}
+
+/// <summary>Take one thing from a corpse: all of the given item id, or the gold when ItemId is 0.</summary>
+public readonly struct LootItem
+{
+    public readonly int CorpseEntityId;
+    public readonly byte ItemId; // 0 = take the gold
+
+    public LootItem(int corpseEntityId, byte itemId)
+    {
+        CorpseEntityId = corpseEntityId;
+        ItemId = itemId;
+    }
+
+    public void Write(PacketWriter w)
+    {
+        w.WriteByte((byte)MessageType.LootItem);
+        w.WriteInt(CorpseEntityId);
+        w.WriteByte(ItemId);
+    }
+
+    public static LootItem Read(ref PacketReader r)
+    {
+        int corpseId = r.ReadInt();
+        byte itemId = r.ReadByte();
+        return new LootItem(corpseId, itemId);
+    }
+}
+
+/// <summary>
+/// A corpse's current contents, sent after OpenCorpse and after each loot action. Empty contents
+/// (no gold, no items) means the corpse is spent — the client closes the loot window.
+/// </summary>
+public readonly struct CorpseContentsMessage
+{
+    public readonly int CorpseEntityId;
+    public readonly int Gold;
+    public readonly IReadOnlyList<ItemStack> Items;
+
+    public CorpseContentsMessage(int corpseEntityId, int gold, IReadOnlyList<ItemStack> items)
+    {
+        CorpseEntityId = corpseEntityId;
+        Gold = gold;
+        Items = items;
+    }
+
+    public void Write(PacketWriter w)
+    {
+        w.WriteByte((byte)MessageType.CorpseContents);
+        w.WriteInt(CorpseEntityId);
+        w.WriteInt(Gold);
+        w.WriteUInt((uint)Items.Count);
+        for (int i = 0; i < Items.Count; i++)
+        {
+            w.WriteByte(Items[i].ItemId);
+            w.WriteInt(Items[i].Quantity);
+        }
+    }
+
+    public static CorpseContentsMessage Read(ref PacketReader r)
+    {
+        int corpseId = r.ReadInt();
+        int gold = r.ReadInt();
+        uint count = r.ReadUInt();
+        var items = new ItemStack[count];
+        for (uint i = 0; i < count; i++)
+        {
+            byte itemId = r.ReadByte();
+            int qty = r.ReadInt();
+            items[i] = new ItemStack(itemId, qty);
+        }
+
+        return new CorpseContentsMessage(corpseId, gold, items);
+    }
+}
+
 /// <summary>A request to use an ability on a target entity. The server validates range and cooldown.</summary>
 public readonly struct UseAbility
 {
@@ -223,16 +313,21 @@ public readonly struct UseAbility
     }
 }
 
-/// <summary>A movement intent. The server is authoritative: it decides what this input produces.</summary>
+/// <summary>
+/// A movement intent plus the direction the character is facing (radians on the world plane,
+/// e.g. from the mouse cursor). The server is authoritative: it decides what this input produces.
+/// </summary>
 public readonly struct InputCommand
 {
     public readonly uint Sequence;
     public readonly Vec2 MoveDirection;
+    public readonly float FacingRadians;
 
-    public InputCommand(uint sequence, Vec2 moveDirection)
+    public InputCommand(uint sequence, Vec2 moveDirection, float facingRadians = 0f)
     {
         Sequence = sequence;
         MoveDirection = moveDirection;
+        FacingRadians = facingRadians;
     }
 
     public void Write(PacketWriter w)
@@ -241,6 +336,7 @@ public readonly struct InputCommand
         w.WriteUInt(Sequence);
         w.WriteFloat(MoveDirection.X);
         w.WriteFloat(MoveDirection.Y);
+        w.WriteFloat(FacingRadians);
     }
 
     public static InputCommand Read(ref PacketReader r)
@@ -248,7 +344,8 @@ public readonly struct InputCommand
         uint sequence = r.ReadUInt();
         float x = r.ReadFloat();
         float y = r.ReadFloat();
-        return new InputCommand(sequence, new Vec2(x, y));
+        float facing = r.ReadFloat();
+        return new InputCommand(sequence, new Vec2(x, y), facing);
     }
 }
 
@@ -335,9 +432,12 @@ public readonly struct EntitySnapshot
     public readonly int Resource;
     public readonly int MaxResource;
 
+    /// <summary>Direction the entity faces, radians on the world plane (0 = +X).</summary>
+    public readonly float FacingRadians;
+
     public EntitySnapshot(
         int id, EntityKind kind, Faction faction, Vec2 position,
-        int health, int maxHealth, int resource, int maxResource)
+        int health, int maxHealth, int resource, int maxResource, float facingRadians = 0f)
     {
         Id = id;
         Kind = kind;
@@ -347,6 +447,7 @@ public readonly struct EntitySnapshot
         MaxHealth = maxHealth;
         Resource = resource;
         MaxResource = maxResource;
+        FacingRadians = facingRadians;
     }
 
     public void Write(PacketWriter w)
@@ -360,6 +461,7 @@ public readonly struct EntitySnapshot
         w.WriteInt(MaxHealth);
         w.WriteInt(Resource);
         w.WriteInt(MaxResource);
+        w.WriteFloat(FacingRadians);
     }
 
     public static EntitySnapshot Read(ref PacketReader r)
@@ -373,7 +475,8 @@ public readonly struct EntitySnapshot
         int maxHealth = r.ReadInt();
         int resource = r.ReadInt();
         int maxResource = r.ReadInt();
-        return new EntitySnapshot(id, kind, faction, new Vec2(x, y), health, maxHealth, resource, maxResource);
+        float facing = r.ReadFloat();
+        return new EntitySnapshot(id, kind, faction, new Vec2(x, y), health, maxHealth, resource, maxResource, facing);
     }
 }
 

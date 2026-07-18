@@ -84,10 +84,10 @@ public sealed class GameClient
 
     public void SendLeaveInstance() => Send(new LeaveInstance());
 
-    public void SendInput(Vec2 direction)
+    public void SendInput(Vec2 direction, float facingRadians = 0f)
     {
         _inputSequence++;
-        Send(new InputCommand(_inputSequence, direction));
+        Send(new InputCommand(_inputSequence, direction, facingRadians));
     }
 
     public void SendUseAbility(byte abilityId, int targetEntityId)
@@ -96,6 +96,25 @@ public sealed class GameClient
     public void SendUseRacial() => Send(new UseRacial());
 
     public void SendLootCorpse(int corpseEntityId) => Send(new LootCorpse(corpseEntityId));
+
+    /// <summary>Ask the server for a corpse's contents (opens the loot window).</summary>
+    public void SendOpenCorpse(int corpseEntityId) => Send(new OpenCorpse(corpseEntityId));
+
+    /// <summary>Take all of one item from an open corpse — or its gold when <paramref name="itemId"/> is 0.</summary>
+    public void SendLootItem(int corpseEntityId, byte itemId) => Send(new LootItem(corpseEntityId, itemId));
+
+    // --- Open corpse (loot window) state ---
+    public int OpenCorpseId { get; private set; } = -1;
+    public int OpenCorpseGold { get; private set; }
+    public IReadOnlyList<ItemStack> OpenCorpseItems { get; private set; } = [];
+
+    /// <summary>Forget the open corpse (client closed the window).</summary>
+    public void CloseCorpse()
+    {
+        OpenCorpseId = -1;
+        OpenCorpseGold = 0;
+        OpenCorpseItems = [];
+    }
 
     /// <summary>Find the nearest visible corpse, or -1 if none are in view.</summary>
     public int FindNearestCorpse()
@@ -243,6 +262,21 @@ public sealed class GameClient
 
                     break;
 
+                case MessageType.CorpseContents:
+                    CorpseContentsMessage contents = CorpseContentsMessage.Read(ref reader);
+                    if (contents.Gold == 0 && contents.Items.Count == 0)
+                    {
+                        CloseCorpse(); // spent (or unreachable) — the window closes
+                    }
+                    else
+                    {
+                        OpenCorpseId = contents.CorpseEntityId;
+                        OpenCorpseGold = contents.Gold;
+                        OpenCorpseItems = contents.Items;
+                    }
+
+                    break;
+
                 case MessageType.CombatEvent:
                     CombatEventMessage combat = CombatEventMessage.Read(ref reader);
                     LastCombat = combat;
@@ -308,6 +342,8 @@ public sealed class GameClient
     private void Send(UseAbility msg) => SendWith(msg.Write);
     private void Send(UseRacial msg) => SendWith(msg.Write);
     private void Send(LootCorpse msg) => SendWith(msg.Write);
+    private void Send(OpenCorpse msg) => SendWith(msg.Write);
+    private void Send(LootItem msg) => SendWith(msg.Write);
     private void Send(BankTransaction msg) => SendWith(msg.Write);
     private void Send(PartyInvite msg) => SendWith(msg.Write);
     private void Send(PartyRespond msg) => SendWith(msg.Write);
