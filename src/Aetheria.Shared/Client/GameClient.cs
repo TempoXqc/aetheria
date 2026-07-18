@@ -111,10 +111,11 @@ public sealed class GameClient
     }
 
     /// <summary>Create this server's one character for the account, then enter the world.</summary>
-    public void SendCreateCharacter(string name, byte raceId, byte classId, Gender gender)
+    public void SendCreateCharacter(string name, byte raceId, byte classId, Gender gender,
+        Appearance appearance = default)
     {
         LoginError = string.Empty;
-        Send(new CreateCharacter(name, raceId, classId, gender));
+        Send(new CreateCharacter(name, raceId, classId, gender, appearance));
     }
 
     /// <summary>Enter the world with the existing character.</summary>

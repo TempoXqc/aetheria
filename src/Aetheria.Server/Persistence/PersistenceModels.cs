@@ -36,6 +36,14 @@ public sealed class CharacterRecord
     public byte ClassId { get; set; }
     public byte Gender { get; set; }
 
+    // Cosmetic customisation (palette/style indexes; see Aetheria.Shared.Combat.Appearance).
+    public byte SkinTone { get; set; }
+    public byte Face { get; set; }
+    public byte HairStyle { get; set; }
+    public byte HairColor { get; set; }
+    public byte BeardStyle { get; set; }
+    public byte BeardColor { get; set; }
+
     public int TotalXp { get; set; }
     public int Gold { get; set; }
     public byte EquippedWeaponId { get; set; }

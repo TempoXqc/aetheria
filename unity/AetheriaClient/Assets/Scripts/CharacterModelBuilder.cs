@@ -57,11 +57,38 @@ namespace Aetheria.UnityClient
             public Color Skin;
             public Color Hair;
             public float HeadScale;   // 1 = normal; goblins have big heads
-            public bool Beard;
+            public bool Beard;        // default beard for non-customised humanoids (monsters)
             public bool Tusks;
             public int Ears;          // 0 none, 1 pointed, 2 large
             public bool Crown;
             public Color? Tunic;      // fixed tunic colour (monsters); null = relation-tinted
+            public bool UseCustom;    // players: apply the Appearance palettes below
+        }
+
+        /// <summary>Hair/beard colour palette (indexes match Appearance.HairColor/BeardColor).</summary>
+        public static readonly Color[] HairColors =
+        {
+            new Color(0.30f, 0.20f, 0.12f), // brun
+            new Color(0.08f, 0.08f, 0.08f), // noir
+            new Color(0.85f, 0.75f, 0.45f), // blond
+            new Color(0.72f, 0.30f, 0.12f), // roux
+            new Color(0.90f, 0.90f, 0.88f), // blanc
+            new Color(0.25f, 0.35f, 0.75f), // bleu nuit
+        };
+
+        /// <summary>Skin tone as a brightness ramp over the race's base skin (index = Appearance.SkinTone).</summary>
+        private static readonly float[] SkinToneFactors = { 1.15f, 1.0f, 0.80f, 0.60f };
+
+        // Face variants: 0 standard, 1 gros nez, 2 fin (small nose, larger eyes).
+        private static readonly float[] FaceNoseScale = { 1f, 1.6f, 0.75f };
+        private static readonly float[] FaceEyeScale = { 1f, 1f, 1.3f };
+
+        /// <summary>The exact skin colour a race+tone resolves to (used by the creation-screen swatches).</summary>
+        public static Color SkinColor(byte raceId, byte tone)
+        {
+            BodyParams p = RaceParams(raceId);
+            float f = SkinToneFactors[Mathf.Clamp(tone, 0, SkinToneFactors.Length - 1)];
+            return new Color(p.Skin.r * f, p.Skin.g * f, p.Skin.b * f);
         }
 
         public static ModelRig Build(Transform parent, EntitySnapshot snapshot)
@@ -73,21 +100,23 @@ namespace Aetheria.UnityClient
                 case EntityKind.Monster:
                     return BuildMonster(parent, snapshot.RaceId); // RaceId carries the monster def id
                 default:
-                    return BuildPlayer(parent, snapshot.RaceId, snapshot.ClassId, snapshot.Gender);
+                    return BuildPlayer(parent, snapshot.RaceId, snapshot.ClassId, snapshot.Gender, snapshot.Appearance);
             }
         }
 
         // ------------------------------------------------------------- Players
 
-        private static ModelRig BuildPlayer(Transform parent, byte raceId, byte classId, Gender gender)
+        private static ModelRig BuildPlayer(Transform parent, byte raceId, byte classId, Gender gender,
+            Appearance appearance)
         {
             BodyParams p = RaceParams(raceId);
+            p.UseCustom = true;
             if (gender == Gender.Female)
             {
                 p.Width *= 0.88f;
             }
 
-            ModelRig rig = BuildHumanoid(parent, p, gender);
+            ModelRig rig = BuildHumanoid(parent, p, gender, appearance);
             AttachWeapon(rig, classId);
             return rig;
         }
@@ -164,7 +193,7 @@ namespace Aetheria.UnityClient
                 Tunic = new Color(0.45f, 0.30f, 0.20f), // ragged leathers
             };
 
-            ModelRig rig = BuildHumanoid(parent, p, Gender.Male);
+            ModelRig rig = BuildHumanoid(parent, p, Gender.Male, default(Appearance));
 
             // A crude wooden club in the right hand.
             Transform hand = rig.ArmR;
@@ -176,7 +205,7 @@ namespace Aetheria.UnityClient
 
         // ------------------------------------------------------------ Humanoid
 
-        private static ModelRig BuildHumanoid(Transform parent, BodyParams p, Gender gender)
+        private static ModelRig BuildHumanoid(Transform parent, BodyParams p, Gender gender, Appearance look)
         {
             var rig = new ModelRig();
 
@@ -184,6 +213,24 @@ namespace Aetheria.UnityClient
             var model = new GameObject("Model");
             model.transform.SetParent(parent, false);
             model.transform.localScale = new Vector3(p.Width, p.Height, p.Width);
+
+            // Resolve the customisation palettes (players) or keep the fixed monster colours.
+            Color skin = p.Skin;
+            if (p.UseCustom)
+            {
+                float f = SkinToneFactors[Mathf.Clamp(look.SkinTone, 0, SkinToneFactors.Length - 1)];
+                skin = new Color(p.Skin.r * f, p.Skin.g * f, p.Skin.b * f);
+            }
+
+            Color hairColor = p.UseCustom
+                ? HairColors[Mathf.Clamp(look.HairColor, 0, HairColors.Length - 1)]
+                : p.Hair;
+            Color beardColor = p.UseCustom
+                ? HairColors[Mathf.Clamp(look.BeardColor, 0, HairColors.Length - 1)]
+                : p.Hair;
+            int face = p.UseCustom ? Mathf.Clamp(look.Face, 0, FaceNoseScale.Length - 1) : 0;
+            int hairStyle = p.UseCustom ? look.HairStyle : 0;   // 0 court, 1 long, 2 iroquois, 3 chauve
+            int beardStyle = p.UseCustom ? look.BeardStyle : (p.Beard ? 1 : 0);
 
             Color pants = new Color(0.25f, 0.22f, 0.20f);
 
@@ -203,27 +250,60 @@ namespace Aetheria.UnityClient
             // Arms: pivots at the shoulders.
             rig.ArmL = Pivot(model.transform, "ArmL", new Vector3(-0.34f, 1.44f, 0f));
             rig.ArmR = Pivot(model.transform, "ArmR", new Vector3(0.34f, 1.44f, 0f));
-            Cube(rig.ArmL, "Arm", new Vector3(0f, -0.34f, 0f), new Vector3(0.16f, 0.68f, 0.18f), p.Skin);
-            Cube(rig.ArmR, "Arm", new Vector3(0f, -0.34f, 0f), new Vector3(0.16f, 0.68f, 0.18f), p.Skin);
+            Cube(rig.ArmL, "Arm", new Vector3(0f, -0.34f, 0f), new Vector3(0.16f, 0.68f, 0.18f), skin);
+            Cube(rig.ArmR, "Arm", new Vector3(0f, -0.34f, 0f), new Vector3(0.16f, 0.68f, 0.18f), skin);
 
             // Head: its own pivot so it can nod; face details make facing readable.
             rig.Head = Pivot(model.transform, "Head", new Vector3(0f, 1.62f, 0f));
             float hs = 0.32f * p.HeadScale;
-            Cube(rig.Head, "Skull", new Vector3(0f, 0.17f, 0f), new Vector3(hs, hs, hs), p.Skin);
-            Cube(rig.Head, "Nose", new Vector3(0f, 0.14f, hs * 0.55f), new Vector3(0.07f, 0.07f, 0.10f), p.Skin);
-            Color eye = new Color(0.08f, 0.08f, 0.10f);
-            Cube(rig.Head, "EyeL", new Vector3(-hs * 0.24f, 0.21f, hs * 0.51f), new Vector3(0.05f, 0.05f, 0.02f), eye);
-            Cube(rig.Head, "EyeR", new Vector3(hs * 0.24f, 0.21f, hs * 0.51f), new Vector3(0.05f, 0.05f, 0.02f), eye);
-            Cube(rig.Head, "Hair", new Vector3(0f, 0.17f + (hs * 0.55f), 0f), new Vector3(hs + 0.03f, 0.10f, hs + 0.03f), p.Hair);
+            Cube(rig.Head, "Skull", new Vector3(0f, 0.17f, 0f), new Vector3(hs, hs, hs), skin);
 
-            if (gender == Gender.Female)
+            // Face variant: nose and eye proportions.
+            float noseScale = FaceNoseScale[face];
+            float eyeScale = FaceEyeScale[face];
+            Cube(rig.Head, "Nose", new Vector3(0f, 0.14f, hs * 0.55f),
+                new Vector3(0.07f * noseScale, 0.07f * noseScale, 0.10f * noseScale), skin);
+            Color eye = new Color(0.08f, 0.08f, 0.10f);
+            Cube(rig.Head, "EyeL", new Vector3(-hs * 0.24f, 0.21f, hs * 0.51f),
+                new Vector3(0.05f * eyeScale, 0.05f * eyeScale, 0.02f), eye);
+            Cube(rig.Head, "EyeR", new Vector3(hs * 0.24f, 0.21f, hs * 0.51f),
+                new Vector3(0.05f * eyeScale, 0.05f * eyeScale, 0.02f), eye);
+
+            // Hair style: 0 court, 1 long, 2 iroquois, 3 chauve.
+            if (hairStyle == 0 || hairStyle == 1)
             {
-                Cube(rig.Head, "HairBack", new Vector3(0f, 0.08f, -hs * 0.55f), new Vector3(hs * 0.9f, 0.42f, 0.10f), p.Hair);
+                Cube(rig.Head, "Hair", new Vector3(0f, 0.17f + (hs * 0.55f), 0f),
+                    new Vector3(hs + 0.03f, 0.10f, hs + 0.03f), hairColor);
             }
 
-            if (p.Beard)
+            if (hairStyle == 1) // long: cap + hair falling down the back
             {
-                Cube(rig.Head, "Beard", new Vector3(0f, 0.02f, hs * 0.45f), new Vector3(hs * 0.8f, 0.24f, 0.10f), p.Hair);
+                Cube(rig.Head, "HairBack", new Vector3(0f, 0.02f, -hs * 0.55f),
+                    new Vector3(hs * 0.9f, 0.52f, 0.10f), hairColor);
+            }
+            else if (hairStyle == 2) // iroquois: a tall narrow crest
+            {
+                Cube(rig.Head, "Mohawk", new Vector3(0f, 0.17f + (hs * 0.72f), 0f),
+                    new Vector3(0.08f, 0.16f, hs + 0.06f), hairColor);
+            }
+
+            // Beard style: 0 aucune, 1 courte, 2 longue, 3 tressée.
+            if (beardStyle == 1)
+            {
+                Cube(rig.Head, "Beard", new Vector3(0f, 0.02f, hs * 0.45f),
+                    new Vector3(hs * 0.8f, 0.24f, 0.10f), beardColor);
+            }
+            else if (beardStyle == 2)
+            {
+                Cube(rig.Head, "Beard", new Vector3(0f, -0.10f, hs * 0.45f),
+                    new Vector3(hs * 0.8f, 0.48f, 0.10f), beardColor);
+            }
+            else if (beardStyle == 3)
+            {
+                Cube(rig.Head, "Beard", new Vector3(0f, -0.02f, hs * 0.45f),
+                    new Vector3(hs * 0.8f, 0.30f, 0.10f), beardColor);
+                Cube(rig.Head, "Braid", new Vector3(0f, -0.30f, hs * 0.45f),
+                    new Vector3(0.08f, 0.32f, 0.08f), beardColor);
             }
 
             if (p.Tusks)
@@ -235,13 +315,13 @@ namespace Aetheria.UnityClient
 
             if (p.Ears == 1) // pointed elf ears
             {
-                Cube(rig.Head, "EarL", new Vector3(-hs * 0.58f, 0.24f, 0f), new Vector3(0.05f, 0.15f, 0.05f), p.Skin);
-                Cube(rig.Head, "EarR", new Vector3(hs * 0.58f, 0.24f, 0f), new Vector3(0.05f, 0.15f, 0.05f), p.Skin);
+                Cube(rig.Head, "EarL", new Vector3(-hs * 0.58f, 0.24f, 0f), new Vector3(0.05f, 0.15f, 0.05f), skin);
+                Cube(rig.Head, "EarR", new Vector3(hs * 0.58f, 0.24f, 0f), new Vector3(0.05f, 0.15f, 0.05f), skin);
             }
             else if (p.Ears == 2) // large goblin ears
             {
-                Cube(rig.Head, "EarL", new Vector3(-hs * 0.68f, 0.19f, 0f), new Vector3(0.14f, 0.10f, 0.05f), p.Skin);
-                Cube(rig.Head, "EarR", new Vector3(hs * 0.68f, 0.19f, 0f), new Vector3(0.14f, 0.10f, 0.05f), p.Skin);
+                Cube(rig.Head, "EarL", new Vector3(-hs * 0.68f, 0.19f, 0f), new Vector3(0.14f, 0.10f, 0.05f), skin);
+                Cube(rig.Head, "EarR", new Vector3(hs * 0.68f, 0.19f, 0f), new Vector3(0.14f, 0.10f, 0.05f), skin);
             }
 
             if (p.Crown)

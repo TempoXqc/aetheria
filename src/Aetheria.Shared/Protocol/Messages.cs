@@ -188,10 +188,14 @@ public readonly struct EntitySnapshot
     /// <summary>Player: cosmetic gender. Male for non-players.</summary>
     public readonly Gender Gender;
 
+    /// <summary>Player: cosmetic customisation (skin, face, hair, beard). Zeroed for non-players.</summary>
+    public readonly Appearance Appearance;
+
     public EntitySnapshot(
         int id, EntityKind kind, Faction faction, Vec2 position,
         int health, int maxHealth, int resource, int maxResource, float facingRadians = 0f,
-        byte level = 1, string name = "", byte raceId = 0, byte classId = 0, Gender gender = Gender.Male)
+        byte level = 1, string name = "", byte raceId = 0, byte classId = 0, Gender gender = Gender.Male,
+        Appearance appearance = default)
     {
         Id = id;
         Kind = kind;
@@ -207,6 +211,7 @@ public readonly struct EntitySnapshot
         RaceId = raceId;
         ClassId = classId;
         Gender = gender;
+        Appearance = appearance;
     }
 
     public void Write(PacketWriter w)
@@ -226,6 +231,7 @@ public readonly struct EntitySnapshot
         w.WriteByte(RaceId);
         w.WriteByte(ClassId);
         w.WriteByte((byte)Gender);
+        Appearance.Write(w);
     }
 
     public static EntitySnapshot Read(ref PacketReader r)
@@ -245,9 +251,10 @@ public readonly struct EntitySnapshot
         byte raceId = r.ReadByte();
         byte classId = r.ReadByte();
         var gender = (Gender)r.ReadByte();
+        Appearance appearance = Appearance.Read(ref r);
         return new EntitySnapshot(
             id, kind, faction, new Vec2(x, y), health, maxHealth, resource, maxResource, facing, level, name,
-            raceId, classId, gender);
+            raceId, classId, gender, appearance);
     }
 }
 

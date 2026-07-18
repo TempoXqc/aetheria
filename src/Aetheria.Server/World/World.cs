@@ -76,7 +76,8 @@ public sealed class World
 
     /// <summary>Create a player entity owned by <paramref name="owner"/>, with stats from race + class.</summary>
     public ServerEntity SpawnPlayer(
-        PeerId owner, string name = "", byte raceId = 1, byte classId = 1, Gender gender = Gender.Male)
+        PeerId owner, string name = "", byte raceId = 1, byte classId = 1, Gender gender = Gender.Male,
+        Appearance appearance = default)
     {
         ClassDefinition cls = _gameData.GetClass(classId);
         RaceDefinition race = _gameData.GetRace(raceId);
@@ -90,6 +91,7 @@ public sealed class World
             RaceId = race.Id,
             ClassId = cls.Id,
             Gender = gender,
+            Appearance = appearance.Clamped(), // trust boundary: hostile clients can't smuggle bad indexes
             Faction = race.Faction,
             RacialAbilityId = race.RacialAbilityId,
         };
@@ -437,7 +439,7 @@ public sealed class World
                     e.Id, e.Kind, e.Faction, e.Position,
                     e.Health, e.EffectiveMaxHealth, (int)e.CurrentResource, e.EffectiveMaxResource,
                     e.FacingRadians, (byte)System.Math.Clamp(e.Level, 1, 255), e.Name,
-                    raceOrDef, e.ClassId, e.Gender));
+                    raceOrDef, e.ClassId, e.Gender, e.Appearance));
             }
         }
 
@@ -649,6 +651,51 @@ public sealed class World
             float mult = _gameData.Progression.XpMultiplierForKill(killer.Level, def.Level);
             ApplyXp(killer, (int)MathF.Round(def.XpReward * mult));
             killer.Inventory.AddGold(def.GoldReward);
+            GrantBodyParts(killer, def, victim.Position);
+        }
+    }
+
+    /// <summary>
+    /// GUARANTEED skinning loot: every kill yields the creature's body parts, no RNG — so
+    /// "bring me 10 goblin heads" is deterministic. Parts that don't fit the killer's bags
+    /// drop at the kill site as a lootable sack instead of vanishing.
+    /// </summary>
+    private void GrantBodyParts(ServerEntity killer, MonsterDefinition def, Vec2 killSite)
+    {
+        if (def.BodyParts.Count == 0)
+        {
+            return;
+        }
+
+        Inventory? overflow = null;
+        foreach (LootEntry part in def.BodyParts)
+        {
+            if (!_gameData.HasItem(part.ItemId) || part.Quantity <= 0)
+            {
+                continue;
+            }
+
+            ItemDefinition item = _gameData.GetItem(part.ItemId);
+            int leftover = killer.Inventory.TryAdd(part.ItemId, part.Quantity, item.Stackable, item.MaxStack);
+            if (leftover > 0)
+            {
+                overflow ??= new Inventory(SimulationConstants.CorpseLootCapacity);
+                overflow.TryAdd(part.ItemId, leftover, item.Stackable, item.MaxStack);
+            }
+        }
+
+        if (overflow != null)
+        {
+            int id = _ids.Next();
+            var sack = new ServerEntity(id, EntityKind.Corpse, killSite, new StatBlock(1, 0f, 0, 0, 0f), 0)
+            {
+                Name = $"Dépouille ({def.Name})",
+                Faction = Faction.Neutral,
+                LootContainer = overflow,
+            };
+
+            _entities[id] = sack;
+            _grid.InsertOrUpdate(id, sack.Position);
         }
     }
 

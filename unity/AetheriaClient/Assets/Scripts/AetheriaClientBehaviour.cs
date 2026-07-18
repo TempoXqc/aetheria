@@ -32,6 +32,20 @@ namespace Aetheria.UnityClient
         private int _genderIndex;
         private string _error = "";
 
+        // --- Character customisation (creation screen) ---
+        private int _skinTone = 1;
+        private int _faceIndex;
+        private int _hairStyle;
+        private int _hairColor;
+        private int _beardStyle;
+        private int _beardColor;
+
+        private static readonly string[] SkinLabels = { "Clair", "Moyen", "Halé", "Sombre" };
+        private static readonly string[] FaceLabels = { "Classique", "Nez fort", "Fin" };
+        private static readonly string[] HairStyleLabels = { "Courte", "Longue", "Iroquoise", "Chauve" };
+        private static readonly string[] HairColorLabels = { "Brun", "Noir", "Blond", "Roux", "Blanc", "Bleu nuit" };
+        private static readonly string[] BeardStyleLabels = { "Aucune", "Courte", "Longue", "Tressée" };
+
         private static readonly (byte id, string label, byte[] classes, byte racial)[] Races =
         {
             (1, "Human (Alliance)", new byte[] { 1, 2 }, (byte)10),
@@ -205,7 +219,13 @@ namespace Aetheria.UnityClient
             _classId = Classes[_classIndex].id;
             _racialId = Races[_raceIndex].racial;
             Gender gender = _genderIndex == 1 ? Gender.Female : Gender.Male;
-            _client.SendCreateCharacter(_name, Races[_raceIndex].id, _classId, gender);
+
+            bool beardAllowed = _genderIndex == 0 || Races[_raceIndex].id == 4; // males — and every Dwarf
+            var look = new Appearance(
+                (byte)_skinTone, (byte)_faceIndex, (byte)_hairStyle, (byte)_hairColor,
+                (byte)(beardAllowed ? _beardStyle : 0), (byte)_beardColor);
+
+            _client.SendCreateCharacter(_name, Races[_raceIndex].id, _classId, gender, look);
         }
 
         private void Disconnect()
@@ -805,9 +825,30 @@ namespace Aetheria.UnityClient
         }
 
         /// <summary>Screen 2b — no character on this server yet: create and name it.</summary>
+        /// <summary>One "◀ valeur ▶" row of the customisation panel, with an optional colour swatch.</summary>
+        private int DrawOptionPicker(string label, int index, string[] options, Color? swatch)
+        {
+            GUILayout.BeginHorizontal();
+            GUILayout.Label(label, GUILayout.Width(92));
+            if (GUILayout.Button("<", GUILayout.Width(22))) { index = (index + options.Length - 1) % options.Length; }
+            GUILayout.Label(options[index], GUILayout.ExpandWidth(true));
+            if (swatch.HasValue)
+            {
+                Rect r = GUILayoutUtility.GetRect(20f, 18f, GUILayout.Width(20));
+                Color prev = GUI.color;
+                GUI.color = swatch.Value;
+                GUI.DrawTexture(new Rect(r.x, r.y + 2f, 18f, 14f), Texture2D.whiteTexture);
+                GUI.color = prev;
+            }
+
+            if (GUILayout.Button(">", GUILayout.Width(22))) { index = (index + 1) % options.Length; }
+            GUILayout.EndHorizontal();
+            return index;
+        }
+
         private void DrawCreationScreen()
         {
-            DrawTitledBox(out Rect box, 330, "Crée ton personnage");
+            DrawTitledBox(out Rect box, 500, "Crée ton personnage");
             GUILayout.BeginArea(new Rect(box.x + 15, box.y + 48, box.width - 30, box.height - 60));
 
             GUILayout.BeginHorizontal();
@@ -851,7 +892,37 @@ namespace Aetheria.UnityClient
             GUILayout.EndHorizontal();
 
             GUILayout.Space(4);
-            _genderIndex = GUILayout.SelectionGrid(_genderIndex, new[] { "Male", "Female" }, 2);
+            int newGender = GUILayout.SelectionGrid(_genderIndex, new[] { "Male", "Female" }, 2);
+            if (newGender != _genderIndex)
+            {
+                _genderIndex = newGender;
+                _hairStyle = _genderIndex == 1 ? 1 : 0; // suggestion : cheveux longs par défaut au féminin
+            }
+
+            // --- Customisation ---
+            GUILayout.Space(8);
+            GUILayout.Label("<size=11><b>Apparence</b></size>", Rich());
+            byte raceId = Races[_raceIndex].id;
+            _skinTone = DrawOptionPicker("Teint", _skinTone, SkinLabels,
+                CharacterModelBuilder.SkinColor(raceId, (byte)_skinTone));
+            _faceIndex = DrawOptionPicker("Visage", _faceIndex, FaceLabels, null);
+            _hairStyle = DrawOptionPicker("Coiffure", _hairStyle, HairStyleLabels, null);
+            if (_hairStyle != 3) // pas de couleur pour un crâne chauve
+            {
+                _hairColor = DrawOptionPicker("Cheveux", _hairColor, HairColorLabels,
+                    CharacterModelBuilder.HairColors[_hairColor]);
+            }
+
+            bool beardAllowed = _genderIndex == 0 || raceId == 4; // hommes — et tous les Nains
+            if (beardAllowed)
+            {
+                _beardStyle = DrawOptionPicker("Barbe", _beardStyle, BeardStyleLabels, null);
+                if (_beardStyle != 0)
+                {
+                    _beardColor = DrawOptionPicker("Couleur barbe", _beardColor, HairColorLabels,
+                        CharacterModelBuilder.HairColors[_beardColor]);
+                }
+            }
 
             GUILayout.Space(10);
             if (GUILayout.Button("CRÉER ET ENTRER EN JEU", GUILayout.Height(38))) { CreateAndEnter(); }

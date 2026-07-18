@@ -119,8 +119,21 @@ public sealed class MonsterDefinition
     /// <summary>Gold granted to the killer.</summary>
     public int GoldReward { get; init; }
 
+    /// <summary>
+    /// GUARANTEED body-part drops, distinct per creature type: every kill yields exactly these
+    /// items (no RNG), so "bring me 10 goblin heads" quests always make sense — kill 10, get 10.
+    /// </summary>
+    public IReadOnlyList<LootEntry> BodyParts { get; init; } = [];
+
     public StatBlock ToStats()
         => new(MaxHealth, MoveSpeed, AttackPower, Defense, AggroRadius);
+}
+
+/// <summary>One guaranteed drop: an item id and the quantity every kill yields.</summary>
+public sealed class LootEntry
+{
+    public byte ItemId { get; init; }
+    public int Quantity { get; init; } = 1;
 }
 
 /// <summary>One monster placement inside an instance template.</summary>

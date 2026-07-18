@@ -102,13 +102,15 @@ public readonly struct CreateCharacter
     public readonly byte RaceId;
     public readonly byte ClassId;
     public readonly Gender Gender;
+    public readonly Appearance Appearance;
 
-    public CreateCharacter(string name, byte raceId, byte classId, Gender gender)
+    public CreateCharacter(string name, byte raceId, byte classId, Gender gender, Appearance appearance = default)
     {
         Name = name;
         RaceId = raceId;
         ClassId = classId;
         Gender = gender;
+        Appearance = appearance;
     }
 
     public void Write(PacketWriter w)
@@ -118,6 +120,7 @@ public readonly struct CreateCharacter
         w.WriteByte(RaceId);
         w.WriteByte(ClassId);
         w.WriteByte((byte)Gender);
+        Appearance.Write(w);
     }
 
     public static CreateCharacter Read(ref PacketReader r)
@@ -126,7 +129,8 @@ public readonly struct CreateCharacter
         byte raceId = r.ReadByte();
         byte classId = r.ReadByte();
         var gender = (Gender)r.ReadByte();
-        return new CreateCharacter(name, raceId, classId, gender);
+        Appearance appearance = Appearance.Read(ref r);
+        return new CreateCharacter(name, raceId, classId, gender, appearance);
     }
 }
 

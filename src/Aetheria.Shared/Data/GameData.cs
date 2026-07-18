@@ -195,12 +195,61 @@ public sealed class GameData
         ],
         monsters:
         [
-            new MonsterDefinition { Id = 1, Name = "Goblin Grunt", Level = 1, MaxHealth = 60, MoveSpeed = 4.0f, AttackPower = 5, Defense = 2, AggroRadius = 15f, BasicAbilityId = 4, XpReward = 25, GoldReward = 5 },
-            new MonsterDefinition { Id = 2, Name = "Dire Wolf", Level = 3, MaxHealth = 90, MoveSpeed = 6.0f, AttackPower = 8, Defense = 3, AggroRadius = 20f, BasicAbilityId = 4, XpReward = 40, GoldReward = 10 },
+            // Body parts are GUARANTEED per kill (no RNG), distinct per creature type — so collection
+            // quests ("bring 10 goblin heads") are deterministic: kill 10 goblins, own 10 heads.
+            new MonsterDefinition
+            {
+                Id = 1, Name = "Goblin Grunt", Level = 1, MaxHealth = 60, MoveSpeed = 4.0f, AttackPower = 5, Defense = 2, AggroRadius = 15f, BasicAbilityId = 4, XpReward = 25, GoldReward = 5,
+                BodyParts =
+                [
+                    new LootEntry { ItemId = 30 },                // Goblin Head
+                    new LootEntry { ItemId = 31 },                // Goblin Skin
+                    new LootEntry { ItemId = 11, Quantity = 2 },  // Goblin Ears
+                    new LootEntry { ItemId = 32, Quantity = 2 },  // Goblin Eyes
+                    new LootEntry { ItemId = 33 },                // Goblin Finger
+                    new LootEntry { ItemId = 34 },                // Goblin Tongue
+                    new LootEntry { ItemId = 35 },                // Goblin Foot
+                ],
+            },
+            new MonsterDefinition
+            {
+                Id = 2, Name = "Dire Wolf", Level = 3, MaxHealth = 90, MoveSpeed = 6.0f, AttackPower = 8, Defense = 3, AggroRadius = 20f, BasicAbilityId = 4, XpReward = 40, GoldReward = 10,
+                BodyParts =
+                [
+                    new LootEntry { ItemId = 10 },                // Wolf Pelt
+                    new LootEntry { ItemId = 40, Quantity = 4 },  // Wolf Paws
+                    new LootEntry { ItemId = 41 },                // Wolf Tail
+                    new LootEntry { ItemId = 42, Quantity = 2 },  // Wolf Fangs
+                    new LootEntry { ItemId = 43 },                // Wolf Heart
+                    new LootEntry { ItemId = 44 },                // Wolf Liver
+                    new LootEntry { ItemId = 45, Quantity = 2 },  // Wolf Bones
+                ],
+            },
             // Elite: rules the open-world "dungeon" camp (non-instanced, so PvP can erupt around it).
-            new MonsterDefinition { Id = 3, Name = "Goblin King", Level = 6, MaxHealth = 350, MoveSpeed = 4.5f, AttackPower = 16, Defense = 6, AggroRadius = 18f, BasicAbilityId = 4, XpReward = 200, GoldReward = 80 },
+            new MonsterDefinition
+            {
+                Id = 3, Name = "Goblin King", Level = 6, MaxHealth = 350, MoveSpeed = 4.5f, AttackPower = 16, Defense = 6, AggroRadius = 18f, BasicAbilityId = 4, XpReward = 200, GoldReward = 80,
+                BodyParts =
+                [
+                    new LootEntry { ItemId = 50 },                // Crowned Goblin Head (unique to the King)
+                    new LootEntry { ItemId = 31, Quantity = 2 },  // Goblin Skin
+                    new LootEntry { ItemId = 11, Quantity = 2 },  // Goblin Ears
+                    new LootEntry { ItemId = 32, Quantity = 2 },  // Goblin Eyes
+                ],
+            },
             // World raid boss: raid-difficulty, lives in the OPEN world — never instanced, PvP possible.
-            new MonsterDefinition { Id = 4, Name = "Ashmaw the Devourer", Level = 10, MaxHealth = 2500, MoveSpeed = 5.0f, AttackPower = 35, Defense = 12, AggroRadius = 25f, BasicAbilityId = 4, XpReward = 1500, GoldReward = 600 },
+            new MonsterDefinition
+            {
+                Id = 4, Name = "Ashmaw the Devourer", Level = 10, MaxHealth = 2500, MoveSpeed = 5.0f, AttackPower = 35, Defense = 12, AggroRadius = 25f, BasicAbilityId = 4, XpReward = 1500, GoldReward = 600,
+                BodyParts =
+                [
+                    new LootEntry { ItemId = 60, Quantity = 2 },  // Ashmaw Horns
+                    new LootEntry { ItemId = 61 },                // Devourer Heart
+                    new LootEntry { ItemId = 62 },                // Charred Hide
+                    new LootEntry { ItemId = 63, Quantity = 4 },  // Ashmaw Claws
+                    new LootEntry { ItemId = 64, Quantity = 3 },  // Devourer Bones
+                ],
+            },
         ],
         instances:
         [
@@ -237,5 +286,24 @@ public sealed class GameData
             new ItemDefinition { Id = 10, Name = "Wolf Pelt",    Type = ItemType.Material, Stackable = true, MaxStack = 20, GoldValue = 3 },
             new ItemDefinition { Id = 11, Name = "Goblin Ear",   Type = ItemType.Material, Stackable = true, MaxStack = 20, GoldValue = 2 },
             new ItemDefinition { Id = 20, Name = "Minor Healing Potion", Type = ItemType.Consumable, Stackable = true, MaxStack = 10, GoldValue = 5 },
+            // Body parts (guaranteed skinning loot; see MonsterDefinition.BodyParts).
+            new ItemDefinition { Id = 30, Name = "Goblin Head",         Type = ItemType.Material, Stackable = true, MaxStack = 20, GoldValue = 4 },
+            new ItemDefinition { Id = 31, Name = "Goblin Skin",         Type = ItemType.Material, Stackable = true, MaxStack = 20, GoldValue = 3 },
+            new ItemDefinition { Id = 32, Name = "Goblin Eye",          Type = ItemType.Material, Stackable = true, MaxStack = 20, GoldValue = 1 },
+            new ItemDefinition { Id = 33, Name = "Goblin Finger",       Type = ItemType.Material, Stackable = true, MaxStack = 20, GoldValue = 1 },
+            new ItemDefinition { Id = 34, Name = "Goblin Tongue",       Type = ItemType.Material, Stackable = true, MaxStack = 20, GoldValue = 1 },
+            new ItemDefinition { Id = 35, Name = "Goblin Foot",         Type = ItemType.Material, Stackable = true, MaxStack = 20, GoldValue = 1 },
+            new ItemDefinition { Id = 40, Name = "Wolf Paw",            Type = ItemType.Material, Stackable = true, MaxStack = 20, GoldValue = 2 },
+            new ItemDefinition { Id = 41, Name = "Wolf Tail",           Type = ItemType.Material, Stackable = true, MaxStack = 20, GoldValue = 2 },
+            new ItemDefinition { Id = 42, Name = "Wolf Fang",           Type = ItemType.Material, Stackable = true, MaxStack = 20, GoldValue = 3 },
+            new ItemDefinition { Id = 43, Name = "Wolf Heart",          Type = ItemType.Material, Stackable = true, MaxStack = 20, GoldValue = 5 },
+            new ItemDefinition { Id = 44, Name = "Wolf Liver",          Type = ItemType.Material, Stackable = true, MaxStack = 20, GoldValue = 4 },
+            new ItemDefinition { Id = 45, Name = "Wolf Bone",           Type = ItemType.Material, Stackable = true, MaxStack = 20, GoldValue = 2 },
+            new ItemDefinition { Id = 50, Name = "Crowned Goblin Head", Type = ItemType.Material, Stackable = true, MaxStack = 20, GoldValue = 40 },
+            new ItemDefinition { Id = 60, Name = "Ashmaw Horn",         Type = ItemType.Material, Stackable = true, MaxStack = 20, GoldValue = 100 },
+            new ItemDefinition { Id = 61, Name = "Devourer Heart",      Type = ItemType.Material, Stackable = true, MaxStack = 20, GoldValue = 250 },
+            new ItemDefinition { Id = 62, Name = "Charred Hide",        Type = ItemType.Material, Stackable = true, MaxStack = 20, GoldValue = 150 },
+            new ItemDefinition { Id = 63, Name = "Ashmaw Claw",         Type = ItemType.Material, Stackable = true, MaxStack = 20, GoldValue = 80 },
+            new ItemDefinition { Id = 64, Name = "Devourer Bone",       Type = ItemType.Material, Stackable = true, MaxStack = 20, GoldValue = 60 },
         ]);
 }

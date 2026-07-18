@@ -441,7 +441,8 @@ public sealed class GameServer
             return;
         }
 
-        ServerEntity entity = _worlds.OpenWorld.SpawnPlayer(peer, name, request.RaceId, request.ClassId, request.Gender);
+        ServerEntity entity = _worlds.OpenWorld.SpawnPlayer(
+            peer, name, request.RaceId, request.ClassId, request.Gender, request.Appearance);
         _worlds.OpenWorld.GrantStarterKit(entity);
         account.Characters[name.ToLowerInvariant()] = CharacterMapper.Capture(entity);
 
@@ -467,7 +468,8 @@ public sealed class GameServer
         }
 
         ServerEntity entity = _worlds.OpenWorld.SpawnPlayer(
-            peer, name, saved.RaceId, saved.ClassId, (Gender)saved.Gender);
+            peer, name, saved.RaceId, saved.ClassId, (Gender)saved.Gender,
+            new Appearance(saved.SkinTone, saved.Face, saved.HairStyle, saved.HairColor, saved.BeardStyle, saved.BeardColor));
         CharacterMapper.Restore(_worlds.OpenWorld, entity, saved);
 
         EnterWorldWith(peer, session, entity, isNew: false);

@@ -63,6 +63,9 @@ public sealed class ServerEntity
     public byte MonsterId { get; set; }
     public byte RacialAbilityId { get; set; }
 
+    /// <summary>Cosmetic customisation chosen at creation (players only); relayed in snapshots.</summary>
+    public Appearance Appearance { get; set; }
+
     // --- Resource (rage/mana/energy) ---
     public ResourceType ResourceType { get; set; } = ResourceType.Mana;
     public int MaxResource { get; set; }
