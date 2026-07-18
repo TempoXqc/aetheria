@@ -232,6 +232,12 @@ namespace Aetheria.UnityClient
                       (self.Appearance.HairStyle << 15) | (self.Appearance.HairColor << 18) |
                       (self.Appearance.BeardStyle << 21) | (self.Appearance.BeardColor << 24);
 
+            // Fold the whole loadout in, so equipping a piece refreshes the portrait too.
+            for (int i = 0; i < Aetheria.Shared.Items.EquipSlots.Count; i++)
+            {
+                key = (key * 31) ^ (self.EquippedIn((Aetheria.Shared.Items.EquipSlot)i) + (i << 8));
+            }
+
             if (_root == null)
             {
                 _root = new GameObject("SheetPreview");

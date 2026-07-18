@@ -68,8 +68,11 @@ public sealed class GameClient
     public int TotalXp { get; private set; }
     public int XpForNextLevel { get; private set; } = -1;
     public int Gold { get; private set; }
-    public byte EquippedWeaponId { get; private set; }
-    public byte EquippedArmorId { get; private set; }
+    /// <summary>Item id per equipment slot (index = (int)EquipSlot).</summary>
+    public IReadOnlyList<byte> EquipmentSlots { get; private set; } = new byte[EquipSlots.Count];
+
+    public byte EquippedWeaponId => EquipmentSlots[(int)EquipSlot.Weapon];
+    public byte EquippedArmorId => EquipmentSlots[(int)EquipSlot.Chest];
     public int InventoryStackCount { get; private set; }
     public IReadOnlyList<ItemStack> InventoryItems { get; private set; } = [];
     public int EffectiveAttack { get; private set; }
@@ -366,8 +369,7 @@ public sealed class GameClient
 
                 case MessageType.InventoryState:
                     InventoryState inv = InventoryState.Read(ref reader);
-                    EquippedWeaponId = inv.EquippedWeaponId;
-                    EquippedArmorId = inv.EquippedArmorId;
+                    EquipmentSlots = inv.Equipment;
                     InventoryItems = inv.Items;
                     InventoryStackCount = inv.Items.Count;
                     break;

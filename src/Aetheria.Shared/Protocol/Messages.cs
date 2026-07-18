@@ -208,18 +208,25 @@ public readonly struct EntitySnapshot
     /// <summary>Cast progress, 0..255 over the incantation.</summary>
     public readonly byte CastProgress;
 
-    /// <summary>Equipped weapon item id (0 = none) — the model in the character's hand.</summary>
-    public readonly byte EquippedWeaponId;
+    /// <summary>Item id per equipment slot (index = (int)EquipSlot) — the character's whole look.</summary>
+    public readonly byte[] Equipment;
 
-    /// <summary>Equipped armor item id (0 = none) — drives the character's outfit.</summary>
-    public readonly byte EquippedArmorId;
+    public byte EquippedWeaponId => Equipment != null && Equipment.Length > 1 ? Equipment[(int)EquipSlot.Weapon] : (byte)0;
+    public byte EquippedArmorId => Equipment != null && Equipment.Length > 2 ? Equipment[(int)EquipSlot.Chest] : (byte)0;
+
+    /// <summary>Safe per-slot read (empty when the array is absent/short).</summary>
+    public byte EquippedIn(EquipSlot slot)
+    {
+        int i = (int)slot;
+        return Equipment != null && i < Equipment.Length ? Equipment[i] : (byte)0;
+    }
 
     public EntitySnapshot(
         int id, EntityKind kind, Faction faction, Vec2 position,
         int health, int maxHealth, int resource, int maxResource, float facingRadians = 0f,
         byte level = 1, string name = "", byte raceId = 0, byte classId = 0, Gender gender = Gender.Male,
         Appearance appearance = default, byte flags = 0, byte castAbilityId = 0, byte castProgress = 0,
-        byte equippedWeaponId = 0, byte equippedArmorId = 0)
+        byte[]? equipment = null)
     {
         Id = id;
         Kind = kind;
@@ -239,8 +246,7 @@ public readonly struct EntitySnapshot
         Flags = flags;
         CastAbilityId = castAbilityId;
         CastProgress = castProgress;
-        EquippedWeaponId = equippedWeaponId;
-        EquippedArmorId = equippedArmorId;
+        Equipment = equipment ?? new byte[EquipSlots.Count];
     }
 
     public void Write(PacketWriter w)
@@ -264,8 +270,10 @@ public readonly struct EntitySnapshot
         w.WriteByte(Flags);
         w.WriteByte(CastAbilityId);
         w.WriteByte(CastProgress);
-        w.WriteByte(EquippedWeaponId);
-        w.WriteByte(EquippedArmorId);
+        for (int i = 0; i < EquipSlots.Count; i++)
+        {
+            w.WriteByte(Equipment != null && i < Equipment.Length ? Equipment[i] : (byte)0);
+        }
     }
 
     public static EntitySnapshot Read(ref PacketReader r)
@@ -289,11 +297,15 @@ public readonly struct EntitySnapshot
         byte flags = r.ReadByte();
         byte castAbilityId = r.ReadByte();
         byte castProgress = r.ReadByte();
-        byte weaponId = r.ReadByte();
-        byte armorId = r.ReadByte();
+        var equipment = new byte[EquipSlots.Count];
+        for (int i = 0; i < EquipSlots.Count; i++)
+        {
+            equipment[i] = r.ReadByte();
+        }
+
         return new EntitySnapshot(
             id, kind, faction, new Vec2(x, y), health, maxHealth, resource, maxResource, facing, level, name,
-            raceId, classId, gender, appearance, flags, castAbilityId, castProgress, weaponId, armorId);
+            raceId, classId, gender, appearance, flags, castAbilityId, castProgress, equipment);
     }
 }
 
@@ -466,22 +478,28 @@ public readonly struct PlayerStatus
 /// <summary>The caster's own inventory and equipped gear, sent to that client.</summary>
 public readonly struct InventoryState
 {
-    public readonly byte EquippedWeaponId;
-    public readonly byte EquippedArmorId;
+    /// <summary>Item id per equipment slot (index = (int)EquipSlot; length = EquipSlots.Count).</summary>
+    public readonly byte[] Equipment;
+
     public readonly IReadOnlyList<ItemStack> Items;
 
-    public InventoryState(byte equippedWeaponId, byte equippedArmorId, IReadOnlyList<ItemStack> items)
+    public byte EquippedWeaponId => Equipment[(int)EquipSlot.Weapon];
+    public byte EquippedArmorId => Equipment[(int)EquipSlot.Chest];
+
+    public InventoryState(byte[] equipment, IReadOnlyList<ItemStack> items)
     {
-        EquippedWeaponId = equippedWeaponId;
-        EquippedArmorId = equippedArmorId;
+        Equipment = equipment ?? new byte[EquipSlots.Count];
         Items = items;
     }
 
     public void Write(PacketWriter w)
     {
         w.WriteByte((byte)MessageType.InventoryState);
-        w.WriteByte(EquippedWeaponId);
-        w.WriteByte(EquippedArmorId);
+        for (int i = 0; i < EquipSlots.Count; i++)
+        {
+            w.WriteByte(i < Equipment.Length ? Equipment[i] : (byte)0);
+        }
+
         w.WriteUInt((uint)Items.Count);
         for (int i = 0; i < Items.Count; i++)
         {
@@ -492,8 +510,12 @@ public readonly struct InventoryState
 
     public static InventoryState Read(ref PacketReader r)
     {
-        byte weapon = r.ReadByte();
-        byte armor = r.ReadByte();
+        var equipment = new byte[EquipSlots.Count];
+        for (int i = 0; i < EquipSlots.Count; i++)
+        {
+            equipment[i] = r.ReadByte();
+        }
+
         uint count = r.ReadUInt();
         var items = new ItemStack[count];
         for (uint i = 0; i < count; i++)
@@ -503,7 +525,7 @@ public readonly struct InventoryState
             items[i] = new ItemStack(itemId, qty);
         }
 
-        return new InventoryState(weapon, armor, items);
+        return new InventoryState(equipment, items);
     }
 }
 

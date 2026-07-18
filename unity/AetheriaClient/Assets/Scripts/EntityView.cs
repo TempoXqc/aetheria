@@ -1,4 +1,5 @@
 using Aetheria.Shared.Combat;
+using Aetheria.Shared.Items;
 using Aetheria.Shared.Protocol;
 using UnityEngine;
 
@@ -60,8 +61,25 @@ namespace Aetheria.UnityClient
         public float CastFraction { get; private set; }
 
         // The gear this model was built with — a change means the LOOK changed: rebuild.
-        private byte _builtWeaponId;
-        private byte _builtArmorId;
+        private readonly byte[] _builtEquipment = new byte[EquipSlots.Count];
+
+        private void RememberEquipment(EntitySnapshot snapshot)
+        {
+            for (int i = 0; i < _builtEquipment.Length; i++)
+            {
+                _builtEquipment[i] = snapshot.EquippedIn((EquipSlot)i);
+            }
+        }
+
+        private bool EquipmentChanged(EntitySnapshot snapshot)
+        {
+            for (int i = 0; i < _builtEquipment.Length; i++)
+            {
+                if (snapshot.EquippedIn((EquipSlot)i) != _builtEquipment[i]) { return true; }
+            }
+
+            return false;
+        }
 
         /// <summary>Where nameplates and prompts should anchor, above the model's head.</summary>
         public float HeadHeight
@@ -97,8 +115,7 @@ namespace Aetheria.UnityClient
                 view._rig = CharacterModelBuilder.Build(body.transform, snapshot);
             }
 
-            view._builtWeaponId = snapshot.EquippedWeaponId;
-            view._builtArmorId = snapshot.EquippedArmorId;
+            view.RememberEquipment(snapshot);
             view.CaptureParts();
             return view;
         }
@@ -126,8 +143,7 @@ namespace Aetheria.UnityClient
             }
 
             _rig = CharacterModelBuilder.Build(_body, snapshot);
-            _builtWeaponId = snapshot.EquippedWeaponId;
-            _builtArmorId = snapshot.EquippedArmorId;
+            RememberEquipment(snapshot);
             _torsoBaseY = 0f;
             CaptureParts();
         }
@@ -145,8 +161,7 @@ namespace Aetheria.UnityClient
             CastFraction = snapshot.CastProgress / 255f;
 
             // Gear changed → the silhouette changes with it (visible loot!).
-            if (Kind == EntityKind.Player && _extAnimator == null &&
-                (snapshot.EquippedWeaponId != _builtWeaponId || snapshot.EquippedArmorId != _builtArmorId))
+            if (Kind == EntityKind.Player && _extAnimator == null && EquipmentChanged(snapshot))
             {
                 RebuildModel(snapshot);
             }

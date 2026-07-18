@@ -1140,7 +1140,7 @@ public sealed class GameServer
         }
 
         SendBankState(peer, session.AccountId);
-        Send(peer, new InventoryState(self.EquippedWeaponId, self.EquippedArmorId, self.Inventory.Stacks));
+        Send(peer, new InventoryState(self.CopyEquipment(), self.Inventory.Stacks));
     }
 
     private Inventory GetOrCreateBank(string accountId)
@@ -1185,7 +1185,7 @@ public sealed class GameServer
         Send(peer, new PlayerStatus(
             self!.Level, self.TotalXp, progression.XpForNextLevel(self.TotalXp), self.Inventory.Gold,
             self.EffectiveAttackPower, self.EffectiveDefense));
-        Send(peer, new InventoryState(self.EquippedWeaponId, self.EquippedArmorId, self.Inventory.Stacks));
+        Send(peer, new InventoryState(self.CopyEquipment(), self.Inventory.Stacks));
     }
 
     // ------------------------------------------------------------- Broadcast
@@ -1255,7 +1255,7 @@ public sealed class GameServer
             Send(peer, new PlayerStatus(
                 self!.Level, self.TotalXp, progression.XpForNextLevel(self.TotalXp), self.Inventory.Gold,
             self.EffectiveAttackPower, self.EffectiveDefense));
-            Send(peer, new InventoryState(self.EquippedWeaponId, self.EquippedArmorId, self.Inventory.Stacks));
+            Send(peer, new InventoryState(self.CopyEquipment(), self.Inventory.Stacks));
         }
     }
 

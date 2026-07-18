@@ -46,8 +46,13 @@ public sealed class CharacterRecord
 
     public int TotalXp { get; set; }
     public int Gold { get; set; }
+
+    // Legacy two-slot fields (kept so pre-0.24 state files still restore).
     public byte EquippedWeaponId { get; set; }
     public byte EquippedArmorId { get; set; }
+
+    /// <summary>Full WoW-style loadout: slot index (as string, JSON-friendly) → item id.</summary>
+    public Dictionary<string, byte> Equipment { get; set; } = new();
     public List<ItemStackRecord> Items { get; set; } = new();
 
     /// <summary>Weapon/spell proficiency per skill line (key: line id as string, for JSON friendliness).</summary>

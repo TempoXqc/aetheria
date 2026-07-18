@@ -31,6 +31,14 @@ public static class CharacterMapper
             EquippedArmorId = entity.EquippedArmorId,
         };
 
+        for (int i = 1; i < EquipSlots.Count; i++)
+        {
+            if (entity.Equipment[i] != 0)
+            {
+                record.Equipment[i.ToString()] = entity.Equipment[i];
+            }
+        }
+
         foreach (ItemStack stack in entity.Inventory.Stacks)
         {
             record.Items.Add(new ItemStackRecord { ItemId = stack.ItemId, Quantity = stack.Quantity });
@@ -59,7 +67,22 @@ public static class CharacterMapper
             world.AddItem(entity, item.ItemId, item.Quantity);
         }
 
-        world.Equip(entity, record.EquippedWeaponId, record.EquippedArmorId);
+        if (record.Equipment.Count > 0)
+        {
+            foreach (KeyValuePair<string, byte> pair in record.Equipment)
+            {
+                if (int.TryParse(pair.Key, out int slot) && slot > 0 && slot < EquipSlots.Count)
+                {
+                    entity.SetEquipped((EquipSlot)slot, pair.Value);
+                }
+            }
+
+            world.Equip(entity, entity.EquippedWeaponId, entity.EquippedArmorId); // recompute
+        }
+        else
+        {
+            world.Equip(entity, record.EquippedWeaponId, record.EquippedArmorId); // legacy save
+        }
 
         foreach (KeyValuePair<string, int> pair in record.Skills)
         {

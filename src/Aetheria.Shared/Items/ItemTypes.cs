@@ -9,12 +9,38 @@ public enum ItemType : byte
     Consumable = 3,
 }
 
-/// <summary>Equipment slot an item occupies, or None for non-equippable items.</summary>
+/// <summary>
+/// Equipment slot an item occupies (WoW-style loadout), or None for non-equippable items.
+/// Values are wire-stable: they index the equipment array in snapshots and persistence.
+/// </summary>
 public enum EquipSlot : byte
 {
     None = 0,
     Weapon = 1,
-    Armor = 2,
+    Chest = 2,
+    Armor = Chest, // legacy alias (early builds had a single "armor" slot)
+    Head = 3,
+    Shoulders = 4,
+    Legs = 5,
+    Feet = 6,
+    Hands = 7,
+    Waist = 8,
+    Back = 9,
+    OffHand = 10,
+}
+
+/// <summary>Helpers for iterating the real equipment slots.</summary>
+public static class EquipSlots
+{
+    /// <summary>Array length for per-slot storage (index = (int)EquipSlot).</summary>
+    public const int Count = 11;
+
+    /// <summary>Every wearable slot, in display order (the character sheet's layout).</summary>
+    public static readonly EquipSlot[] All =
+    [
+        EquipSlot.Head, EquipSlot.Shoulders, EquipSlot.Back, EquipSlot.Chest, EquipSlot.Hands,
+        EquipSlot.Waist, EquipSlot.Legs, EquipSlot.Feet, EquipSlot.Weapon, EquipSlot.OffHand,
+    ];
 }
 
 /// <summary>A bank transaction direction: move gold or an item between the player and their account bank.</summary>

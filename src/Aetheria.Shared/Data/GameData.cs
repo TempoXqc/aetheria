@@ -217,6 +217,11 @@ public sealed class GameData
                     new GearDrop { ItemId = 1, ChancePercent = 8 },  // Rusty Sword
                     new GearDrop { ItemId = 3, ChancePercent = 5 },  // Leather Vest
                     new GearDrop { ItemId = 12, ChancePercent = 4 }, // Padded Robe
+                    new GearDrop { ItemId = 13, ChancePercent = 5 }, // Leather Cap
+                    new GearDrop { ItemId = 15, ChancePercent = 5 }, // Leather Boots
+                    new GearDrop { ItemId = 17, ChancePercent = 4 }, // Leather Pants
+                    new GearDrop { ItemId = 19, ChancePercent = 4 }, // Leather Gloves
+                    new GearDrop { ItemId = 21, ChancePercent = 3 }, // Sturdy Belt
                 ],
             },
             new MonsterDefinition
@@ -231,6 +236,10 @@ public sealed class GameData
                     new LootEntry { ItemId = 43 },                // Wolf Heart
                     new LootEntry { ItemId = 44 },                // Wolf Liver
                     new LootEntry { ItemId = 45, Quantity = 2 },  // Wolf Bones
+                ],
+                GearDrops =
+                [
+                    new GearDrop { ItemId = 16, ChancePercent = 10 }, // Wolf-fur Shoulders
                 ],
             },
             // Elite: rules the open-world "dungeon" camp (non-instanced, so PvP can erupt around it).
@@ -249,6 +258,8 @@ public sealed class GameData
                     new GearDrop { ItemId = 2, ChancePercent = 100 }, // Iron Sword: the King always pays
                     new GearDrop { ItemId = 9, ChancePercent = 35 },  // Chain Mail
                     new GearDrop { ItemId = 7, ChancePercent = 30 },  // Hunting Bow
+                    new GearDrop { ItemId = 18, ChancePercent = 40 }, // Traveler's Cloak
+                    new GearDrop { ItemId = 22, ChancePercent = 30 }, // Wooden Shield
                 ],
             },
             // World raid boss: raid-difficulty, lives in the OPEN world — never instanced, PvP possible.
@@ -267,6 +278,7 @@ public sealed class GameData
                 [
                     new GearDrop { ItemId = 4, ChancePercent = 100 }, // Steel Sword
                     new GearDrop { ItemId = 9, ChancePercent = 100 }, // Chain Mail
+                    new GearDrop { ItemId = 14, ChancePercent = 100 }, // Iron Helm
                     new GearDrop { ItemId = 8, ChancePercent = 50 },  // Oak Staff
                 ],
             },
@@ -310,6 +322,16 @@ public sealed class GameData
             new ItemDefinition { Id = 8,  Name = "Oak Staff",    Type = ItemType.Weapon, Slot = EquipSlot.Weapon, AttackBonus = 6,  GoldValue = 60 },
             new ItemDefinition { Id = 9,  Name = "Chain Mail",   Type = ItemType.Armor,  Slot = EquipSlot.Armor,  DefenseBonus = 7, HealthBonus = 20, GoldValue = 150 },
             new ItemDefinition { Id = 12, Name = "Padded Robe",  Type = ItemType.Armor,  Slot = EquipSlot.Armor,  DefenseBonus = 2, HealthBonus = 15, GoldValue = 35 },
+            // Full WoW-style loadout pieces.
+            new ItemDefinition { Id = 13, Name = "Leather Cap",       Type = ItemType.Armor, Slot = EquipSlot.Head,      DefenseBonus = 2, GoldValue = 12 },
+            new ItemDefinition { Id = 14, Name = "Iron Helm",         Type = ItemType.Armor, Slot = EquipSlot.Head,      DefenseBonus = 4, HealthBonus = 10, GoldValue = 90 },
+            new ItemDefinition { Id = 15, Name = "Leather Boots",     Type = ItemType.Armor, Slot = EquipSlot.Feet,      DefenseBonus = 2, GoldValue = 12 },
+            new ItemDefinition { Id = 16, Name = "Wolf-fur Shoulders", Type = ItemType.Armor, Slot = EquipSlot.Shoulders, DefenseBonus = 3, HealthBonus = 5, GoldValue = 40 },
+            new ItemDefinition { Id = 17, Name = "Leather Pants",     Type = ItemType.Armor, Slot = EquipSlot.Legs,      DefenseBonus = 3, GoldValue = 18 },
+            new ItemDefinition { Id = 18, Name = "Traveler's Cloak",  Type = ItemType.Armor, Slot = EquipSlot.Back,      DefenseBonus = 1, HealthBonus = 10, GoldValue = 30 },
+            new ItemDefinition { Id = 19, Name = "Leather Gloves",    Type = ItemType.Armor, Slot = EquipSlot.Hands,     DefenseBonus = 2, GoldValue = 12 },
+            new ItemDefinition { Id = 21, Name = "Sturdy Belt",       Type = ItemType.Armor, Slot = EquipSlot.Waist,     DefenseBonus = 2, GoldValue = 12 },
+            new ItemDefinition { Id = 22, Name = "Wooden Shield",     Type = ItemType.Armor, Slot = EquipSlot.OffHand,   DefenseBonus = 5, GoldValue = 50 },
             new ItemDefinition { Id = 10, Name = "Wolf Pelt",    Type = ItemType.Material, Stackable = true, MaxStack = 20, GoldValue = 3 },
             new ItemDefinition { Id = 11, Name = "Goblin Ear",   Type = ItemType.Material, Stackable = true, MaxStack = 20, GoldValue = 2 },
             new ItemDefinition { Id = 20, Name = "Minor Healing Potion", Type = ItemType.Consumable, Stackable = true, MaxStack = 10, GoldValue = 5 },

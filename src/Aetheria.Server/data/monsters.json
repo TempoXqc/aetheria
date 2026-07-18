@@ -12,7 +12,12 @@
     "gearDrops": [
       { "itemId": 1, "chancePercent": 8 },
       { "itemId": 3, "chancePercent": 5 },
-      { "itemId": 12, "chancePercent": 4 }
+      { "itemId": 12, "chancePercent": 4 },
+      { "itemId": 13, "chancePercent": 5 },
+      { "itemId": 15, "chancePercent": 5 },
+      { "itemId": 17, "chancePercent": 4 },
+      { "itemId": 19, "chancePercent": 4 },
+      { "itemId": 21, "chancePercent": 3 }
     ] },
   { "id": 2, "name": "Dire Wolf",           "level": 3,  "maxHealth": 200,  "moveSpeed": 6.0, "attackPower": 8, "defense": 3,  "aggroRadius": 9.0,  "basicAbilityId": 4, "xpReward": 60,   "goldReward": 10,
     "bodyParts": [
@@ -23,6 +28,9 @@
       { "itemId": 43, "quantity": 1 },
       { "itemId": 44, "quantity": 1 },
       { "itemId": 45, "quantity": 2 }
+    ],
+    "gearDrops": [
+      { "itemId": 16, "chancePercent": 10 }
     ] },
   { "id": 3, "name": "Goblin King",         "level": 6,  "maxHealth": 700,  "moveSpeed": 4.5, "attackPower": 16, "defense": 6,  "aggroRadius": 12.0, "basicAbilityId": 4, "xpReward": 300,  "goldReward": 80,
     "bodyParts": [
@@ -34,7 +42,9 @@
     "gearDrops": [
       { "itemId": 2, "chancePercent": 100 },
       { "itemId": 9, "chancePercent": 35 },
-      { "itemId": 7, "chancePercent": 30 }
+      { "itemId": 7, "chancePercent": 30 },
+      { "itemId": 18, "chancePercent": 40 },
+      { "itemId": 22, "chancePercent": 30 }
     ] },
   { "id": 4, "name": "Ashmaw the Devourer", "level": 10, "maxHealth": 4500, "moveSpeed": 5.0, "attackPower": 35, "defense": 12, "aggroRadius": 14.0, "basicAbilityId": 4, "xpReward": 2200, "goldReward": 600,
     "bodyParts": [
@@ -47,6 +57,7 @@
     "gearDrops": [
       { "itemId": 4, "chancePercent": 100 },
       { "itemId": 9, "chancePercent": 100 },
+      { "itemId": 14, "chancePercent": 100 },
       { "itemId": 8, "chancePercent": 50 }
     ] }
 ]

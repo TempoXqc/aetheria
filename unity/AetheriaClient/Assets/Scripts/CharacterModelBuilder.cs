@@ -1,4 +1,5 @@
 using Aetheria.Shared.Combat;
+using Aetheria.Shared.Items;
 using Aetheria.Shared.Protocol;
 using UnityEngine;
 
@@ -104,8 +105,7 @@ namespace Aetheria.UnityClient
                 case EntityKind.Npc:
                     return BuildBankChest(parent);
                 default:
-                    return BuildPlayer(parent, snapshot.RaceId, snapshot.ClassId, snapshot.Gender,
-                        snapshot.Appearance, snapshot.EquippedWeaponId, snapshot.EquippedArmorId);
+                    return BuildPlayer(parent, snapshot);
             }
         }
 
@@ -159,29 +159,36 @@ namespace Aetheria.UnityClient
 
         // ------------------------------------------------------------- Players
 
-        private static ModelRig BuildPlayer(Transform parent, byte raceId, byte classId, Gender gender,
-            Appearance appearance, byte weaponItemId, byte armorItemId)
+        private static ModelRig BuildPlayer(Transform parent, EntitySnapshot snapshot)
         {
-            BodyParams p = RaceParams(raceId);
+            BodyParams p = RaceParams(snapshot.RaceId);
             p.UseCustom = true;
-            if (gender == Gender.Female)
+            if (snapshot.Gender == Gender.Female)
             {
                 p.Width *= 0.88f;
             }
 
-            ModelRig rig = BuildHumanoid(parent, p, gender, appearance);
+            ModelRig rig = BuildHumanoid(parent, p, snapshot.Gender, snapshot.Appearance);
 
             // The EQUIPPED weapon decides what sits in the hand; class default when bare-handed.
+            byte weaponItemId = snapshot.EquippedIn(EquipSlot.Weapon);
             if (weaponItemId != 0)
             {
                 AttachWeaponItem(rig, weaponItemId);
             }
             else
             {
-                AttachWeapon(rig, classId);
+                AttachWeapon(rig, snapshot.ClassId);
             }
 
-            AttachArmor(rig, armorItemId);
+            // Every other visible slot: your LOOT is your look, piece by piece.
+            AttachArmor(rig, snapshot.EquippedIn(EquipSlot.Chest));
+            AttachHelm(rig, snapshot.EquippedIn(EquipSlot.Head));
+            AttachShoulders(rig, snapshot.EquippedIn(EquipSlot.Shoulders));
+            AttachCloak(rig, snapshot.EquippedIn(EquipSlot.Back));
+            AttachLegs(rig, snapshot.EquippedIn(EquipSlot.Legs));
+            AttachBoots(rig, snapshot.EquippedIn(EquipSlot.Feet));
+            AttachOffHand(rig, snapshot.EquippedIn(EquipSlot.OffHand));
             return rig;
         }
 
@@ -274,6 +281,104 @@ namespace Aetheria.UnityClient
                 case 12: // Padded Robe: a long violet skirt below the tunic
                     Cube(model, "Robe", new Vector3(0f, 0.62f, 0f), new Vector3(0.55f, 0.6f, 0.36f),
                         new Color(0.35f, 0.22f, 0.45f));
+                    break;
+            }
+        }
+
+        /// <summary>Headgear, parented to the head pivot so it nods with the skull.</summary>
+        private static void AttachHelm(ModelRig rig, byte itemId)
+        {
+            if (rig.Head == null) { return; }
+
+            switch (itemId)
+            {
+                case 13: // Leather Cap: a soft brown dome
+                    Ball(rig.Head, "Cap", new Vector3(0f, 0.31f, -0.02f), new Vector3(0.37f, 0.20f, 0.36f),
+                        new Color(0.48f, 0.32f, 0.18f));
+                    break;
+
+                case 14: // Iron Helm: a metal dome with a nose guard
+                    Ball(rig.Head, "Helm", new Vector3(0f, 0.30f, -0.01f), new Vector3(0.39f, 0.24f, 0.38f),
+                        new Color(0.62f, 0.64f, 0.70f));
+                    Cube(rig.Head, "NoseGuard", new Vector3(0f, 0.18f, 0.17f), new Vector3(0.05f, 0.16f, 0.04f),
+                        new Color(0.55f, 0.57f, 0.62f));
+                    break;
+            }
+        }
+
+        /// <summary>Shoulder pads, parented to the arm pivots so they follow the swing.</summary>
+        private static void AttachShoulders(ModelRig rig, byte itemId)
+        {
+            if (rig.ArmL == null || rig.ArmR == null) { return; }
+
+            switch (itemId)
+            {
+                case 16: // Wolf-fur Shoulders: shaggy grey tufts
+                    Color fur = new Color(0.46f, 0.43f, 0.40f);
+                    Ball(rig.ArmL, "FurPadL", new Vector3(-0.03f, 0.04f, 0f), new Vector3(0.27f, 0.20f, 0.27f), fur);
+                    Ball(rig.ArmR, "FurPadR", new Vector3(0.03f, 0.04f, 0f), new Vector3(0.27f, 0.20f, 0.27f), fur);
+                    break;
+            }
+        }
+
+        /// <summary>The cloak, hanging flat down the back.</summary>
+        private static void AttachCloak(ModelRig rig, byte itemId)
+        {
+            if (rig.Torso == null) { return; }
+
+            switch (itemId)
+            {
+                case 18: // Traveler's Cloak: forest green
+                    Cube(rig.Torso.parent, "Cloak", new Vector3(0f, 1.12f, -0.24f), new Vector3(0.46f, 0.78f, 0.05f),
+                        new Color(0.20f, 0.38f, 0.22f));
+                    break;
+            }
+        }
+
+        /// <summary>Leg armour: overlay sleeves on the shin capsules.</summary>
+        private static void AttachLegs(ModelRig rig, byte itemId)
+        {
+            if (rig.LegL == null || rig.LegR == null) { return; }
+
+            switch (itemId)
+            {
+                case 17: // Leather Pants: brown thigh sleeves
+                    Color leather = new Color(0.44f, 0.29f, 0.15f);
+                    Caps(rig.LegL, "PantsL", new Vector3(0f, -0.26f, 0f), new Vector3(0.25f, 0.26f, 0.27f), leather);
+                    Caps(rig.LegR, "PantsR", new Vector3(0f, -0.26f, 0f), new Vector3(0.25f, 0.26f, 0.27f), leather);
+                    break;
+            }
+        }
+
+        /// <summary>Footwear at the bottom of the legs.</summary>
+        private static void AttachBoots(ModelRig rig, byte itemId)
+        {
+            if (rig.LegL == null || rig.LegR == null) { return; }
+
+            switch (itemId)
+            {
+                case 15: // Leather Boots: dark, slightly forward toes
+                    Color boot = new Color(0.30f, 0.19f, 0.10f);
+                    Cube(rig.LegL, "BootL", new Vector3(0f, -0.72f, 0.04f), new Vector3(0.24f, 0.16f, 0.32f), boot);
+                    Cube(rig.LegR, "BootR", new Vector3(0f, -0.72f, 0.04f), new Vector3(0.24f, 0.16f, 0.32f), boot);
+                    break;
+            }
+        }
+
+        /// <summary>The off-hand: a shield strapped to the left arm.</summary>
+        private static void AttachOffHand(ModelRig rig, byte itemId)
+        {
+            if (rig.ArmL == null) { return; }
+
+            switch (itemId)
+            {
+                case 22: // Wooden Shield: a round disc with an iron boss
+                    Transform mount = Pivot(rig.ArmL, "Shield", new Vector3(-0.14f, -0.40f, 0.02f));
+                    mount.localRotation = Quaternion.Euler(0f, 0f, 90f); // disc faces outward
+                    Shape(PrimitiveType.Cylinder, mount, "Disc", Vector3.zero,
+                        new Vector3(0.40f, 0.025f, 0.40f), new Color(0.45f, 0.30f, 0.16f));
+                    Ball(mount, "Boss", new Vector3(0f, 0.035f, 0f), new Vector3(0.12f, 0.05f, 0.12f),
+                        new Color(0.50f, 0.52f, 0.58f));
                     break;
             }
         }

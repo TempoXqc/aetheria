@@ -82,7 +82,6 @@ namespace Aetheria.UnityClient
         private string _chatInput = "";
         private bool _chatInputActive;
         private readonly List<ServerEntry> _servers = new List<ServerEntry>();
-        private bool _enterSent;
         private bool _lastServerSaved;
         private int _previewKey = -1;
 
@@ -130,6 +129,7 @@ namespace Aetheria.UnityClient
         private bool _layoutEditMode;
         private HudConfig.Bind? _awaitingBind;
         private bool _sheetOpen;
+        private bool _bagsOpen;
         private readonly Dictionary<byte, float> _cooldownReadyAt = new Dictionary<byte, float>();
 
         // Right-click context menu on a friendly player.
@@ -253,6 +253,7 @@ namespace Aetheria.UnityClient
                 else if (_contextEntityId >= 0) { _contextEntityId = -1; }
                 else if (_bankOpen) { _bankOpen = false; }
                 else if (_client.OpenCorpseId >= 0) { _client.CloseCorpse(); }
+                else if (_bagsOpen) { _bagsOpen = false; }
                 else if (_sheetOpen) { _sheetOpen = false; }
                 else if (_targetId >= 0) { SetAttackIntent(-1); } // Escape drops the target first
                 else { _menuOpen = !_menuOpen; _optionsTab = -1; _layoutEditMode = false; }
@@ -349,7 +350,6 @@ namespace Aetheria.UnityClient
                 _port = port.ToString();
                 _connected = true;
                 _error = "";
-                _enterSent = false;
                 _lastServerSaved = false;
                 _wasRegistering = createAccount;
                 _serverChosen = fromBrowser;
@@ -532,7 +532,6 @@ namespace Aetheria.UnityClient
             _transport = null;
             _client = null;
             _connected = false;
-            _enterSent = false;
             _serverChosen = false;
             _lobbyScreen = LobbyScreen.Auth;
             _previewKey = -1;
@@ -540,6 +539,7 @@ namespace Aetheria.UnityClient
             _targetId = -1;
             _menuOpen = false;
             _sheetOpen = false;
+            _bagsOpen = false;
             _contextEntityId = -1;
             _cooldownReadyAt.Clear();
 
@@ -791,6 +791,7 @@ namespace Aetheria.UnityClient
             if (_cfg.Down(HudConfig.Bind.Racial)) { TryUseRacial(); }
             if (_cfg.Down(HudConfig.Bind.Interact)) { PressLoot(); }
             if (_cfg.Down(HudConfig.Bind.CharSheet)) { _sheetOpen = !_sheetOpen; }
+            if (_cfg.Down(HudConfig.Bind.Bags)) { _bagsOpen = !_bagsOpen; }
             if (_cfg.Down(HudConfig.Bind.Invite) && _targetId >= 0) { _client.SendPartyInvite(_targetId); }
             if (_cfg.Down(HudConfig.Bind.AcceptInvite) && _client.PendingInviteFrom != null) { _client.SendPartyRespond(true); }
             if (_cfg.Down(HudConfig.Bind.LeaveParty)) { _client.SendPartyLeave(); }
@@ -1106,6 +1107,7 @@ namespace Aetheria.UnityClient
             DrawChat();
             DrawLootWindow();
             DrawBankWindow();
+            DrawBagsWindow();
             DrawCharacterSheet();
             DrawContextMenu();
             DrawSocialNotices();
@@ -1741,25 +1743,35 @@ namespace Aetheria.UnityClient
             GUI.Box(r, "[" + KeyLabel(HudConfig.Bind.Interact) + "] Ouvrir la banque");
         }
 
-        /// <summary>An item as an ICON tile: coloured square, abbreviation, stack count, hover name.</summary>
+        /// <summary>An item tile: its ICON (generated PNG), stack count, and hover name.</summary>
         private void DrawItemIcon(Rect rect, byte itemId, int quantity)
         {
             ItemDefinition def = Data.GetItem(itemId);
 
+            Texture2D icon = IconFor(itemId);
             GUI.Box(rect, "");
-            Color prev = GUI.color;
-            GUI.color = ItemColor(def);
-            GUI.DrawTexture(new Rect(rect.x + 2, rect.y + 2, rect.width - 4, rect.height - 4),
-                Texture2D.whiteTexture);
-            GUI.color = prev;
+            if (icon != null)
+            {
+                GUI.DrawTexture(new Rect(rect.x + 1, rect.y + 1, rect.width - 2, rect.height - 2),
+                    icon, ScaleMode.ScaleToFit);
+            }
+            else
+            {
+                // Fallback: the old coloured tile with an abbreviation.
+                Color prev = GUI.color;
+                GUI.color = ItemColor(def);
+                GUI.DrawTexture(new Rect(rect.x + 2, rect.y + 2, rect.width - 4, rect.height - 4),
+                    Texture2D.whiteTexture);
+                GUI.color = prev;
+                string abbrev = def.Name.Length <= 2 ? def.Name : def.Name.Substring(0, 2);
+                GUI.Label(new Rect(rect.x, rect.y + 2, rect.width, 16),
+                    "<size=11><b><color=#101010>" + abbrev + "</color></b></size>", RichCentered());
+            }
 
-            string abbrev = def.Name.Length <= 2 ? def.Name : def.Name.Substring(0, 2);
-            GUI.Label(new Rect(rect.x, rect.y + 2, rect.width, 16),
-                "<size=11><b><color=#101010>" + abbrev + "</color></b></size>", RichCentered());
             if (quantity > 1)
             {
                 GUI.Label(new Rect(rect.x, rect.y + rect.height - 16, rect.width - 3, 14),
-                    "<size=10><b><color=#101010>" + quantity + "</color></b></size>",
+                    "<size=10><b>" + quantity + "</b></size>",
                     new GUIStyle(GUI.skin.label) { richText = true, alignment = TextAnchor.LowerRight });
             }
 
@@ -1768,6 +1780,20 @@ namespace Aetheria.UnityClient
                 GUI.Label(new Rect(rect.x - 40, rect.y - 18, rect.width + 120, 16),
                     "<size=10>" + def.Name + "</size>", RichCentered());
             }
+        }
+
+        private static readonly Dictionary<byte, Texture2D> IconCache = new Dictionary<byte, Texture2D>();
+
+        private static Texture2D IconFor(byte itemId)
+        {
+            Texture2D cached;
+            if (!IconCache.TryGetValue(itemId, out cached))
+            {
+                cached = Resources.Load<Texture2D>("Icons/item_" + itemId);
+                IconCache[itemId] = cached;
+            }
+
+            return cached;
         }
 
         private static Color ItemColor(ItemDefinition def)
@@ -1935,13 +1961,13 @@ namespace Aetheria.UnityClient
             EntitySnapshot self;
             bool haveSelf = _client.TryGetSelf(out self);
 
-            const float W = 470f;
-            const float Icon = 34f;
-            const int Cols = 7;
-            int invRows = Mathf.Max(1, ((_client.InventoryItems.Count - 1) / Cols) + 1);
-            float height = 250f + (invRows * (Icon + 4f)) + 130f;
-            Rect win = new Rect(VirtW - W - 16, 40, W, Mathf.Min(height, VirtH - 70));
-            GUI.Box(win, "<b>Fiche de personnage</b>", RichCenteredBox());
+            // WoW layout: the 3D portrait in the middle, five slots down each side,
+            // stats + money in the footer. The bags live in their own window (B).
+            const float Slot = 40f;
+            const float W = 342f;
+            const float H = 396f;
+            Rect win = new Rect(16, 60, W, H);
+            GUI.Box(win, "<b>" + _name + "</b> — niveau " + _client.Level, RichCenteredBox());
 
             if (GUI.Button(new Rect(win.x + win.width - 24, win.y + 4, 20, 20), "X"))
             {
@@ -1949,8 +1975,8 @@ namespace Aetheria.UnityClient
                 return;
             }
 
-            // LEFT: the live 3D portrait.
-            Rect portrait = new Rect(win.x + 12, win.y + 30, 170, 226);
+            // CENTRE: the live 3D portrait between the two slot columns.
+            Rect portrait = new Rect(win.x + 12 + Slot + 8, win.y + 30, W - 24 - ((Slot + 8) * 2), (Slot * 5) + 16);
             GUI.Box(portrait, "");
             if (_sheetPreview.Texture != null)
             {
@@ -1958,48 +1984,86 @@ namespace Aetheria.UnityClient
                     _sheetPreview.Texture, ScaleMode.ScaleAndCrop);
             }
 
-            // RIGHT: identity, stats, equipment slots.
-            float rx = portrait.xMax + 12f;
-            float y = win.y + 32f;
-            GUI.Label(new Rect(rx, y, win.xMax - rx - 12, 20),
-                "<b>" + _name + "</b> — niveau " + _client.Level, Rich());
-            y += 20f;
-            GUI.Label(new Rect(rx, y, win.xMax - rx - 12, 20),
-                "PV " + (haveSelf ? self.Health + "/" + self.MaxHealth : "—"));
-            y += 18f;
-            GUI.Label(new Rect(rx, y, win.xMax - rx - 12, 20),
-                "Attaque " + _client.EffectiveAttack + " · Défense " + _client.EffectiveDefense);
-            y += 18f;
-            GUI.Label(new Rect(rx, y, win.xMax - rx - 12, 20),
-                "XP " + _client.TotalXp + (_client.XpForNextLevel > 0 ? " / " + _client.XpForNextLevel : " (max)"));
-            y += 18f;
-            GUI.Label(new Rect(rx, y, win.xMax - rx - 12, 20), "<b>" + FormatMoney(_client.Gold) + "</b>", Rich());
-            y += 26f;
-
-            // Equipment slots: icon squares; click a slot to UNEQUIP into the bags.
-            GUI.Label(new Rect(rx, y, 200, 18), "<b>Équipement</b> <size=9>(clic : retirer)</size>", Rich());
-            y += 20f;
-            DrawEquipSlot(new Rect(rx, y, Icon + 6, Icon + 6), _client.EquippedWeaponId, EquipSlot.Weapon, "Arme");
-            DrawEquipSlot(new Rect(rx + Icon + 16, y, Icon + 6, Icon + 6), _client.EquippedArmorId, EquipSlot.Armor, "Armure");
-            y += Icon + 30f;
-
-            // BOTTOM: the bags as an icon grid. Click an equippable piece to WEAR it;
-            // drag any item onto an ally (trade) or the ground (drop).
-            float gy = Mathf.Max(y, portrait.yMax + 10f);
-            GUI.Label(new Rect(win.x + 12, gy, 320, 18),
-                "<b>Sac</b> <size=9>(clic : équiper · glisser : échanger/poser)</size>", Rich());
-            gy += 20f;
-
-            if (_client.InventoryItems.Count == 0)
+            // SIDES: five equipment slots per column, WoW order. Click a piece to unequip it.
+            IReadOnlyList<byte> gear = _client.EquipmentSlots;
+            EquipSlot[] left = { EquipSlot.Head, EquipSlot.Shoulders, EquipSlot.Back, EquipSlot.Chest, EquipSlot.Hands };
+            EquipSlot[] right = { EquipSlot.Waist, EquipSlot.Legs, EquipSlot.Feet, EquipSlot.Weapon, EquipSlot.OffHand };
+            for (int i = 0; i < left.Length; i++)
             {
-                GUI.Label(new Rect(win.x + 12, gy, 200, 18), "<i><size=10>(vide)</size></i>", Rich());
+                float sy = win.y + 34f + (i * (Slot + 4f));
+                DrawEquipSlot(new Rect(win.x + 12, sy, Slot, Slot),
+                    gear[(int)left[i]], left[i], SlotLabel(left[i]));
+                DrawEquipSlot(new Rect(win.xMax - 12 - Slot, sy, Slot, Slot),
+                    gear[(int)right[i]], right[i], SlotLabel(right[i]));
             }
 
-            for (int i = 0; i < _client.InventoryItems.Count; i++)
+            // FOOTER: stats + money.
+            float y = win.y + 34f + (5 * (Slot + 4f)) + 8f;
+            GUI.Label(new Rect(win.x + 12, y, W - 24, 20),
+                "PV " + (haveSelf ? self.Health + "/" + self.MaxHealth : "—") +
+                " · Attaque " + _client.EffectiveAttack + " · Défense " + _client.EffectiveDefense);
+            y += 20f;
+            GUI.Label(new Rect(win.x + 12, y, W - 24, 20),
+                "XP " + _client.TotalXp + (_client.XpForNextLevel > 0 ? " / " + _client.XpForNextLevel : " (max)"));
+            y += 20f;
+            GUI.Label(new Rect(win.x + 12, y, W - 24, 20), "<b>" + FormatMoney(_client.Gold) + "</b>", Rich());
+            y += 24f;
+            GUI.Label(new Rect(win.x + 12, y, W - 24, 18),
+                "<size=9><color=#909090>Clic sur une pièce : retirer · Sacs : " + _cfg.Key(HudConfig.Bind.Bags) + "</color></size>", Rich());
+        }
+
+        /// <summary>French display name for an equipment slot (the WoW sheet labels).</summary>
+        private static string SlotLabel(EquipSlot slot)
+        {
+            switch (slot)
             {
-                ItemStack stack = _client.InventoryItems[i];
+                case EquipSlot.Head: return "Tête";
+                case EquipSlot.Shoulders: return "Épaules";
+                case EquipSlot.Back: return "Dos";
+                case EquipSlot.Chest: return "Torse";
+                case EquipSlot.Hands: return "Mains";
+                case EquipSlot.Waist: return "Ceinture";
+                case EquipSlot.Legs: return "Jambes";
+                case EquipSlot.Feet: return "Pieds";
+                case EquipSlot.Weapon: return "Arme";
+                case EquipSlot.OffHand: return "Main G.";
+                default: return "";
+            }
+        }
+
+        // --- Bags (WoW-style separate window, bottom right) ---
+
+        private void DrawBagsWindow()
+        {
+            if (!_bagsOpen) { return; }
+
+            const float Icon = 34f;
+            const int Cols = 8;
+            int cells = SimulationConstants.PlayerInventoryCapacity;
+            int rows = ((cells - 1) / Cols) + 1;
+            float w = 24f + (Cols * (Icon + 4f));
+            float h = 56f + (rows * (Icon + 4f)) + 24f;
+            Rect win = new Rect(VirtW - w - 16, VirtH - h - 52, w, h);
+            GUI.Box(win, "<b>Sacs</b>", RichCenteredBox());
+
+            if (GUI.Button(new Rect(win.x + win.width - 24, win.y + 4, 20, 20), "X"))
+            {
+                _bagsOpen = false;
+                return;
+            }
+
+            IReadOnlyList<ItemStack> items = _client.InventoryItems;
+            for (int i = 0; i < cells; i++)
+            {
                 Rect cell = new Rect(win.x + 12 + ((i % Cols) * (Icon + 4f)),
-                    gy + ((i / Cols) * (Icon + 4f)), Icon, Icon);
+                    win.y + 28 + ((i / Cols) * (Icon + 4f)), Icon, Icon);
+                if (i >= items.Count)
+                {
+                    GUI.Box(cell, ""); // empty bag cell
+                    continue;
+                }
+
+                ItemStack stack = items[i];
                 DrawItemIcon(cell, stack.ItemId, stack.Quantity);
 
                 Event e = Event.current;
@@ -2013,11 +2077,14 @@ namespace Aetheria.UnityClient
                     }
                     else if (e.button == 1 && _draggingItem == null && !_client.TradeActive)
                     {
-                        _draggingItem = stack; // right-button grab starts the drag
+                        _draggingItem = stack; // right-button grab: drag to an ally or the ground
                         e.Use();
                     }
                 }
             }
+
+            GUI.Label(new Rect(win.x + 12, win.yMax - 24, w - 24, 18),
+                "<size=9><color=#909090>Clic : équiper · Clic droit : glisser</color></size>", Rich());
         }
 
         /// <summary>One equipment slot tile; click to unequip the piece back into the bags.</summary>

@@ -160,8 +160,12 @@ public sealed class World
         if (itemId == 0)
         {
             // Unequip the given slot back into the bags.
-            byte current = slot == EquipSlot.Weapon ? player.EquippedWeaponId
-                : slot == EquipSlot.Armor ? player.EquippedArmorId : (byte)0;
+            if (slot == EquipSlot.None || (int)slot >= EquipSlots.Count)
+            {
+                return false;
+            }
+
+            byte current = player.GetEquipped(slot);
             if (current == 0)
             {
                 return false;
@@ -173,9 +177,7 @@ public sealed class World
                 return false; // bags full: the piece stays on
             }
 
-            if (slot == EquipSlot.Weapon) { player.EquippedWeaponId = 0; }
-            else { player.EquippedArmorId = 0; }
-
+            player.SetEquipped(slot, 0);
             RecomputeEquipment(player);
             return true;
         }
@@ -191,18 +193,19 @@ public sealed class World
             return false; // not equippable
         }
 
+        // The item's OWN slot decides where it goes (a helm can only sit on the head).
+        EquipSlot target = def.Slot;
+
         // Take the new piece out first — that frees the bag slot the old piece falls back into.
         player.Inventory.RemoveQuantity(itemId, 1);
-        byte old = def.Slot == EquipSlot.Weapon ? player.EquippedWeaponId : player.EquippedArmorId;
+        byte old = player.GetEquipped(target);
         if (old != 0)
         {
             ItemDefinition oldDef = _gameData.GetItem(old);
             player.Inventory.TryAdd(old, 1, oldDef.Stackable, oldDef.MaxStack);
         }
 
-        if (def.Slot == EquipSlot.Weapon) { player.EquippedWeaponId = itemId; }
-        else { player.EquippedArmorId = itemId; }
-
+        player.SetEquipped(target, itemId);
         RecomputeEquipment(player);
         return true;
     }
@@ -212,16 +215,17 @@ public sealed class World
     {
         int atk = 0, def = 0, hp = 0;
 
-        if (entity.EquippedWeaponId != 0 && _gameData.HasItem(entity.EquippedWeaponId))
+        // Every worn piece counts — head to boots, weapon to off-hand.
+        for (int i = 0; i < EquipSlots.Count; i++)
         {
-            ItemDefinition w = _gameData.GetItem(entity.EquippedWeaponId);
-            atk += w.AttackBonus; def += w.DefenseBonus; hp += w.HealthBonus;
-        }
+            byte itemId = entity.Equipment[i];
+            if (itemId == 0 || !_gameData.HasItem(itemId))
+            {
+                continue;
+            }
 
-        if (entity.EquippedArmorId != 0 && _gameData.HasItem(entity.EquippedArmorId))
-        {
-            ItemDefinition a = _gameData.GetItem(entity.EquippedArmorId);
-            atk += a.AttackBonus; def += a.DefenseBonus; hp += a.HealthBonus;
+            ItemDefinition piece = _gameData.GetItem(itemId);
+            atk += piece.AttackBonus; def += piece.DefenseBonus; hp += piece.HealthBonus;
         }
 
         entity.EquipmentAttackBonus = atk;
@@ -717,7 +721,8 @@ public sealed class World
                     e.Health, e.EffectiveMaxHealth, (int)e.CurrentResource, e.EffectiveMaxResource,
                     e.FacingRadians, (byte)System.Math.Clamp(e.Level, 1, 255), e.Name,
                     raceOrDef, e.ClassId, e.Gender, e.Appearance, flags,
-                    e.CastAbilityId, e.CastProgressAt(Tick), e.EquippedWeaponId, e.EquippedArmorId));
+                    e.CastAbilityId, e.CastProgressAt(Tick),
+                    e.Kind == EntityKind.Player ? e.CopyEquipment() : null));
             }
         }
 
@@ -1117,10 +1122,12 @@ public sealed class World
 
         dead.Inventory.Clear();
 
-        MoveEquippedToLoot(loot, dead.EquippedWeaponId);
-        MoveEquippedToLoot(loot, dead.EquippedArmorId);
-        dead.EquippedWeaponId = 0;
-        dead.EquippedArmorId = 0;
+        for (int i = 0; i < EquipSlots.Count; i++)
+        {
+            MoveEquippedToLoot(loot, dead.Equipment[i]);
+            dead.SetEquipped((EquipSlot)i, 0);
+        }
+
         RecomputeEquipment(dead); // the respawned body has no gear until it loots/replaces it
 
         int id = _ids.Next();

@@ -1,6 +1,7 @@
 using Aetheria.Server.Items;
 using Aetheria.Shared;
 using Aetheria.Shared.Combat;
+using Aetheria.Shared.Items;
 using Aetheria.Shared.Math;
 using Aetheria.Shared.Net;
 using Aetheria.Shared.Protocol;
@@ -151,8 +152,36 @@ public sealed class ServerEntity
 
     // --- Inventory, equipment & currency (players) ---
     public Inventory Inventory { get; }
-    public byte EquippedWeaponId { get; set; }
-    public byte EquippedArmorId { get; set; }
+
+    private readonly byte[] _equipment = new byte[EquipSlots.Count];
+
+    /// <summary>Item id per equipment slot (index = (int)EquipSlot; 0 = empty).</summary>
+    public IReadOnlyList<byte> Equipment => _equipment;
+
+    public byte GetEquipped(EquipSlot slot) => _equipment[(int)slot];
+
+    public void SetEquipped(EquipSlot slot, byte itemId) => _equipment[(int)slot] = itemId;
+
+    /// <summary>Snapshot of the equipment array (for wire messages).</summary>
+    public byte[] CopyEquipment()
+    {
+        var copy = new byte[EquipSlots.Count];
+        _equipment.CopyTo(copy, 0);
+        return copy;
+    }
+
+    // Legacy accessors kept so early call sites read naturally.
+    public byte EquippedWeaponId
+    {
+        get => _equipment[(int)EquipSlot.Weapon];
+        set => _equipment[(int)EquipSlot.Weapon] = value;
+    }
+
+    public byte EquippedArmorId
+    {
+        get => _equipment[(int)EquipSlot.Chest];
+        set => _equipment[(int)EquipSlot.Chest] = value;
+    }
 
     /// <summary>Equipment stat bonuses, recomputed by the World whenever gear changes.</summary>
     public int EquipmentAttackBonus { get; set; }
