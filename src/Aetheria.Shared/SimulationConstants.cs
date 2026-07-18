@@ -38,6 +38,12 @@ public static class SimulationConstants
     /// <summary>How close a player must stand to the bank chest to move goods in or out.</summary>
     public const float BankInteractRange = 6f;
 
+    /// <summary>
+    /// Maximum obstacle height a mid-air jump clears: fences, small rocks and the bank chest can
+    /// be vaulted; menhirs, trees and tall walls cannot.
+    /// </summary>
+    public const float JumpClearance = 1.0f;
+
     /// <summary>Player movement speed in world units per second.</summary>
     public const float PlayerMoveSpeed = 5f;
 
@@ -100,5 +106,5 @@ public static class SimulationConstants
     /// in the in-game HUD, and in the server startup log, so "am I up to date?" has a one-glance
     /// answer on both sides.
     /// </summary>
-    public const string GameVersion = "0.19.0";
+    public const string GameVersion = "0.19.1";
 }

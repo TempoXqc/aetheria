@@ -82,6 +82,53 @@ public static class JumpAndCollisionTests
         Assert.True(p.Position.X > 8f, $"the walker should get PAST the tree (x={p.Position.X:0.00})");
     }
 
+    [Test("A LOW obstacle (fence-height) is cleared by jumping over it — but blocks a walker.")]
+    public static void Jump_ClearsLowObstacle_WalkDoesNot()
+    {
+        // A fence post dead ahead: low enough to hop (0.9 < clearance 1.0).
+        var world = new World
+        {
+            Obstacles = new[] { new WorldLayout.Obstacle(3f, 0f, 0.3f, height: 0.9f) },
+        };
+        ServerEntity p = world.SpawnPlayer(new PeerId(1), "Hop", 2, 1);
+        world.Teleport(p, new Vec2(0f, 0f));
+
+        // WITHOUT jumping: blocked in front of the post.
+        for (int i = 0; i < 30; i++)
+        {
+            world.ApplyInput(p.Id, (uint)(i + 1), new Vec2(1f, 0f));
+            world.Step(SimulationConstants.TickDelta);
+        }
+
+        Assert.True(p.Position.X < 3f, $"walking must be blocked (x={p.Position.X:0.00})");
+
+        // WITH a jump right at the fence: sail over and land on the far side.
+        world.ApplyInput(p.Id, 100, new Vec2(1f, 0f), 0f, jump: true);
+        for (int i = 0; i < ServerEntity.JumpDurationTicks; i++)
+        {
+            world.Step(SimulationConstants.TickDelta);
+            world.ApplyInput(p.Id, (uint)(101 + i), new Vec2(1f, 0f));
+        }
+
+        Assert.True(p.Position.X > 3.3f, $"the jump must clear the fence (x={p.Position.X:0.00})");
+
+        // A TALL obstacle ignores jumps entirely.
+        var walled = new World
+        {
+            Obstacles = new[] { new WorldLayout.Obstacle(3f, 0f, 0.3f) }, // default: unjumpable
+        };
+        ServerEntity q = walled.SpawnPlayer(new PeerId(2), "Mur", 2, 1);
+        walled.Teleport(q, new Vec2(0f, 0f));
+        walled.ApplyInput(q.Id, 1, new Vec2(1f, 0f), 0f, jump: true);
+        for (int i = 0; i < 40; i++)
+        {
+            walled.Step(SimulationConstants.TickDelta);
+            walled.ApplyInput(q.Id, (uint)(2 + i), new Vec2(1f, 0f), 0f, jump: true);
+        }
+
+        Assert.True(q.Position.X < 3f, $"a wall stays a wall, jump or not (x={q.Position.X:0.00})");
+    }
+
     [Test("Instances have no obstacles: the same walk goes straight through.")]
     public static void Instances_HaveNoObstacles()
     {

@@ -732,7 +732,7 @@ public sealed class World
             }
 
             Vec2 next = entity.Position + (entity.MoveIntent * (entity.EffectiveMoveSpeed * dt));
-            next = ResolveObstacles(next);
+            next = ResolveObstacles(next, airborne: entity.IsJumpingAt(Tick));
             entity.Position = next;
             _grid.InsertOrUpdate(entity.Id, entity.Position);
         }
@@ -740,9 +740,10 @@ public sealed class World
 
     /// <summary>
     /// Push a position out of any blocking circle it overlaps. Pushing out (rather than refusing
-    /// the move) makes bodies SLIDE along trees and walls instead of sticking to them.
+    /// the move) makes bodies SLIDE along trees and walls instead of sticking to them. An AIRBORNE
+    /// body (mid-jump) clears anything lower than the jump — fences, small rocks, the bank chest.
     /// </summary>
-    private Vec2 ResolveObstacles(Vec2 position)
+    private Vec2 ResolveObstacles(Vec2 position, bool airborne = false)
     {
         IReadOnlyList<WorldLayout.Obstacle> obstacles = Obstacles;
         for (int pass = 0; pass < 2; pass++) // two passes settle corner overlaps
@@ -751,6 +752,11 @@ public sealed class World
             for (int i = 0; i < obstacles.Count; i++)
             {
                 WorldLayout.Obstacle o = obstacles[i];
+                if (airborne && o.JumpableOver)
+                {
+                    continue; // sailing over it
+                }
+
                 float minDist = o.Radius + BodyRadius;
                 Vec2 delta = position - o.Position;
                 float distSq = delta.LengthSquared;

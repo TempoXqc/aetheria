@@ -9,21 +9,30 @@ namespace Aetheria.Shared.Data;
 /// </summary>
 public static class WorldLayout
 {
-    /// <summary>A static blocking circle on the ground plane.</summary>
+    /// <summary>A static blocking circle on the ground plane, with a HEIGHT: anything lower than
+    /// a jump's clearance (fences, small rocks, the bank chest) can be hopped over mid-air.</summary>
     public readonly struct Obstacle
     {
+        /// <summary>Height meaning "you can never jump over this" (trees, menhirs, walls).</summary>
+        public const float Unjumpable = 99f;
+
         public readonly float X;
         public readonly float Y;
         public readonly float Radius;
+        public readonly float Height;
 
-        public Obstacle(float x, float y, float radius)
+        public Obstacle(float x, float y, float radius, float height = Unjumpable)
         {
             X = x;
             Y = y;
             Radius = radius;
+            Height = height;
         }
 
         public Vec2 Position => new(X, Y);
+
+        /// <summary>True if an airborne body clears this obstacle.</summary>
+        public bool JumpableOver => Height <= SimulationConstants.JumpClearance;
     }
 
     /// <summary>Trees of the open world (trunk position, kept out of walking paths).</summary>
@@ -37,25 +46,25 @@ public static class WorldLayout
         new(20f, -8f, 0.55f),
     ];
 
-    /// <summary>Rocks near the contested dungeon camp.</summary>
+    /// <summary>Rocks near the contested dungeon camp. The small ones can be jumped over.</summary>
     public static readonly Obstacle[] Rocks =
     [
-        new(35f, 34f, 1.0f),
-        new(44f, 37f, 0.7f),
-        new(37f, 43f, 1.3f),
+        new(35f, 34f, 1.0f, height: 1.05f), // medium: just too tall to hop
+        new(44f, 37f, 0.7f, height: 0.75f), // small: jumpable
+        new(37f, 43f, 1.3f, height: 1.35f), // big: no
     ];
 
     /// <summary>The sanctuary's ring of standing stones (14 menhirs, radius 18; gaps are passable).</summary>
     public static readonly Obstacle[] Menhirs = BuildMenhirs();
 
-    /// <summary>The bank canopy's four posts.</summary>
+    /// <summary>The bank canopy's four posts — and the chest, low enough to vault over.</summary>
     public static readonly Obstacle[] BankPosts =
     [
         new(SimulationConstants.BankChestX - 1.8f, SimulationConstants.BankChestY - 1.5f, 0.25f),
         new(SimulationConstants.BankChestX + 1.8f, SimulationConstants.BankChestY - 1.5f, 0.25f),
         new(SimulationConstants.BankChestX - 1.8f, SimulationConstants.BankChestY + 1.5f, 0.25f),
         new(SimulationConstants.BankChestX + 1.8f, SimulationConstants.BankChestY + 1.5f, 0.25f),
-        new(SimulationConstants.BankChestX, SimulationConstants.BankChestY, 0.7f), // the chest itself
+        new(SimulationConstants.BankChestX, SimulationConstants.BankChestY, 0.7f, height: 0.85f),
     ];
 
     /// <summary>Wolf-field fence posts (walkable gaps between posts are intentional).</summary>
@@ -94,7 +103,7 @@ public static class WorldLayout
         for (int i = 0; i < count; i++)
         {
             Vec2 p = from + (delta * (i / (float)(count - 1)));
-            posts.Add(new Obstacle(p.X, p.Y, 0.3f));
+            posts.Add(new Obstacle(p.X, p.Y, 0.3f, height: 0.9f)); // fences are made to be hopped
         }
     }
 
