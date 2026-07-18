@@ -39,6 +39,7 @@ public enum EffectType : byte
     BuffAttack = 3,      // timed: multiply attack power
     BuffDefense = 4,     // timed: multiply defense
     BuffMoveSpeed = 5,   // timed: multiply move speed
+    Regen = 6,           // timed: restore a fraction of max health (and max mana) per second
 }
 
 /// <summary>

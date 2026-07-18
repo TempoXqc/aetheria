@@ -250,6 +250,34 @@ public sealed class World
     /// </summary>
     public bool TryUseAbility(int attackerId, byte abilityId, int targetId)
     {
+        // Self-cast abilities (range 0, e.g. Renew) ignore the target entirely.
+        if (_entities.TryGetValue(attackerId, out ServerEntity? selfCaster) && selfCaster.IsAlive)
+        {
+            AbilityDefinition selfDef = _gameData.GetAbility(abilityId);
+            if (selfDef.Range <= 0f && selfDef.Id == abilityId)
+            {
+                if (selfCaster.Kind == EntityKind.Player)
+                {
+                    ClassDefinition casterClass = _gameData.GetClass(selfCaster.ClassId);
+                    if (!casterClass.HasAbility(selfDef.Id) || selfCaster.Level < selfDef.UnlockLevel)
+                    {
+                        return false;
+                    }
+                }
+
+                if (!selfCaster.IsAbilityReady(selfDef.Id, Tick) ||
+                    (selfDef.ResourceCost > 0 && !selfCaster.HasResource(selfDef.ResourceCost)))
+                {
+                    return false;
+                }
+
+                selfCaster.StartCooldown(selfDef.Id, Tick + (uint)selfDef.CooldownTicks);
+                selfCaster.SpendResource(selfDef.ResourceCost);
+                ApplyEffectToSelf(selfCaster, selfDef);
+                return true;
+            }
+        }
+
         if (!_entities.TryGetValue(attackerId, out ServerEntity? attacker) || attacker.IsDead ||
             !_entities.TryGetValue(targetId, out ServerEntity? target) || target.IsDead ||
             attackerId == targetId ||
@@ -340,6 +368,7 @@ public sealed class World
             case EffectType.BuffAttack:
             case EffectType.BuffDefense:
             case EffectType.BuffMoveSpeed:
+            case EffectType.Regen:
                 entity.AddEffect(ability.Effect, ability.EffectMagnitude, Tick + (uint)ability.EffectDurationTicks);
                 break;
             case EffectType.None:

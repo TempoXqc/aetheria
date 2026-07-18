@@ -170,9 +170,9 @@ public sealed class GameData
         ],
         classes:
         [
-            new ClassDefinition { Id = 1, Name = "Warrior", MaxHealth = 120, MoveSpeed = 5.0f, AttackPower = 12, Defense = 6, BasicAbilityId = 1, AbilityIds = [1, 20], Resource = ResourceType.Rage,   MaxResource = 100, ResourceRegenPerSec = 0f },
-            new ClassDefinition { Id = 2, Name = "Mage",    MaxHealth = 80,  MoveSpeed = 5.0f, AttackPower = 18, Defense = 2, BasicAbilityId = 2, AbilityIds = [2, 21], Resource = ResourceType.Mana,   MaxResource = 100, ResourceRegenPerSec = 8f },
-            new ClassDefinition { Id = 3, Name = "Ranger",  MaxHealth = 95,  MoveSpeed = 5.5f, AttackPower = 14, Defense = 3, BasicAbilityId = 3, AbilityIds = [3, 22], Resource = ResourceType.Energy, MaxResource = 100, ResourceRegenPerSec = 20f },
+            new ClassDefinition { Id = 1, Name = "Warrior", MaxHealth = 120, MoveSpeed = 5.0f, AttackPower = 12, Defense = 6, BasicAbilityId = 1, AbilityIds = [1, 20, 5], Resource = ResourceType.Rage,   MaxResource = 100, ResourceRegenPerSec = 0f },
+            new ClassDefinition { Id = 2, Name = "Mage",    MaxHealth = 80,  MoveSpeed = 5.0f, AttackPower = 18, Defense = 2, BasicAbilityId = 2, AbilityIds = [2, 21, 5], Resource = ResourceType.Mana,   MaxResource = 100, ResourceRegenPerSec = 8f },
+            new ClassDefinition { Id = 3, Name = "Ranger",  MaxHealth = 95,  MoveSpeed = 5.5f, AttackPower = 14, Defense = 3, BasicAbilityId = 3, AbilityIds = [3, 22, 5], Resource = ResourceType.Energy, MaxResource = 100, ResourceRegenPerSec = 20f },
         ],
         abilities:
         [
@@ -181,6 +181,8 @@ public sealed class GameData
             new AbilityDefinition { Id = 2, Name = "Firebolt", BaseDamage = 16, Range = 12f,  CooldownTicks = 16, ResourceCost = 20, SkillLineId = 2 },
             new AbilityDefinition { Id = 3, Name = "Shot",     BaseDamage = 12, Range = 10f,  CooldownTicks = 12, ResourceCost = 30, SkillLineId = 3 },
             new AbilityDefinition { Id = 4, Name = "Claw",     BaseDamage = 6,  Range = 2.5f, CooldownTicks = 12, ResourceCost = 0 },
+            // Self-cast recovery, all classes: 4%/s of max health (and max mana) for 10s, 30s cooldown.
+            new AbilityDefinition { Id = 5, Name = "Renew", Range = 0f, CooldownTicks = 600, ResourceCost = 0, Effect = EffectType.Regen, EffectMagnitude = 0.04f, EffectDurationTicks = 200 },
             // Advanced abilities (unlock at level 3)
             new AbilityDefinition { Id = 20, Name = "Whirlwind",  BaseDamage = 25, Range = 3f,  CooldownTicks = 40, ResourceCost = 25, UnlockLevel = 3, SkillLineId = 1 },
             new AbilityDefinition { Id = 21, Name = "Frostbolt",  BaseDamage = 24, Range = 12f, CooldownTicks = 24, ResourceCost = 30, UnlockLevel = 3, SkillLineId = 2 },
@@ -193,12 +195,12 @@ public sealed class GameData
         ],
         monsters:
         [
-            new MonsterDefinition { Id = 1, Name = "Goblin Grunt", MaxHealth = 60, MoveSpeed = 4.0f, AttackPower = 8, Defense = 2, AggroRadius = 15f, BasicAbilityId = 4, XpReward = 25, GoldReward = 5 },
-            new MonsterDefinition { Id = 2, Name = "Dire Wolf", MaxHealth = 90, MoveSpeed = 6.0f, AttackPower = 12, Defense = 3, AggroRadius = 20f, BasicAbilityId = 4, XpReward = 40, GoldReward = 10 },
+            new MonsterDefinition { Id = 1, Name = "Goblin Grunt", MaxHealth = 60, MoveSpeed = 4.0f, AttackPower = 5, Defense = 2, AggroRadius = 15f, BasicAbilityId = 4, XpReward = 25, GoldReward = 5 },
+            new MonsterDefinition { Id = 2, Name = "Dire Wolf", MaxHealth = 90, MoveSpeed = 6.0f, AttackPower = 8, Defense = 3, AggroRadius = 20f, BasicAbilityId = 4, XpReward = 40, GoldReward = 10 },
             // Elite: rules the open-world "dungeon" camp (non-instanced, so PvP can erupt around it).
-            new MonsterDefinition { Id = 3, Name = "Goblin King", MaxHealth = 350, MoveSpeed = 4.5f, AttackPower = 22, Defense = 6, AggroRadius = 18f, BasicAbilityId = 4, XpReward = 200, GoldReward = 80 },
+            new MonsterDefinition { Id = 3, Name = "Goblin King", MaxHealth = 350, MoveSpeed = 4.5f, AttackPower = 16, Defense = 6, AggroRadius = 18f, BasicAbilityId = 4, XpReward = 200, GoldReward = 80 },
             // World raid boss: raid-difficulty, lives in the OPEN world — never instanced, PvP possible.
-            new MonsterDefinition { Id = 4, Name = "Ashmaw the Devourer", MaxHealth = 2500, MoveSpeed = 5.0f, AttackPower = 45, Defense = 12, AggroRadius = 25f, BasicAbilityId = 4, XpReward = 1500, GoldReward = 600 },
+            new MonsterDefinition { Id = 4, Name = "Ashmaw the Devourer", MaxHealth = 2500, MoveSpeed = 5.0f, AttackPower = 35, Defense = 12, AggroRadius = 25f, BasicAbilityId = 4, XpReward = 1500, GoldReward = 600 },
         ],
         instances:
         [

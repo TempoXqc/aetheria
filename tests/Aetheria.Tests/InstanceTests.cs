@@ -51,11 +51,11 @@ public static class InstanceTests
         ServerEntity soloMob = solo.Entities.Values.First(e => e.IsMonster);
         Assert.Equal(60, soloMob.Stats.MaxHealth);
 
-        // Five players: hp x(1 + 0.5*4) = x3 → 180; atk x(1 + 0.25*4) = x2 → 16.
+        // Five players: hp x(1 + 0.5*4) = x3 → 180; atk x(1 + 0.25*4) = x2 → 10 (goblin atk 5).
         World five = manager.CreateInstance(Dungeon, groupSize: 5);
         ServerEntity fiveMob = five.Entities.Values.First(e => e.IsMonster);
         Assert.Equal(180, fiveMob.Stats.MaxHealth);
-        Assert.Equal(16, fiveMob.Stats.AttackPower);
+        Assert.Equal(10, fiveMob.Stats.AttackPower);
     }
 
     [Test("A player transfers into an instance (same id) and out again; the empty instance is destroyed.")]

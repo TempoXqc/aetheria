@@ -1,6 +1,6 @@
 [
-  { "id": 1, "name": "Goblin Grunt",        "maxHealth": 60,   "moveSpeed": 4.0, "attackPower": 8,  "defense": 2,  "aggroRadius": 15.0, "basicAbilityId": 4, "xpReward": 25,   "goldReward": 5 },
-  { "id": 2, "name": "Dire Wolf",           "maxHealth": 90,   "moveSpeed": 6.0, "attackPower": 12, "defense": 3,  "aggroRadius": 20.0, "basicAbilityId": 4, "xpReward": 40,   "goldReward": 10 },
-  { "id": 3, "name": "Goblin King",         "maxHealth": 350,  "moveSpeed": 4.5, "attackPower": 22, "defense": 6,  "aggroRadius": 18.0, "basicAbilityId": 4, "xpReward": 200,  "goldReward": 80 },
-  { "id": 4, "name": "Ashmaw the Devourer", "maxHealth": 2500, "moveSpeed": 5.0, "attackPower": 45, "defense": 12, "aggroRadius": 25.0, "basicAbilityId": 4, "xpReward": 1500, "goldReward": 600 }
+  { "id": 1, "name": "Goblin Grunt",        "maxHealth": 60,   "moveSpeed": 4.0, "attackPower": 5,  "defense": 2,  "aggroRadius": 15.0, "basicAbilityId": 4, "xpReward": 25,   "goldReward": 5 },
+  { "id": 2, "name": "Dire Wolf",           "maxHealth": 90,   "moveSpeed": 6.0, "attackPower": 8, "defense": 3,  "aggroRadius": 20.0, "basicAbilityId": 4, "xpReward": 40,   "goldReward": 10 },
+  { "id": 3, "name": "Goblin King",         "maxHealth": 350,  "moveSpeed": 4.5, "attackPower": 16, "defense": 6,  "aggroRadius": 18.0, "basicAbilityId": 4, "xpReward": 200,  "goldReward": 80 },
+  { "id": 4, "name": "Ashmaw the Devourer", "maxHealth": 2500, "moveSpeed": 5.0, "attackPower": 35, "defense": 12, "aggroRadius": 25.0, "basicAbilityId": 4, "xpReward": 1500, "goldReward": 600 }
 ]

@@ -23,6 +23,7 @@ public sealed class ServerEntity
 
     private readonly Dictionary<byte, uint> _abilityReadyTick = new();
     private readonly List<ActiveEffect> _effects = new();
+    private float _regenHealthCarry;
 
     public ServerEntity(int id, EntityKind kind, Vec2 position, StatBlock stats, byte basicAbilityId)
     {
@@ -213,7 +214,7 @@ public sealed class ServerEntity
         return false;
     }
 
-    /// <summary>Per-tick upkeep: expire finished effects and regenerate/decay resource.</summary>
+    /// <summary>Per-tick upkeep: expire finished effects, apply regen ticks, regenerate/decay resource.</summary>
     public void TickUpkeep(uint tick, float dt)
     {
         // Expire buffs.
@@ -228,6 +229,28 @@ public sealed class ServerEntity
         if (IsDead)
         {
             return;
+        }
+
+        // Regeneration effects: magnitude is a fraction of the max pool restored PER SECOND.
+        // Health is integer, so fractional per-tick amounts accumulate in a carry — otherwise a
+        // 0.24hp tick would round to zero and the effect would never heal. Mana is float already.
+        foreach (ActiveEffect effect in _effects)
+        {
+            if (effect.Type == EffectType.Regen)
+            {
+                _regenHealthCarry += EffectiveMaxHealth * effect.Magnitude * dt;
+                if (ResourceType == ResourceType.Mana)
+                {
+                    GainResource(EffectiveMaxResource * effect.Magnitude * dt);
+                }
+            }
+        }
+
+        if (_regenHealthCarry >= 1f)
+        {
+            int whole = (int)_regenHealthCarry;
+            _regenHealthCarry -= whole;
+            Health = System.Math.Min(EffectiveMaxHealth, Health + whole);
         }
 
         if (ResourceType == ResourceType.Rage)

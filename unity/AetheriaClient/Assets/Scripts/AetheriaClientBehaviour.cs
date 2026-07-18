@@ -118,6 +118,7 @@ namespace Aetheria.UnityClient
             {
                 HandleKeys();
                 HandleMouseSelect();
+                AutoAttackTick();
                 SendMovement();
             }
 
@@ -434,6 +435,7 @@ namespace Aetheria.UnityClient
             }
 
             _targetId = best; // clicking empty ground deselects (best stays -1)
+            _autoAttack = best >= 0; // clicking an enemy starts fighting it
         }
 
         private void HandleKeys()
@@ -451,6 +453,11 @@ namespace Aetheria.UnityClient
             if (Input.GetKeyDown(KeyCode.Alpha2))
             {
                 TryCastOnTarget(Classes[_classIndex].advancedAbility);
+            }
+
+            if (Input.GetKeyDown(KeyCode.Alpha3))
+            {
+                TryCastSelf(5); // Renew: heal (and mana) over time
             }
 
             if (Input.GetKeyDown(KeyCode.R))
@@ -536,6 +543,48 @@ namespace Aetheria.UnityClient
 
             _client.SendUseRacial();
             StartLocalCooldown(_racialId);
+        }
+
+        /// <summary>Cast a self-targeted class ability (range 0, e.g. Renew).</summary>
+        private void TryCastSelf(byte abilityId)
+        {
+            if (IsOnCooldown(abilityId) || !_client.EntityId.HasValue)
+            {
+                return;
+            }
+
+            _client.SendUseAbility(abilityId, _client.EntityId.Value);
+            StartLocalCooldown(abilityId);
+        }
+
+        private bool _autoAttack;
+
+        /// <summary>
+        /// Click-to-fight: after left-clicking an enemy, keep swinging the class's basic attack
+        /// (sword / bow / bare hands) whenever the target is in range and the swing is ready.
+        /// </summary>
+        private void AutoAttackTick()
+        {
+            if (!_autoAttack || _targetId < 0)
+            {
+                return;
+            }
+
+            EntitySnapshot self;
+            EntitySnapshot target;
+            if (!_client.TryGetSelf(out self) || !_client.TryGetEntity(_targetId, out target))
+            {
+                return;
+            }
+
+            AbilityDefinition basic = Data.GetAbility(_classId);
+            float rangeSq = basic.Range * basic.Range;
+            if (Vec2.DistanceSquared(self.Position, target.Position) <= rangeSq &&
+                !IsOnCooldown(_classId) &&
+                (basic.ResourceCost <= 0 || self.Resource >= basic.ResourceCost))
+            {
+                TryCastOnTarget(_classId);
+            }
         }
 
         private bool IsOnCooldown(byte abilityId)
@@ -808,6 +857,7 @@ namespace Aetheria.UnityClient
             {
                 ("1", _classId, Data.GetAbility(_classId).Name),
                 ("2", Classes[_classIndex].advancedAbility, Data.GetAbility(Classes[_classIndex].advancedAbility).Name),
+                ("3", (byte)5, Data.GetAbility(5).Name),
                 ("R", _racialId, Data.GetAbility(_racialId).Name),
             };
 
@@ -829,9 +879,13 @@ namespace Aetheria.UnityClient
                 GUI.enabled = usable;
                 if (GUI.Button(r, ""))
                 {
-                    if (def.Range <= 0f)
+                    if (abilityId == _racialId)
                     {
                         TryUseRacial();
+                    }
+                    else if (def.Range <= 0f)
+                    {
+                        TryCastSelf(abilityId);
                     }
                     else
                     {
@@ -1031,8 +1085,8 @@ namespace Aetheria.UnityClient
         private void DrawHelp()
         {
             const string help =
-                "WASD bouger · souris orienter · clic gauche cibler · Tab cible suivante · 1/2 sorts · " +
-                "R racial · F fouiller · G/H/J groupe · I donjon · O raid · L sortir · B/N banque · Échap menu";
+                "WASD bouger · souris orienter · clic gauche = attaquer l'ennemi · Tab cible · 1/2 sorts · " +
+                "3 régén · R racial · F fouiller · G/H/J groupe · I/O/L instances · B/N banque · Échap menu";
             GUI.Label(new Rect(12, VirtH - 24, VirtW - 24, 20), "<size=11>" + help + "</size>", Rich());
         }
 
