@@ -73,6 +73,43 @@ public static class WorldLayout
     /// <summary>Everything that blocks movement, concatenated. The server iterates this.</summary>
     public static readonly Obstacle[] All = Concat(Trees, Rocks, Menhirs, BankPosts, FencePosts);
 
+    /// <summary>
+    /// LINE OF SIGHT between two points in the OPEN WORLD: false when a TALL obstacle (tree,
+    /// menhir — anything unjumpable) crosses the segment. Fences and low rocks never block a
+    /// spell. Shared, so the client can predict exactly what the server will refuse.
+    /// </summary>
+    public static bool HasLineOfSight(Vec2 from, Vec2 to)
+    {
+        float dx = to.X - from.X;
+        float dy = to.Y - from.Y;
+        float lenSq = (dx * dx) + (dy * dy);
+
+        foreach (Obstacle o in All)
+        {
+            if (o.JumpableOver)
+            {
+                continue; // low things don't block sight
+            }
+
+            // Closest point of the segment to the obstacle's centre.
+            float t = lenSq < 0.0001f ? 0f
+                : (((o.X - from.X) * dx) + ((o.Y - from.Y) * dy)) / lenSq;
+            t = t < 0f ? 0f : (t > 1f ? 1f : t);
+            float cx = from.X + (t * dx) - o.X;
+            float cy = from.Y + (t * dy) - o.Y;
+
+            // A slightly slimmer radius: brushing a trunk's edge doesn't eat your spell.
+            float r = o.Radius * 0.8f;
+            if ((cx * cx) + (cy * cy) < r * r &&
+                t > 0.02f && t < 0.98f) // standing against the trunk still sees past it
+            {
+                return false;
+            }
+        }
+
+        return true;
+    }
+
     private static Obstacle[] BuildMenhirs()
     {
         const int Stones = 14;

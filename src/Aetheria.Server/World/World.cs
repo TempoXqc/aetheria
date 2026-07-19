@@ -594,6 +594,12 @@ public sealed class World
         if (jump && !entity.IsJumpingAt(Tick))
         {
             entity.JumpStartTick = Tick == 0 ? 1 : Tick; // cosmetic hop, relayed via snapshot flags
+
+            // WoW rule: JUMPING breaks the incantation too.
+            if (entity.IsCasting)
+            {
+                entity.CancelCast();
+            }
         }
     }
 
@@ -677,6 +683,15 @@ public sealed class World
         // FACING (WoW rule, players only): you cannot strike what you have your back to. The
         // front is a generous 180° arc; monsters turn to their prey themselves.
         if (attacker.Kind == EntityKind.Player && !IsFacing(attacker, target))
+        {
+            return false;
+        }
+
+        // LINE OF SIGHT (open world): a tree or menhir between you and the target blocks
+        // ranged abilities — step around it. Melee never cares; instances have no layout.
+        if (attacker.Kind == EntityKind.Player && HasSafeZone &&
+            _gameData.GetAbility(abilityId).Range > 3f &&
+            !Aetheria.Shared.Data.WorldLayout.HasLineOfSight(attacker.Position, target.Position))
         {
             return false;
         }

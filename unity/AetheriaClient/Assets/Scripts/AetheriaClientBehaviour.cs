@@ -429,20 +429,12 @@ namespace Aetheria.UnityClient
 
             TickLogout(); // the seated 10-second logout, when armed
 
-            // Chat input: Enter opens the box; Enter again sends; Escape cancels.
-            if (Input.GetKeyDown(KeyCode.Return) || Input.GetKeyDown(KeyCode.KeypadEnter))
+            // Chat input: Enter OPENS the box. Sending/closing happens in DrawChat's OnGUI
+            // capture — the focused TextField swallows KeyDown there, Update never sees it.
+            if ((Input.GetKeyDown(KeyCode.Return) || Input.GetKeyDown(KeyCode.KeypadEnter)) &&
+                !_chatInputActive && !_menuOpen && _awaitingBind == null)
             {
-                if (_chatInputActive)
-                {
-                    string text = _chatInput.Trim();
-                    if (text.Length > 0) { ParseAndSendChat(text); }
-                    _chatInput = "";
-                    _chatInputActive = false;
-                }
-                else if (!_menuOpen && _awaitingBind == null)
-                {
-                    _chatInputActive = true;
-                }
+                _chatInputActive = true;
             }
 
             if (Input.GetKeyDown(KeyCode.Escape))
@@ -1624,6 +1616,17 @@ namespace Aetheria.UnityClient
                     ShowError("Tu dois faire face à ta cible.");
                     return;
                 }
+
+                // SAFE ZONE or an OBSTACLE in the way: the server will say no — say it here.
+                bool inSanctuary = !_client.InInstance && (
+                    IsSafePos(self.Position) || IsSafePos(target.Position));
+                bool blocked = !_client.InInstance && def.Range > 3f &&
+                    !Aetheria.Shared.Data.WorldLayout.HasLineOfSight(self.Position, target.Position);
+                if (_targetHostile && (inSanctuary || blocked))
+                {
+                    ShowError("Tu ne peux pas faire ça pour l'instant.");
+                    return;
+                }
             }
 
             _client.SendUseAbility(abilityId, _targetId);
@@ -1655,6 +1658,14 @@ namespace Aetheria.UnityClient
                 case 2: case 5: return "Pas assez de mana.";
                 default: return "Pas assez d'énergie.";
             }
+        }
+
+        private static bool IsSafePos(Vec2 position)
+        {
+            float dx = position.X - SimulationConstants.SafeZoneCenterX;
+            float dy = position.Y - SimulationConstants.SafeZoneCenterY;
+            return (dx * dx) + (dy * dy)
+                <= SimulationConstants.SafeZoneRadius * SimulationConstants.SafeZoneRadius;
         }
 
         /// <summary>WoW-style red error line, centre-screen, fading after two seconds.</summary>
@@ -1766,6 +1777,12 @@ namespace Aetheria.UnityClient
                 case HudConfig.Frame.QuestTracker: return new Rect(VirtW - 236 + o.x, 232 + o.y, 228, 66);
                 case HudConfig.Frame.PartyFrames: return new Rect(12 + o.x, 116 + o.y, 180, 4 * 64);
                 case HudConfig.Frame.CharSheet: return new Rect(16 + o.x, 128 + o.y, 342, 396);
+                case HudConfig.Frame.Chat:
+                    return new Rect(8 + o.x, VirtH - 220 + o.y, 380, 186);
+                case HudConfig.Frame.MicroBar:
+                    return new Rect(VirtW - 16 - (5 * 29f) + o.x, VirtH - 34 + o.y, 5 * 29f, 26);
+                case HudConfig.Frame.CastBar:
+                    return new Rect(((VirtW - 260f) / 2f) + o.x, VirtH - 150f + o.y, 260f, 22f);
                 case HudConfig.Frame.Bags:
                 {
                     const float Icon = 34f;
@@ -1834,6 +1851,7 @@ namespace Aetheria.UnityClient
 
             SetWorldHoverTooltip(); // world entities only speak up when no UI element did
             DrawTooltip();
+            DrawCursorIcon();
         }
 
         // --- Auth flow screens: login → your character (or creation) → world ---
@@ -2940,7 +2958,26 @@ namespace Aetheria.UnityClient
                 }
                 bool usable = !locked && !tooPoor && cd <= 0f && (_targetId >= 0 || def.Range <= 0f);
 
+                // OUT OF RANGE (WoW): the button dims red while the target is too far.
+                bool outOfRange = false;
+                EntitySnapshot rangeSelf;
+                EntitySnapshot rangeTarget;
+                if (def.Range > 0f && _targetId >= 0 &&
+                    _client.TryGetSelf(out rangeSelf) && _client.TryGetEntity(_targetId, out rangeTarget))
+                {
+                    outOfRange = Vec2.DistanceSquared(rangeSelf.Position, rangeTarget.Position)
+                        > def.Range * def.Range;
+                }
+
                 WowUi.Slot(new Rect(r.x - 2, r.y - 2, r.width + 4, r.height + 4)); // WoW slot trim
+                if (outOfRange)
+                {
+                    Color prevRange = GUI.color;
+                    GUI.color = new Color(0.75f, 0.15f, 0.12f, 0.45f);
+                    GUI.DrawTexture(r, Texture2D.whiteTexture);
+                    GUI.color = prevRange;
+                }
+
                 GUI.enabled = usable;
                 if (GUI.Button(r, ""))
                 {
@@ -3131,6 +3168,87 @@ namespace Aetheria.UnityClient
                     }
                 }
             }
+        }
+
+        // --- Contextual mouse cursor (WoW): sword on attackables, purse on merchants,
+        // --- anvil on the smith. 0 none, 1 sword, 2 purse, 3 anvil.
+        private int _cursorIcon;
+        private static readonly Texture2D[] CursorIcons = new Texture2D[4];
+
+        private static Texture2D CursorIconTex(int kind)
+        {
+            if (CursorIcons[kind] != null)
+            {
+                return CursorIcons[kind];
+            }
+
+            const int S = 24;
+            var tex = new Texture2D(S, S, TextureFormat.RGBA32, false);
+            var clear = new Color(0, 0, 0, 0);
+            for (int y = 0; y < S; y++) { for (int x = 0; x < S; x++) { tex.SetPixel(x, y, clear); } }
+
+            void Px(int x, int y, Color c)
+            {
+                if (x >= 0 && x < S && y >= 0 && y < S) { tex.SetPixel(x, S - 1 - y, c); }
+            }
+
+            var steel = new Color(0.85f, 0.88f, 0.95f);
+            var gold = new Color(0.95f, 0.78f, 0.20f);
+            var brown = new Color(0.55f, 0.38f, 0.18f);
+            var dark = new Color(0.12f, 0.12f, 0.14f);
+
+            if (kind == 1)
+            {
+                // SWORD: diagonal blade, gold guard, dark grip.
+                for (int i = 0; i < 12; i++)
+                {
+                    Px(6 + i, 4 + i, steel); Px(7 + i, 4 + i, steel); Px(6 + i, 5 + i, steel);
+                }
+
+                Px(6, 3, steel); Px(7, 3, steel); // tip
+                for (int i = -2; i <= 3; i++) { Px(15 + i, 17 - i, gold); } // guard
+                for (int i = 0; i < 4; i++) { Px(18 + i, 18 + i, brown); Px(19 + i, 18 + i, brown); } // grip
+            }
+            else if (kind == 2)
+            {
+                // PURSE: a pouch with a gold tie.
+                for (int y = 9; y < 20; y++)
+                {
+                    int half = y < 12 ? y - 7 : (y > 17 ? 20 - y + 4 : 6);
+                    for (int x = 12 - half; x <= 12 + half; x++) { Px(x, y, brown); }
+                }
+
+                for (int x = 9; x <= 15; x++) { Px(x, 8, gold); }
+                Px(11, 6, gold); Px(12, 5, gold); Px(13, 6, gold); // tied neck
+                Px(11, 13, gold); Px(12, 14, gold); Px(13, 13, gold); // coin glint
+            }
+            else if (kind == 3)
+            {
+                // ANVIL: the classic silhouette.
+                for (int x = 4; x <= 20; x++) { Px(x, 10, dark); Px(x, 11, dark); Px(x, 12, dark); }
+                for (int x = 2; x <= 7; x++) { Px(x, 9, dark); } // horn
+                for (int x = 9; x <= 15; x++) { Px(x, 13, dark); Px(x, 14, dark); }
+                for (int x = 8; x <= 16; x++) { Px(x, 17, dark); Px(x, 18, dark); } // base
+                for (int x = 10; x <= 14; x++) { Px(x, 15, dark); Px(x, 16, dark); }
+                for (int x = 5; x <= 19; x++) { Px(x, 9, new Color(0.35f, 0.36f, 0.42f)); } // top shine
+            }
+
+            tex.Apply();
+            tex.filterMode = FilterMode.Point;
+            CursorIcons[kind] = tex;
+            return tex;
+        }
+
+        /// <summary>The little WoW cursor companion, drawn beside the OS pointer.</summary>
+        private void DrawCursorIcon()
+        {
+            if (_cursorIcon == 0 || _draggingItem != null)
+            {
+                return;
+            }
+
+            Vector2 m = GuiMouse();
+            GUI.DrawTexture(new Rect(m.x + 12, m.y + 8, 22, 22), CursorIconTex(_cursorIcon));
         }
 
         /// <summary>The quest giver's overhead marker: "!", gold "?", grey "?", or nothing.</summary>
@@ -3444,6 +3562,7 @@ namespace Aetheria.UnityClient
         {
             if (_tooltip != null || _menuOpen || _chatInputActive) { return; }
 
+            _cursorIcon = 0;
             EntitySnapshot? hovered = PickEntityUnderMouse(_ => true);
             if (hovered == null) { return; }
 
@@ -3456,6 +3575,7 @@ namespace Aetheria.UnityClient
             switch (e.Kind)
             {
                 case EntityKind.Monster:
+                    _cursorIcon = 1; // sword: attackable
                     sb.Append("<b><color=#ffd0a0>").Append(e.Name).Append("</color></b>");
                     sb.Append("\n<color=#ffffff>Niveau ").Append(e.Level).Append("</color>");
                     sb.Append("\nPV ").Append(e.Health).Append('/').Append(e.MaxHealth);
@@ -3471,6 +3591,7 @@ namespace Aetheria.UnityClient
                     break;
 
                 case EntityKind.Player when e.Id != (_client.EntityId ?? -1):
+                    if (e.Faction != myFaction) { _cursorIcon = 1; } // sword: enemy player
                     string pColor = e.Faction == myFaction ? "#a0c8ff" : "#ff6060";
                     sb.Append("<b><color=").Append(pColor).Append('>').Append(e.Name).Append("</color></b>");
                     sb.Append("\n<color=#ffffff>Niveau ").Append(e.Level).Append(' ')
@@ -3486,6 +3607,7 @@ namespace Aetheria.UnityClient
                     break;
 
                 case EntityKind.Npc:
+                    _cursorIcon = e.RaceId switch { 4 => 2, 3 => 3, _ => 0 }; // purse / anvil
                     sb.Append("<b><color=#40d040>").Append(e.Name).Append("</color></b>");
                     string title = e.RaceId switch
                     {
@@ -4392,8 +4514,9 @@ namespace Aetheria.UnityClient
             };
 
             const float B = 26f;
-            float x0 = VirtW - 16 - (entries.Length * (B + 3f));
-            float y = VirtH - 34f;
+            Rect barRect = FrameRect(HudConfig.Frame.MicroBar);
+            float x0 = barRect.x;
+            float y = barRect.y;
             for (int i = 0; i < entries.Length; i++)
             {
                 var r = new Rect(x0 + (i * (B + 3f)), y, B, B);
@@ -5280,8 +5403,7 @@ namespace Aetheria.UnityClient
             EntitySnapshot self;
             if (!_client.TryGetSelf(out self) || self.CastAbilityId == 0) { return; }
 
-            const float W = 260f;
-            var rect = new Rect((VirtW - W) / 2f, VirtH - 150f, W, 22f);
+            Rect rect = FrameRect(HudConfig.Frame.CastBar);
             string name = self.CastAbilityId == SimulationConstants.HearthstoneCastId
                 ? "Pierre de foyer"
                 : Data.GetAbility(self.CastAbilityId).Name;
@@ -5320,6 +5442,7 @@ namespace Aetheria.UnityClient
 
             const float W = 380f;
             const float LineH = 17f;
+            Vector2 chatOff = _cfg.Offset(HudConfig.Frame.Chat);
 
             // Collect the ACTIVE TAB's last lines.
             var show = new List<ChatLine>();
@@ -5336,10 +5459,10 @@ namespace Aetheria.UnityClient
             float historyH = Mathf.Max(show.Count, 1) * LineH;
             float inputH = _chatInputActive ? 24f : 0f;
             float tabsH = 20f;
-            float y0 = VirtH - 34f - inputH - historyH;
+            float y0 = VirtH - 34f - inputH - historyH + chatOff.y;
 
             // TAB BAR: click = switch, right-click = configure, « + » = new tab.
-            float tx = 8f;
+            float tx = 8f + chatOff.x;
             for (int t = 0; t < _chatTabs.Count; t++)
             {
                 float tw = 16f + (_chatTabs[t].Name.Length * 7f);
@@ -5370,28 +5493,51 @@ namespace Aetheria.UnityClient
             }
 
             // The history box.
-            Dim(new Rect(8f, y0 - 4f, W, historyH + 8f), 0.35f);
+            Dim(new Rect(8f + chatOff.x, y0 - 4f, W, historyH + 8f), 0.35f);
             for (int i = 0; i < show.Count; i++)
             {
-                GUI.Label(new Rect(14f, y0 + (i * LineH), W - 12f, LineH + 2f),
+                GUI.Label(new Rect(14f + chatOff.x, y0 + (i * LineH), W - 12f, LineH + 2f),
                     "<size=11>" + FormatChatLine(show[i]) + "</size>", Rich());
             }
 
             // INPUT: the outgoing channel's coloured tag sits before the field.
             if (_chatInputActive)
             {
+                // THE LOGIN-SCREEN LESSON: a FOCUSED TextField swallows the KeyDown, so Enter
+                // and Escape must be captured HERE, before the field draws — not in Update.
+                Event kev = Event.current;
+                if (kev.type == EventType.KeyDown &&
+                    (kev.keyCode == KeyCode.Return || kev.keyCode == KeyCode.KeypadEnter || kev.character == '\n'))
+                {
+                    string toSend = _chatInput.Trim();
+                    if (toSend.Length > 0) { ParseAndSendChat(toSend); }
+                    _chatInput = "";
+                    _chatInputActive = false;
+                    kev.Use();
+                    return;
+                }
+
+                if (kev.type == EventType.KeyDown && kev.keyCode == KeyCode.Escape)
+                {
+                    _chatInput = "";
+                    _chatInputActive = false;
+                    kev.Use();
+                    return;
+                }
+
                 (ChatChannel _, string chLabel, string chColor) = StyleOf(_chatChannel);
                 string tag = _chatChannel == ChatChannel.Whisper && _whisperTarget.Length > 0
                     ? "À " + _whisperTarget : chLabel;
                 float tagW = 20f + (tag.Length * 7f);
-                GUI.Label(new Rect(8f, VirtH - 32f, tagW, 24f),
+                GUI.Label(new Rect(8f + chatOff.x, VirtH - 32f + chatOff.y, tagW, 24f),
                     "<size=11><color=" + chColor + ">[" + tag + "]</color></size>", Rich());
                 GUI.SetNextControlName("ChatInput");
-                _chatInput = GUI.TextField(new Rect(8f + tagW, VirtH - 32f, W - tagW, 24f), _chatInput, 200);
+                _chatInput = GUI.TextField(new Rect(8f + tagW + chatOff.x, VirtH - 32f + chatOff.y, W - tagW, 24f), _chatInput, 200);
                 GUI.FocusControl("ChatInput");
             }
 
             DrawChatTabConfig(y0 - tabsH);
+            _ = tabsH; // (part of the frame's height envelope)
         }
 
         /// <summary>Right-click tab panel: rename, choose visible channels, delete.</summary>
