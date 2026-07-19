@@ -136,6 +136,11 @@ public static class HostMode
 
                 Log("── Build OK.");
                 SetPhase("publish");
+
+                // The realm list ships INSIDE the build: public IP for friends, LAN for the
+                // house, localhost for this PC — every launcher-installed copy sees both realms.
+                await WriteServersFile(buildDir);
+
                 string version = await GameVersion();
                 foreach (string channel in channels)
                 {
@@ -157,6 +162,44 @@ public static class HostMode
             }
         });
         return true;
+    }
+
+    /// <summary>servers.txt with every route to both realms (replaces Preparer-Build.bat).</summary>
+    private static async Task WriteServersFile(string buildDir)
+    {
+        string publicIp = "";
+        try
+        {
+            using var http = new HttpClient { Timeout = TimeSpan.FromSeconds(5) };
+            publicIp = (await http.GetStringAsync("https://api.ipify.org")).Trim();
+        }
+        catch (Exception) { /* offline: LAN + localhost still work */ }
+
+        string lanIp = "";
+        try
+        {
+            using var probe = new System.Net.Sockets.Socket(
+                System.Net.Sockets.AddressFamily.InterNetwork,
+                System.Net.Sockets.SocketType.Dgram,
+                System.Net.Sockets.ProtocolType.Udp);
+            probe.Connect("8.8.8.8", 65530);
+            lanIp = (probe.LocalEndPoint as System.Net.IPEndPoint)?.Address.ToString() ?? "";
+        }
+        catch (Exception) { /* no network */ }
+
+        static string Routes(string pub, string lan, int port)
+        {
+            var parts = new List<string>();
+            if (pub.Length > 0) { parts.Add($"{pub}:{port}"); }
+            if (lan.Length > 0) { parts.Add($"{lan}:{port}"); }
+            parts.Add($"127.0.0.1:{port}");
+            return string.Join("|", parts);
+        }
+
+        string content = $"Zul'jin|{Routes(publicIp, lanIp, 27015)}\n" +
+                         $"Zul'jin TTS|{Routes(publicIp, lanIp, 27016)}\n";
+        await File.WriteAllTextAsync(Path.Combine(buildDir, "servers.txt"), content);
+        Log("── servers.txt généré (" + (publicIp.Length > 0 ? "IP publique " + publicIp : "sans IP publique") + ").");
     }
 
     private static async Task<string> GameVersion()
