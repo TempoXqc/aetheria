@@ -10,6 +10,86 @@ namespace Aetheria.UnityClient
     /// material name (Bark_NormalTree → Bark_NormalTree.png, Pebbles → PathRocks_Diffuse…).
     /// When the kit isn't imported, callers fall back to the old procedural primitives.
     /// </summary>
+    /// <summary>
+    /// Loader for "Nature Starter Kit 2" (imported by the user; its prefabs are auto-copied to
+    /// Resources/NatureKit by Editor/NatureKitImporter). Fully textured trees, bushes, grass and
+    /// rocks, sorted by NAME — so any similar kit dropped in the project works too. When present,
+    /// the world dressing uses these for a much richer scene.
+    /// </summary>
+    public static class NatureKit
+    {
+        private static bool _checked;
+        private static readonly System.Collections.Generic.List<GameObject> Trees = new System.Collections.Generic.List<GameObject>();
+        private static readonly System.Collections.Generic.List<GameObject> Bushes = new System.Collections.Generic.List<GameObject>();
+        private static readonly System.Collections.Generic.List<GameObject> Grasses = new System.Collections.Generic.List<GameObject>();
+        private static readonly System.Collections.Generic.List<GameObject> Rocks = new System.Collections.Generic.List<GameObject>();
+
+        private static void Scan()
+        {
+            if (_checked)
+            {
+                return;
+            }
+
+            _checked = true;
+            foreach (GameObject prefab in Resources.LoadAll<GameObject>("NatureKit"))
+            {
+                string n = prefab.name.ToLowerInvariant();
+                if (n.Contains("tree")) { Trees.Add(prefab); }
+                else if (n.Contains("bush") || n.Contains("shrub")) { Bushes.Add(prefab); }
+                else if (n.Contains("grass") || n.Contains("fern") || n.Contains("flower")) { Grasses.Add(prefab); }
+                else if (n.Contains("rock") || n.Contains("stone")) { Rocks.Add(prefab); }
+            }
+        }
+
+        public static bool HasTrees { get { Scan(); return Trees.Count > 0; } }
+
+        public static bool Available { get { Scan(); return Trees.Count > 0 || Grasses.Count > 0; } }
+
+        public static GameObject SpawnTree(Transform parent, System.Random rng, Vector3 pos, float height)
+            => Spawn(parent, Pick(Trees, rng), pos, height, rng.Next(360));
+
+        public static GameObject SpawnBush(Transform parent, System.Random rng, Vector3 pos, float height)
+            => Spawn(parent, Pick(Bushes, rng), pos, height, rng.Next(360));
+
+        public static GameObject SpawnGrass(Transform parent, System.Random rng, Vector3 pos, float height)
+            => Spawn(parent, Pick(Grasses, rng), pos, height, rng.Next(360));
+
+        public static GameObject SpawnRock(Transform parent, System.Random rng, Vector3 pos, float height)
+            => Spawn(parent, Pick(Rocks, rng), pos, height, rng.Next(360));
+
+        private static GameObject Pick(System.Collections.Generic.List<GameObject> list, System.Random rng)
+            => list.Count == 0 ? null : list[rng.Next(list.Count)];
+
+        private static GameObject Spawn(Transform parent, GameObject prefab, Vector3 pos, float targetHeight, float yaw)
+        {
+            if (prefab == null)
+            {
+                return null;
+            }
+
+            GameObject go = Object.Instantiate(prefab, parent, false);
+            go.name = prefab.name;
+            go.transform.localPosition = pos;
+            go.transform.localRotation = Quaternion.Euler(0f, yaw, 0f);
+
+            float height = 0f;
+            foreach (Renderer r in go.GetComponentsInChildren<Renderer>(true))
+            {
+                float y = r.bounds.max.y - pos.y;
+                if (y > height) { height = y; }
+            }
+
+            if (height > 0.05f)
+            {
+                float k = targetHeight / height;
+                go.transform.localScale = new Vector3(k, k, k);
+            }
+
+            return go;
+        }
+    }
+
     public static class NatureModels
     {
         private const string Root = "Nature/";
@@ -360,11 +440,18 @@ namespace Aetheria.UnityClient
             Haystack(r, new Vector3(-47f, 0f, -6f));
 
             // Trees and rocks from the SHARED layout: what you see is what blocks you.
+            // Nature Starter Kit trees (fully textured) take over when the kit is imported.
             float[] treeScales = { 1.1f, 1.3f, 1.0f, 1.2f, 0.9f, 1.15f };
             WorldLayout.Obstacle[] trees = WorldLayout.Trees;
+            var treeRng = new System.Random(1337);
             for (int i = 0; i < trees.Length; i++)
             {
-                Tree(r, new Vector3(trees[i].X, 0f, trees[i].Y), treeScales[i % treeScales.Length]);
+                var pos = new Vector3(trees[i].X, 0f, trees[i].Y);
+                float s = treeScales[i % treeScales.Length];
+                if (!NatureKit.HasTrees || NatureKit.SpawnTree(r, treeRng, pos, 7f * s) == null)
+                {
+                    Tree(r, pos, s);
+                }
             }
 
             float[] rockScales = { 1.4f, 1.0f, 1.8f };
@@ -379,7 +466,75 @@ namespace Aetheria.UnityClient
                 new Color(0.20f, 0.12f, 0.10f));
 
             DressWithNature(r);
+            DressWithNatureKit(r);
             DressWithProps(r);
+        }
+
+        /// <summary>
+        /// The FOREST pass, using Nature Starter Kit 2 when the user has imported it: a tree line
+        /// ringing the playable area, scattered field trees, bushes and textured grass everywhere.
+        /// Deterministic (seeded) so every client sees the same world. No-op without the kit.
+        /// </summary>
+        private static void DressWithNatureKit(Transform r)
+        {
+            if (!NatureKit.Available)
+            {
+                return;
+            }
+
+            var rng = new System.Random(90210);
+
+            // Forest edge: a thick ring of big trees around the playable fields, so the horizon
+            // is woodland instead of empty plane.
+            for (int i = 0; i < 110; i++)
+            {
+                float angle = (float)rng.NextDouble() * Mathf.PI * 2f;
+                float dist = 92f + ((float)rng.NextDouble() * 24f);
+                var pos = new Vector3(Mathf.Cos(angle) * dist, 0f, Mathf.Sin(angle) * dist);
+                NatureKit.SpawnTree(r, rng, pos, 6.5f + ((float)rng.NextDouble() * 4f));
+            }
+
+            // Field trees: loose clumps through the meadows (kept off the sanctuary, the path
+            // corridor to the goblin camp, and the boss's scorched ground).
+            for (int i = 0; i < 45; i++)
+            {
+                float x = ((float)rng.NextDouble() * 170f) - 85f;
+                float z = ((float)rng.NextDouble() * 170f) - 85f;
+                if (Mathf.Sqrt((x * x) + (z * z)) < 22f) { continue; }
+                if (x > 62f && z > 62f) { continue; }
+                if (x > 4f && x < 34f && z > 2f && z < 20f) { continue; } // goblin camp clearing
+                NatureKit.SpawnTree(r, rng, new Vector3(x, 0f, z), 5.5f + ((float)rng.NextDouble() * 3.5f));
+            }
+
+            // Bushes: undergrowth between the trees and along the fields.
+            for (int i = 0; i < 120; i++)
+            {
+                float x = ((float)rng.NextDouble() * 180f) - 90f;
+                float z = ((float)rng.NextDouble() * 180f) - 90f;
+                if (Mathf.Sqrt((x * x) + (z * z)) < 18f) { continue; }
+                if (x > 66f && z > 66f) { continue; }
+                NatureKit.SpawnBush(r, rng, new Vector3(x, 0f, z), 0.7f + ((float)rng.NextDouble() * 0.9f));
+            }
+
+            // Textured grass: the real meadow layer, everywhere the eye lands.
+            for (int i = 0; i < 900; i++)
+            {
+                float x = ((float)rng.NextDouble() * 190f) - 95f;
+                float z = ((float)rng.NextDouble() * 190f) - 95f;
+                if (Mathf.Sqrt((x * x) + (z * z)) < 16f) { continue; }
+                if (x > 68f && z > 68f) { continue; }
+                NatureKit.SpawnGrass(r, rng, new Vector3(x, 0f, z), 0.45f + ((float)rng.NextDouble() * 0.5f));
+            }
+
+            // A few kit rocks for variety among the menhirs and fields.
+            for (int i = 0; i < 26; i++)
+            {
+                float x = ((float)rng.NextDouble() * 170f) - 85f;
+                float z = ((float)rng.NextDouble() * 170f) - 85f;
+                if (Mathf.Sqrt((x * x) + (z * z)) < 20f) { continue; }
+                if (x > 66f && z > 66f) { continue; }
+                NatureKit.SpawnRock(r, rng, new Vector3(x, 0f, z), 0.5f + ((float)rng.NextDouble() * 1.1f));
+            }
         }
 
         /// <summary>

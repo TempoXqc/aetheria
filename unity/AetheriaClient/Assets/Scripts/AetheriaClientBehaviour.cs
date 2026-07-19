@@ -620,7 +620,9 @@ namespace Aetheria.UnityClient
 
         private void OnDestroy()
         {
-            _cfg.Save();
+            // NO blanket save here: with two test windows open, the window you did NOT customize
+            // would overwrite the other's freshly saved layout on quit. Every real change
+            // (drag end, options close, profile switch) already saves immediately.
             Disconnect();
             foreach (ServerEntry e in _servers) { e.Probe?.Dispose(); }
             _lobby.Teardown();
@@ -855,14 +857,9 @@ namespace Aetheria.UnityClient
             EntitySnapshot self;
             if (_cameraRig != null && _client.TryGetSelf(out self))
             {
+                // The camera KEEPS whatever angle the player gave it — no auto-recenter while
+                // walking. It only turns when the player drags it (left or right button).
                 _cameraRig.Target = new Vector3(self.Position.X, 0f, self.Position.Y);
-
-                // Running with no drag: the camera drifts back behind the character, WoW-style.
-                bool moving = Input.GetAxisRaw("Horizontal") != 0f || Input.GetAxisRaw("Vertical") != 0f;
-                if (moving && !_menuOpen && !_chatInputActive)
-                {
-                    _cameraRig.RecenterBehind(_lastFacing, Time.deltaTime);
-                }
             }
         }
 
@@ -1175,7 +1172,7 @@ namespace Aetheria.UnityClient
                 case HudConfig.Frame.Messages: return new Rect(12 + o.x, VirtH - 200 + o.y, 480, 160);
                 case HudConfig.Frame.Minimap: return new Rect(VirtW - 196 + o.x, 8 + o.y, 188, 216);
                 case HudConfig.Frame.QuestTracker: return new Rect(VirtW - 236 + o.x, 232 + o.y, 228, 66);
-                case HudConfig.Frame.CharSheet: return new Rect(16 + o.x, 60 + o.y, 342, 396);
+                case HudConfig.Frame.CharSheet: return new Rect(16 + o.x, 128 + o.y, 342, 396);
                 case HudConfig.Frame.Bags:
                 {
                     const float Icon = 34f;
@@ -2015,7 +2012,7 @@ namespace Aetheria.UnityClient
             ItemDefinition def = Data.GetItem(itemId);
 
             Texture2D icon = IconFor(itemId);
-            GUI.Box(rect, "");
+            WowUi.Slot(rect);
             if (icon != null)
             {
                 GUI.DrawTexture(new Rect(rect.x + 1, rect.y + 1, rect.width - 2, rect.height - 2),
@@ -2466,9 +2463,10 @@ namespace Aetheria.UnityClient
             int rows = _client.OpenCorpseItems.Count + (_client.OpenCorpseGold > 0 ? 1 : 0);
             float height = 74f + (rows * 26f) + 34f;
             Rect win = new Rect((VirtW / 2f) - 140, (VirtH / 2f) - (height / 2f), 280, height);
-            GUI.Box(win, "<b>Butin</b>", RichCenteredBox());
+            WowUi.Panel(win); // opaque, framed
+            WowUi.GoldCentered(new Rect(win.x, win.y + 7, win.width, 18), "<b>Butin</b>");
 
-            if (GUI.Button(new Rect(win.x + win.width - 24, win.y + 4, 20, 20), "X"))
+            if (GUI.Button(new Rect(win.x + win.width - 26, win.y + 5, 21, 21), "X"))
             {
                 _client.CloseCorpse();
                 return;
@@ -2527,9 +2525,13 @@ namespace Aetheria.UnityClient
             const float Slot = 40f;
             Rect win = SheetWindowRect();
             float W = win.width;
-            GUI.Box(win, "<b>" + _name + "</b> — niveau " + _client.Level, RichCenteredBox());
 
-            if (GUI.Button(new Rect(win.x + win.width - 24, win.y + 4, 20, 20), "X"))
+            // OPAQUE WoW-style framed panel — no more see-through window.
+            WowUi.Panel(win);
+            WowUi.GoldCentered(new Rect(win.x, win.y + 8, win.width, 20),
+                "<size=13><b>" + _name + "</b> — niveau " + _client.Level + "</size>");
+
+            if (GUI.Button(new Rect(win.x + win.width - 26, win.y + 5, 21, 21), "X"))
             {
                 _sheetOpen = false;
                 return;
@@ -2537,7 +2539,7 @@ namespace Aetheria.UnityClient
 
             // CENTRE: the live 3D portrait between the two slot columns.
             Rect portrait = new Rect(win.x + 12 + Slot + 8, win.y + 30, W - 24 - ((Slot + 8) * 2), (Slot * 5) + 16);
-            GUI.Box(portrait, "");
+            WowUi.Slot(portrait);
             if (_sheetPreview.Texture != null)
             {
                 GUI.DrawTexture(new Rect(portrait.x + 2, portrait.y + 2, portrait.width - 4, portrait.height - 4),
@@ -2565,23 +2567,43 @@ namespace Aetheria.UnityClient
                     gear[(int)right[i]], right[i], SlotLabel(right[i]));
             }
 
-            // FOOTER: stats + money.
-            float y = win.y + 34f + (5 * (Slot + 4f)) + 8f;
-            GUI.Label(new Rect(win.x + 12, y, W - 24, 20),
-                "PV " + (haveSelf ? self.Health + "/" + self.MaxHealth : "—") +
-                " · Attaque " + _client.EffectiveAttack + " · Défense " + _client.EffectiveDefense);
-            y += 20f;
-            GUI.Label(new Rect(win.x + 12, y, W - 24, 20),
-                "XP " + _client.TotalXp + (_client.XpForNextLevel > 0 ? " / " + _client.XpForNextLevel : " (max)"));
-            y += 20f;
-            GUI.Label(new Rect(win.x + 12, y, W - 24, 20), "<b>" + FormatMoney(_client.Gold) + "</b>", Rich());
-            y += 24f;
-            GUI.Label(new Rect(win.x + 12, y, W - 24, 18),
-                "<size=9><color=#909090>Clic sur une pièce : retirer · Clic droit sur le portrait : tourner · Sacs : " + _cfg.Key(HudConfig.Bind.Bags) + "</color></size>", Rich());
+            // FOOTER, WoW-style: two stat blocks — attributes on the left, combat on the right.
+            // (No XP, no current HP, no gold here: the XP bar, unit frame and bags show those.)
+            float y = win.y + 34f + (5 * (Slot + 4f)) + 6f;
+            float half = (W - 30f) / 2f;
+            Rect blockL = new Rect(win.x + 12, y, half, 78);
+            Rect blockR = new Rect(win.x + 18 + half, y, half, 78);
+            WowUi.Highlight(blockL);
+            WowUi.Highlight(blockR);
+
+            AbilityDefinition basic = Data.GetAbility(_classId); // the class's basic strike
+            int dmg = basic.BaseDamage + _client.EffectiveAttack;
+
+            GUI.Label(new Rect(blockL.x + 8, blockL.y + 4, half - 16, 18),
+                "<b><color=#ffd100>Attributs</color></b>", Rich());
+            GUI.Label(new Rect(blockL.x + 8, blockL.y + 22, half - 16, 18),
+                StatLine("Endurance", haveSelf ? self.MaxHealth.ToString() : "—"), Rich());
+            GUI.Label(new Rect(blockL.x + 8, blockL.y + 40, half - 16, 18),
+                StatLine("Force", _client.EffectiveAttack.ToString()), Rich());
+            GUI.Label(new Rect(blockL.x + 8, blockL.y + 58, half - 16, 18),
+                StatLine("Armure", _client.EffectiveDefense.ToString()), Rich());
+
+            GUI.Label(new Rect(blockR.x + 8, blockR.y + 4, half - 16, 18),
+                "<b><color=#ffd100>Combat</color></b>", Rich());
+            GUI.Label(new Rect(blockR.x + 8, blockR.y + 22, half - 16, 18),
+                StatLine("Dégâts", dmg.ToString()), Rich());
+            GUI.Label(new Rect(blockR.x + 8, blockR.y + 40, half - 16, 18),
+                StatLine("Puissance", _client.EffectiveAttack.ToString()), Rich());
+            GUI.Label(new Rect(blockR.x + 8, blockR.y + 58, half - 16, 18),
+                StatLine("Défense", _client.EffectiveDefense.ToString()), Rich());
         }
 
         /// <summary>The character sheet's window rect (movable via Options → Déplacer l'interface).</summary>
         private Rect SheetWindowRect() => FrameRect(HudConfig.Frame.CharSheet);
+
+        /// <summary>A WoW stat row: grey label on the left, white value on the right.</summary>
+        private static string StatLine(string label, string value)
+            => "<color=#c8c8c8>" + label + " :</color> <b><color=#ffffff>" + value + "</color></b>";
 
         /// <summary>The mouse position in virtual GUI coordinates (same space as OnGUI rects).</summary>
         private Vector2 GuiMouse()
@@ -2620,9 +2642,10 @@ namespace Aetheria.UnityClient
             int cells = SimulationConstants.PlayerInventoryCapacity;
             Rect win = FrameRect(HudConfig.Frame.Bags);
             float w = win.width;
-            GUI.Box(win, "<b>Sacs</b>", RichCenteredBox());
+            WowUi.Panel(win); // opaque WoW backpack, not a see-through box
+            WowUi.GoldCentered(new Rect(win.x, win.y + 7, win.width, 18), "<b>Sacs</b>");
 
-            if (GUI.Button(new Rect(win.x + win.width - 24, win.y + 4, 20, 20), "X"))
+            if (GUI.Button(new Rect(win.x + win.width - 26, win.y + 5, 21, 21), "X"))
             {
                 _bagsOpen = false;
                 return;
@@ -2635,7 +2658,7 @@ namespace Aetheria.UnityClient
                     win.y + 28 + ((i / Cols) * (Icon + 4f)), Icon, Icon);
                 if (i >= items.Count)
                 {
-                    GUI.Box(cell, ""); // empty bag cell
+                    WowUi.Slot(cell); // empty bag cell, WoW-style socket
                     continue;
                 }
 
@@ -2671,7 +2694,7 @@ namespace Aetheria.UnityClient
         /// <summary>One equipment slot tile; click to unequip the piece back into the bags.</summary>
         private void DrawEquipSlot(Rect rect, byte equippedId, EquipSlot slot, string label)
         {
-            GUI.Box(rect, "");
+            WowUi.Slot(rect);
             if (equippedId != 0)
             {
                 DrawItemIcon(new Rect(rect.x + 3, rect.y + 3, rect.width - 6, rect.height - 6), equippedId, 1);
