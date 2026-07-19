@@ -47,6 +47,7 @@ public enum MessageType : byte
     DeleteCharacter = 37,
     Hearthstone = 38,
     SetHome = 39,
+    UseItem = 40,
 
     // --- Server -> Client ---
     ConnectAccepted = 128,

@@ -222,6 +222,15 @@ public sealed class ItemDefinition
     /// <summary>Bags only: how many inventory cells this bag ADDS while worn.</summary>
     public int BagCapacity { get; init; }
 
+    /// <summary>Consumables: the effect swallowed on use (heal, mana, regen…). None = inert.</summary>
+    public EffectType ConsumeEffect { get; init; } = EffectType.None;
+
+    /// <summary>Consumables: the effect's magnitude (fraction of max HP/mana, or per second).</summary>
+    public float ConsumeMagnitude { get; init; }
+
+    /// <summary>Consumables: duration in ticks for timed effects (food/drink). 0 = instant.</summary>
+    public int ConsumeDurationTicks { get; init; }
+
     public bool IsEquippable => Slot != EquipSlot.None;
 }
 

@@ -165,6 +165,9 @@ public sealed class GameClient
     /// <summary>Bind the hearthstone to the inn you're standing at.</summary>
     public void SendSetHome() => Send(new SetHome());
 
+    /// <summary>Drink/eat a consumable from the bags.</summary>
+    public void SendUseItem(byte itemId) => Send(new UseItem(itemId));
+
     /// <summary>Permanently delete this server's character (character screen only).</summary>
     public void SendDeleteCharacter()
     {
@@ -620,6 +623,7 @@ public sealed class GameClient
     private void Send(EnterWorld msg) => SendWith(msg.Write);
     private void Send(DeleteCharacter msg) => SendWith(msg.Write);
     private void Send(Hearthstone msg) => SendWith(msg.Write);
+    private void Send(UseItem msg) => SendWith(msg.Write);
     private void Send(SetHome msg) => SendWith(msg.Write);
     private void Send(InputCommand msg) => SendWith(msg.Write);
     private void Send(UseAbility msg) => SendWith(msg.Write);

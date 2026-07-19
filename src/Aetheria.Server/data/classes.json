@@ -70,5 +70,24 @@
     "resource": 0,
     "maxResource": 100,
     "resourceRegenPerSec": 8
+  },
+  {
+    "id": 5,
+    "name": "Cleric",
+    "maxHealth": 90,
+    "moveSpeed": 5.0,
+    "attackPower": 12,
+    "defense": 4,
+    "basicAbilityId": 50,
+    "autoAttackAbilityId": 6,
+    "abilityIds": [
+      50,
+      51,
+      5,
+      6
+    ],
+    "resource": 0,
+    "maxResource": 100,
+    "resourceRegenPerSec": 10
   }
 ]

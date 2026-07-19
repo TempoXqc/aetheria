@@ -179,7 +179,9 @@
     "type": 3,
     "stackable": true,
     "maxStack": 10,
-    "goldValue": 5
+    "goldValue": 5,
+    "consumeEffect": 1,
+    "consumeMagnitude": 0.4
   },
   {
     "id": 30,
@@ -348,5 +350,26 @@
     "slot": 11,
     "bagCapacity": 24,
     "goldValue": 2500
+  },
+  {
+    "id": 26,
+    "name": "Potion de mana mineure",
+    "type": 3,
+    "goldValue": 25,
+    "stackable": true,
+    "maxStack": 20,
+    "consumeEffect": 2,
+    "consumeMagnitude": 0.4
+  },
+  {
+    "id": 27,
+    "name": "Pain de route",
+    "type": 3,
+    "goldValue": 8,
+    "stackable": true,
+    "maxStack": 20,
+    "consumeEffect": 6,
+    "consumeMagnitude": 0.05,
+    "consumeDurationTicks": 360
   }
 ]

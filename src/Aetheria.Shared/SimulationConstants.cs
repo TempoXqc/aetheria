@@ -94,7 +94,7 @@ public static class SimulationConstants
         => System.Math.Max(1, goldValue / VendorSellDivisor);
 
     /// <summary>The merchant's stock (item ids from the item registry): basics + consumables.</summary>
-    public static readonly byte[] VendorStock = { 20, 1, 5, 6, 13, 15, 17, 19, 21, 12, 23, 24, 25 };
+    public static readonly byte[] VendorStock = { 20, 26, 27, 1, 5, 6, 13, 15, 17, 19, 21, 12, 23, 24, 25 };
 
     /// <summary>Gold a new character starts with.</summary>
     public const int StartingGold = 50;
@@ -146,5 +146,5 @@ public static class SimulationConstants
     /// in the in-game HUD, and in the server startup log, so "am I up to date?" has a one-glance
     /// answer on both sides.
     /// </summary>
-    public const string GameVersion = "0.49.0";
+    public const string GameVersion = "0.50.0";
 }

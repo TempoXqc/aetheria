@@ -73,7 +73,7 @@
     "resourceCost": 30,
     "unlockLevel": 3,
     "skillLineId": 2,
-    "castTimeTicks": 40
+    "castTimeTicks": 30
   },
   {
     "id": 22,
@@ -169,5 +169,26 @@
     "effect": 1,
     "effectMagnitude": 0.2,
     "effectDurationTicks": 0
+  },
+  {
+    "id": 50,
+    "name": "Châtiment",
+    "baseDamage": 15,
+    "range": 12.0,
+    "cooldownTicks": 16,
+    "resourceCost": 15,
+    "skillLineId": 2,
+    "castTimeTicks": 24
+  },
+  {
+    "id": 51,
+    "name": "Soin",
+    "baseDamage": 0,
+    "range": 12.0,
+    "cooldownTicks": 24,
+    "resourceCost": 25,
+    "effect": 1,
+    "effectMagnitude": 0.3,
+    "castTimeTicks": 30
   }
 ]

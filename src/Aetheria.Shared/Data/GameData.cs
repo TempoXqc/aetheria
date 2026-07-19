@@ -187,11 +187,11 @@ public sealed class GameData
         races:
         [
             // Alliance
-            new RaceDefinition { Id = 1, Name = "Human", Faction = Faction.Alliance, HealthBonus = 0,   AttackBonus = 0, DefenseBonus = 0,  MoveSpeedMultiplier = 1.00f, AllowedClassIds = [1, 2, 4], RacialAbilityId = 10 },
-            new RaceDefinition { Id = 4, Name = "Dwarf", Faction = Faction.Alliance, HealthBonus = 15,  AttackBonus = 0, DefenseBonus = 2,  MoveSpeedMultiplier = 0.95f, AllowedClassIds = [1, 3], RacialAbilityId = 11 },
+            new RaceDefinition { Id = 1, Name = "Human", Faction = Faction.Alliance, HealthBonus = 0,   AttackBonus = 0, DefenseBonus = 0,  MoveSpeedMultiplier = 1.00f, AllowedClassIds = [1, 2, 4, 5], RacialAbilityId = 10 },
+            new RaceDefinition { Id = 4, Name = "Dwarf", Faction = Faction.Alliance, HealthBonus = 15,  AttackBonus = 0, DefenseBonus = 2,  MoveSpeedMultiplier = 0.95f, AllowedClassIds = [1, 3, 5], RacialAbilityId = 11 },
             // Horde
-            new RaceDefinition { Id = 2, Name = "Orc",   Faction = Faction.Horde,    HealthBonus = 20,  AttackBonus = 3, DefenseBonus = -1, MoveSpeedMultiplier = 0.95f, AllowedClassIds = [1, 3], RacialAbilityId = 12 },
-            new RaceDefinition { Id = 3, Name = "Elf",   Faction = Faction.Horde,    HealthBonus = -10, AttackBonus = 1, DefenseBonus = 0,  MoveSpeedMultiplier = 1.10f, AllowedClassIds = [2, 3, 4], RacialAbilityId = 13 },
+            new RaceDefinition { Id = 2, Name = "Orc",   Faction = Faction.Horde,    HealthBonus = 20,  AttackBonus = 3, DefenseBonus = -1, MoveSpeedMultiplier = 0.95f, AllowedClassIds = [1, 3, 5], RacialAbilityId = 12 },
+            new RaceDefinition { Id = 3, Name = "Elf",   Faction = Faction.Horde,    HealthBonus = -10, AttackBonus = 1, DefenseBonus = 0,  MoveSpeedMultiplier = 1.10f, AllowedClassIds = [2, 3, 4, 5], RacialAbilityId = 13 },
         ],
         classes:
         [
@@ -200,6 +200,7 @@ public sealed class GameData
             new ClassDefinition { Id = 3, Name = "Ranger",  MaxHealth = 95,  MoveSpeed = 5.5f, AttackPower = 14, Defense = 3, BasicAbilityId = 3, AbilityIds = [3, 22, 5], Resource = ResourceType.Energy, MaxResource = 100, ResourceRegenPerSec = 20f },
             // The DRUID shapeshifts: humanoid/owl cast Wrath (30), bear mauls (31), cat shreds (32).
             new ClassDefinition { Id = 4, Name = "Druid",   MaxHealth = 100, MoveSpeed = 5.0f, AttackPower = 14, Defense = 4, BasicAbilityId = 30, AbilityIds = [30, 31, 32, 33, 5], Resource = ResourceType.Mana, MaxResource = 100, ResourceRegenPerSec = 8f },
+            new ClassDefinition { Id = 5, Name = "Cleric",  MaxHealth = 90,  MoveSpeed = 5.0f, AttackPower = 12, Defense = 4, BasicAbilityId = 50, AutoAttackAbilityId = 6, AbilityIds = [50, 51, 5, 6], Resource = ResourceType.Mana, MaxResource = 100, ResourceRegenPerSec = 10f },
         ],
         abilities:
         [
@@ -214,7 +215,10 @@ public sealed class GameData
             new AbilityDefinition { Id = 6, Name = "Wand Shot", BaseDamage = 10, Range = 12f, CooldownTicks = 30, ResourceCost = 0 },
             // Advanced abilities (unlock at level 3)
             new AbilityDefinition { Id = 20, Name = "Whirlwind",  BaseDamage = 25, Range = 3f,  CooldownTicks = 40, ResourceCost = 25, UnlockLevel = 3, SkillLineId = 1 },
-            new AbilityDefinition { Id = 21, Name = "Frostbolt",  BaseDamage = 24, Range = 12f, CooldownTicks = 24, ResourceCost = 30, UnlockLevel = 3, SkillLineId = 2, CastTimeTicks = 40 },
+            new AbilityDefinition { Id = 21, Name = "Frostbolt",  BaseDamage = 24, Range = 12f, CooldownTicks = 24, ResourceCost = 30, UnlockLevel = 3, SkillLineId = 2, CastTimeTicks = 30 },
+            // The Cleric's kit: holy damage at range, and a TARGETED heal (self or ally).
+            new AbilityDefinition { Id = 50, Name = "Châtiment", BaseDamage = 15, Range = 12f, CooldownTicks = 16, ResourceCost = 15, SkillLineId = 2, CastTimeTicks = 24 },
+            new AbilityDefinition { Id = 51, Name = "Soin", BaseDamage = 0, Range = 12f, CooldownTicks = 24, ResourceCost = 25, Effect = EffectType.Heal, EffectMagnitude = 0.3f, CastTimeTicks = 30 },
             new AbilityDefinition { Id = 22, Name = "Aimed Shot", BaseDamage = 22, Range = 12f, CooldownTicks = 30, ResourceCost = 50, UnlockLevel = 3, SkillLineId = 3, CastTimeTicks = 30 },
             // Druid kit: one basic attack per FORM, plus an instant self-heal at level 3.
             new AbilityDefinition { Id = 30, Name = "Wrath",    BaseDamage = 15, Range = 12f,  CooldownTicks = 30, ResourceCost = 12, SkillLineId = 4, CastTimeTicks = 24 },
@@ -390,9 +394,13 @@ public sealed class GameData
             new ItemDefinition { Id = 23, Name = "Sac de toile",          Type = ItemType.Bag, Slot = EquipSlot.Bag, BagCapacity = 8,  GoldValue = 200 },
             new ItemDefinition { Id = 24, Name = "Sac de cuir",           Type = ItemType.Bag, Slot = EquipSlot.Bag, BagCapacity = 16, GoldValue = 800 },
             new ItemDefinition { Id = 25, Name = "Grand sac du voyageur", Type = ItemType.Bag, Slot = EquipSlot.Bag, BagCapacity = 24, GoldValue = 2500 },
+
+            // CONSUMABLES: potions are instant (30 s shared cooldown); food regenerates over time.
+            new ItemDefinition { Id = 26, Name = "Potion de mana mineure", Type = ItemType.Consumable, Stackable = true, MaxStack = 20, GoldValue = 25, ConsumeEffect = EffectType.RestoreResource, ConsumeMagnitude = 0.4f },
+            new ItemDefinition { Id = 27, Name = "Pain de route", Type = ItemType.Consumable, Stackable = true, MaxStack = 20, GoldValue = 8, ConsumeEffect = EffectType.Regen, ConsumeMagnitude = 0.05f, ConsumeDurationTicks = 360 },
             new ItemDefinition { Id = 10, Name = "Wolf Pelt",    Type = ItemType.Material, Stackable = true, MaxStack = 20, GoldValue = 3 },
             new ItemDefinition { Id = 11, Name = "Goblin Ear",   Type = ItemType.Material, Stackable = true, MaxStack = 20, GoldValue = 2 },
-            new ItemDefinition { Id = 20, Name = "Minor Healing Potion", Type = ItemType.Consumable, Stackable = true, MaxStack = 10, GoldValue = 5 },
+            new ItemDefinition { Id = 20, Name = "Minor Healing Potion", Type = ItemType.Consumable, Stackable = true, MaxStack = 10, GoldValue = 5, ConsumeEffect = EffectType.Heal, ConsumeMagnitude = 0.4f },
             // Body parts (guaranteed skinning loot; see MonsterDefinition.BodyParts).
             new ItemDefinition { Id = 30, Name = "Goblin Head",         Type = ItemType.Material, Stackable = true, MaxStack = 20, GoldValue = 4 },
             new ItemDefinition { Id = 31, Name = "Goblin Skin",         Type = ItemType.Material, Stackable = true, MaxStack = 20, GoldValue = 3 },

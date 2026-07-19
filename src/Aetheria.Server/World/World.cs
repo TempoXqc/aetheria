@@ -641,6 +641,14 @@ public sealed class World
             }
         }
 
+        // BENEFICIAL targeted abilities (heals): friendly rules, not combat rules.
+        AbilityDefinition probe = _gameData.GetAbility(abilityId);
+        if (probe.Id == abilityId && probe.BaseDamage == 0 &&
+            probe.Effect != EffectType.None && probe.Range > 0f)
+        {
+            return TryUseBeneficial(attackerId, probe, targetId, fromAuto);
+        }
+
         if (!_entities.TryGetValue(attackerId, out ServerEntity? attacker) || attacker.IsDead ||
             !_entities.TryGetValue(targetId, out ServerEntity? target) || target.IsDead ||
             attackerId == targetId ||
@@ -777,6 +785,114 @@ public sealed class World
         }
     }
 
+    /// <summary>
+    /// A HEAL (or other friendly effect) on a target: self or a same-faction player. No facing,
+    /// no sanctuary refusal — kindness is always allowed. Cast-time heals ride the normal
+    /// incantation pipeline (whose resolution routes beneficial spells back here).
+    /// </summary>
+    private bool TryUseBeneficial(int casterId, AbilityDefinition ability, int targetId, bool fromAuto)
+    {
+        if (!_entities.TryGetValue(casterId, out ServerEntity? caster) || caster.IsDead ||
+            !_entities.TryGetValue(targetId, out ServerEntity? target) || target.IsDead ||
+            target.Kind != EntityKind.Player)
+        {
+            return false;
+        }
+
+        if (casterId != targetId && caster.Faction != target.Faction)
+        {
+            return false; // heals cross no faction lines
+        }
+
+        if (caster.Kind == EntityKind.Player)
+        {
+            ClassDefinition cls = _gameData.GetClass(caster.ClassId);
+            if (!cls.HasAbility(ability.Id) || caster.Level < ability.UnlockLevel)
+            {
+                return false;
+            }
+        }
+
+        if (!caster.IsAbilityReady(ability.Id, Tick) ||
+            (ability.ResourceCost > 0 && !caster.HasResource(ability.ResourceCost)))
+        {
+            return false;
+        }
+
+        if (Vec2.DistanceSquared(caster.Position, target.Position) > ability.Range * ability.Range)
+        {
+            return false;
+        }
+
+        if (ability.CastTimeTicks > 0)
+        {
+            if (caster.IsCasting) { return false; }
+            caster.BeginCast(ability.Id, targetId, Tick, ability.CastTimeTicks);
+            TouchGcd(caster, fromAuto);
+            return true;
+        }
+
+        caster.StartCooldown(ability.Id, Tick + (uint)ability.CooldownTicks);
+        caster.SpendResource(ability.ResourceCost);
+        ApplyEffectToSelf(target, ability);
+        TouchGcd(caster, fromAuto);
+        return true;
+    }
+
+    /// <summary>In combat = dealt or took damage in the last 6 seconds.</summary>
+    public bool IsInCombat(ServerEntity entity)
+        => entity.LastCombatTick != 0 && Tick - entity.LastCombatTick < 6 * SimulationConstants.TickRate;
+
+    /// <summary>
+    /// Swallow a CONSUMABLE from the bags: potions are instant with a shared 30 s cooldown;
+    /// food/drink (timed regen) demands being OUT OF COMBAT. Returns false when refused.
+    /// </summary>
+    public bool TryUseItem(int playerId, byte itemId, out string refusal)
+    {
+        refusal = string.Empty;
+        if (!_entities.TryGetValue(playerId, out ServerEntity? player) || player.IsDead ||
+            player.Kind != EntityKind.Player || !_gameData.HasItem(itemId) ||
+            player.Inventory.CountOf(itemId) <= 0)
+        {
+            return false;
+        }
+
+        ItemDefinition def = _gameData.GetItem(itemId);
+        if (def.Type != ItemType.Consumable || def.ConsumeEffect == EffectType.None)
+        {
+            return false;
+        }
+
+        bool isFood = def.ConsumeDurationTicks > 0;
+        if (isFood && IsInCombat(player))
+        {
+            refusal = "Impossible de manger en combat.";
+            return false;
+        }
+
+        if (!isFood)
+        {
+            if (Tick < player.PotionReadyTick)
+            {
+                int seconds = (int)System.Math.Ceiling(
+                    (player.PotionReadyTick - Tick) * SimulationConstants.TickDelta);
+                refusal = $"Potion pas encore prête ({seconds} s).";
+                return false;
+            }
+
+            player.PotionReadyTick = Tick + (uint)(30 * SimulationConstants.TickRate);
+        }
+
+        player.Inventory.RemoveQuantity(itemId, 1);
+        var pseudo = new AbilityDefinition
+        {
+            Id = 0, Effect = def.ConsumeEffect, EffectMagnitude = def.ConsumeMagnitude,
+            EffectDurationTicks = def.ConsumeDurationTicks,
+        };
+        ApplyEffectToSelf(player, pseudo);
+        return true;
+    }
+
     /// <summary>Is the target inside the attacker's FRONT half (180° arc around his facing)?</summary>
     public static bool IsFacing(ServerEntity attacker, ServerEntity target)
     {
@@ -854,6 +970,20 @@ public sealed class World
             float slack = ability.Range + 2f;
             if (Vec2.DistanceSquared(caster.Position, target.Position) > slack * slack)
             {
+                continue;
+            }
+
+            // Beneficial incantation (heal): apply the friendly effect — the sanctuary
+            // never blocks kindness.
+            if (ability.BaseDamage == 0 && ability.Effect != EffectType.None)
+            {
+                if (caster.Faction == target.Faction || caster.Id == target.Id)
+                {
+                    caster.StartCooldown(ability.Id, Tick + (uint)ability.CooldownTicks);
+                    caster.SpendResource(ability.ResourceCost);
+                    ApplyEffectToSelf(target, ability);
+                }
+
                 continue;
             }
 
@@ -1216,6 +1346,9 @@ public sealed class World
         {
             target.CancelCast();
         }
+
+        attacker.MarkInCombat(Tick);
+        target.MarkInCombat(Tick);
 
         // Weapon/spell proficiency: a player's skill in this ability's line scales its damage up.
         bool trainsSkill = attacker.Kind == EntityKind.Player && ability.SkillLineId != 0;

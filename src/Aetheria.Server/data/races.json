@@ -10,7 +10,8 @@
     "allowedClassIds": [
       1,
       2,
-      4
+      4,
+      5
     ],
     "racialAbilityId": 10
   },
@@ -24,7 +25,8 @@
     "moveSpeedMultiplier": 0.95,
     "allowedClassIds": [
       1,
-      3
+      3,
+      5
     ],
     "racialAbilityId": 11
   },
@@ -38,7 +40,8 @@
     "moveSpeedMultiplier": 0.95,
     "allowedClassIds": [
       1,
-      3
+      3,
+      5
     ],
     "racialAbilityId": 12
   },
@@ -53,7 +56,8 @@
     "allowedClassIds": [
       2,
       3,
-      4
+      4,
+      5
     ],
     "racialAbilityId": 13
   }

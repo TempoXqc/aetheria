@@ -392,6 +392,19 @@ public sealed class GameServer
                     HandleHearthstone(peer, session);
                     break;
 
+                case MessageType.UseItem:
+                    UseItem use = UseItem.Read(ref reader);
+                    if (world.TryUseItem(session.EntityId, use.ItemId, out string refusal))
+                    {
+                        SendSelfState(peer, session); // the bags changed
+                    }
+                    else if (refusal.Length > 0)
+                    {
+                        SendWith(peer, new ChatMessage(ChatChannel.System, "", "", refusal).Write);
+                    }
+
+                    break;
+
                 case MessageType.SetHome:
                     _ = SetHome.Read(ref reader);
                     HandleSetHome(peer, session);

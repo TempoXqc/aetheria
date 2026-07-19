@@ -223,6 +223,9 @@ public sealed class ServerEntity
     /// <summary>First tick the hearthstone may fire again (15-minute cooldown).</summary>
     public uint HearthReadyTick { get; set; }
 
+    /// <summary>Shared potion cooldown: first tick a potion may be swallowed again.</summary>
+    public uint PotionReadyTick { get; set; }
+
     private float FormAttackFactor => FormId switch { 1 => 0.9f, 2 => 1.25f, 3 => 1.25f, _ => 1f };
     private float FormDefenseFactor => FormId switch { 1 => 1.6f, _ => 1f };
     private float FormHealthFactor => FormId switch { 1 => 1.3f, _ => 1f };

@@ -117,10 +117,10 @@ namespace Aetheria.UnityClient
 
         private static readonly (byte id, string label, byte[] classes, byte racial)[] Races =
         {
-            (1, "Human (Alliance)", new byte[] { 1, 2, 4 }, (byte)10),
-            (4, "Dwarf (Alliance)", new byte[] { 1, 3 }, (byte)11),
-            (2, "Orc (Horde)", new byte[] { 1, 3 }, (byte)12),
-            (3, "Elf (Horde)", new byte[] { 2, 3, 4 }, (byte)13),
+            (1, "Human (Alliance)", new byte[] { 1, 2, 4, 5 }, (byte)10),
+            (4, "Dwarf (Alliance)", new byte[] { 1, 3, 5 }, (byte)11),
+            (2, "Orc (Horde)", new byte[] { 1, 3, 5 }, (byte)12),
+            (3, "Elf (Horde)", new byte[] { 2, 3, 4, 5 }, (byte)13),
         };
 
         private static readonly (byte id, string label, byte advancedAbility)[] Classes =
@@ -129,6 +129,7 @@ namespace Aetheria.UnityClient
             (2, "Mage (Mana)", (byte)21),
             (3, "Ranger (Energy)", (byte)22),
             (4, "Druide (Mana)", (byte)33),
+            (5, "Clerc (Mana)", (byte)51),
         };
 
         // --- Session ---
@@ -1571,6 +1572,22 @@ namespace Aetheria.UnityClient
 
         private void TryCastOnTarget(byte abilityId)
         {
+            // BENEFICIAL spells (heals): fall back to yourself, ignore facing — WoW self-cast.
+            AbilityDefinition castDef = Data.GetAbility(abilityId);
+            bool beneficial = castDef.Id == abilityId && castDef.BaseDamage == 0 &&
+                              castDef.Effect != EffectType.None && castDef.Range > 0f;
+            if (beneficial)
+            {
+                int healTarget = _targetId >= 0 && !_targetHostile ? _targetId
+                    : _client.EntityId ?? -1;
+                if (healTarget < 0) { return; }
+                if (Time.time < _gcdReadyTime || IsOnCooldown(abilityId)) { ShowError("Pas encore prêt."); return; }
+                _client.SendUseAbility(abilityId, healTarget);
+                StartLocalCooldown(abilityId);
+                _gcdReadyTime = Time.time + (SimulationConstants.GlobalCooldownTicks * SimulationConstants.TickDelta);
+                return;
+            }
+
             if (_targetId < 0) { ShowError("Aucune cible."); return; }
             if (Time.time < _gcdReadyTime) { return; }
             if (IsOnCooldown(abilityId)) { ShowError("Pas encore prêt."); return; }
@@ -1629,7 +1646,7 @@ namespace Aetheria.UnityClient
             switch (classId)
             {
                 case 1: return "Pas assez de rage.";
-                case 2: return "Pas assez de mana.";
+                case 2: case 5: return "Pas assez de mana.";
                 default: return "Pas assez d'énergie.";
             }
         }
@@ -2305,6 +2322,7 @@ namespace Aetheria.UnityClient
             "Le Mage incante feu et givre à distance — fragile, mais dévastateur.",
             "Le Chasseur harcèle à l'arc et ne laisse aucune proie s'échapper.",
             "Le Druide épouse la nature : ours pour encaisser, hibou pour foudroyer à distance, tigre pour lacérer.",
+            "Le Clerc châtie à distance et SOIGNE : le seul à pouvoir refermer les plaies des autres — dans les deux camps.",
         };
 
         private static readonly string[] FactionLore =
@@ -2314,7 +2332,7 @@ namespace Aetheria.UnityClient
         };
 
         // Index-aligned with Classes: the item icon that represents each class.
-        private static readonly byte[] ClassIconItem = { 2, 8, 7, 40 }; // épée, bâton, arc, patte
+        private static readonly byte[] ClassIconItem = { 2, 8, 7, 40, 20 }; // épée, bâton, arc, patte, fiole
 
         /// <summary>A rect-based "◀ valeur ▶" appearance row (WoW's arrow pickers).</summary>
         private int ArrowPicker(float x, ref float y, string label, int index, string[] options, Color? swatch)
@@ -2435,11 +2453,12 @@ namespace Aetheria.UnityClient
             y += 112f;
 
             // Classes as ICONS (sword, staff, bow, paw) — greyed when the race can't play them.
-            float cx0 = x + ((250f - ((4 * 46) + (3 * 10))) / 2f);
+            float iconW = Mathf.Min(46f, (250f - ((Classes.Length - 1) * 6f)) / Classes.Length);
+            float cx0 = x + ((250f - ((iconW * Classes.Length) + ((Classes.Length - 1) * 6f))) / 2f);
             for (int i = 0; i < Classes.Length; i++)
             {
                 bool allowed = System.Array.IndexOf(Races[_raceIndex].classes, Classes[i].id) >= 0;
-                Rect r = new Rect(cx0 + (i * 56), y, 46, 46);
+                Rect r = new Rect(cx0 + (i * (iconW + 6f)), y, iconW, iconW);
                 if (IconButton(r, IconFor(ClassIconItem[i]), _classIndex == i, allowed) && allowed)
                 {
                     _classIndex = i;
@@ -3324,6 +3343,18 @@ namespace Aetheria.UnityClient
             if (def.AttackBonus > 0) { sb.Append("\n<color=#ffffff>+").Append(def.AttackBonus).Append(" Attaque</color>"); }
             if (def.DefenseBonus > 0) { sb.Append("\n<color=#ffffff>+").Append(def.DefenseBonus).Append(" Défense</color>"); }
             if (def.HealthBonus > 0) { sb.Append("\n<color=#20ff20>+").Append(def.HealthBonus).Append(" PV</color>"); }
+            if (def.Type == ItemType.Consumable && def.ConsumeEffect != EffectType.None)
+            {
+                string use = def.ConsumeEffect == EffectType.Heal
+                    ? "rend " + Mathf.RoundToInt(def.ConsumeMagnitude * 100f) + "% de la vie"
+                    : def.ConsumeEffect == EffectType.RestoreResource
+                    ? "rend " + Mathf.RoundToInt(def.ConsumeMagnitude * 100f) + "% de la ressource"
+                    : "régénère vie et mana pendant " +
+                      Mathf.RoundToInt(def.ConsumeDurationTicks * SimulationConstants.TickDelta) +
+                      " s (hors combat)";
+                sb.Append("\n<color=#20ff20>Clic droit : ").Append(use).Append("</color>");
+            }
+
             if (def.Stackable && def.MaxStack > 1) { sb.Append("\n<color=#a0a0a0>Se cumule par ").Append(def.MaxStack).Append("</color>"); }
             // « Prix de vente » = what the merchant ACTUALLY pays (WoW semantics) — computed by
             // the same shared formula as the server, so the credited money always matches.
@@ -4484,6 +4515,11 @@ namespace Aetheria.UnityClient
                         // to sell a single unit instead.
                         byte qty = e.shift ? (byte)1 : (byte)Mathf.Clamp(stack.Quantity, 1, 255);
                         _client.SendVendor(sell: true, stack.ItemId, qty);
+                        e.Use();
+                    }
+                    else if (e.button == 1 && def.Type == ItemType.Consumable)
+                    {
+                        _client.SendUseItem(stack.ItemId); // RIGHT = drink / eat
                         e.Use();
                     }
                     else if (e.button == 1 && def.Slot != EquipSlot.None)

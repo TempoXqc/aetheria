@@ -268,6 +268,22 @@ public readonly struct AttackTarget
 }
 
 /// <summary>A player speaks in the world chat. The chat carries ONLY player words — no system logs.</summary>
+/// <summary>Swallow/eat a consumable from the bags (potion, food) — server-validated.</summary>
+public readonly struct UseItem
+{
+    public readonly byte ItemId;
+
+    public UseItem(byte itemId) => ItemId = itemId;
+
+    public void Write(PacketWriter w)
+    {
+        w.WriteByte((byte)MessageType.UseItem);
+        w.WriteByte(ItemId);
+    }
+
+    public static UseItem Read(ref PacketReader r) => new(r.ReadByte());
+}
+
 /// <summary>The chat CHANNELS, WoW-style. Say is short-range; Trade/World reach everyone.</summary>
 public enum ChatChannel : byte
 {

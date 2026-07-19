@@ -170,4 +170,61 @@ public static class CharacterSystemTests
         Assert.True(world.TryUseRacial(elf.Id));
         Assert.True(elf.EffectiveMoveSpeed > baseSpeed, "swiftness should raise move speed");
     }
+
+    [Test("The Cleric heals an ALLY: same faction mends, the enemy is refused.")]
+    public static void Cleric_HealsAllies_NotEnemies()
+    {
+        var world = new World();
+        ServerEntity cleric = world.SpawnPlayer(new PeerId(1), "C", raceId: 1, classId: 5); // Human Cleric
+        ServerEntity ally = world.SpawnPlayer(new PeerId(2), "A", raceId: 1, classId: 1);   // Human Warrior
+        ServerEntity enemy = world.SpawnPlayer(new PeerId(3), "E", raceId: 2, classId: 1);  // Orc
+
+        // Hurt the ally first.
+        enemy.FacingRadians = System.MathF.Atan2(ally.Position.Y - enemy.Position.Y,
+            ally.Position.X - enemy.Position.X);
+        world.TryUseAbility(enemy.Id, enemy.BasicAbilityId, ally.Id);
+        int hurt = ally.Health;
+        Assert.True(hurt < ally.EffectiveMaxHealth);
+
+        // The heal (id 51) has a cast time: start it, then step until it lands.
+        Assert.True(world.TryUseAbility(cleric.Id, 51, ally.Id), "heal cast must start");
+        for (int i = 0; i < 40; i++) { world.Step(SimulationConstants.TickDelta); }
+        Assert.True(ally.Health > hurt, "the ally must be healed");
+
+        // Healing the ENEMY is refused outright.
+        Assert.False(world.TryUseAbility(cleric.Id, 51, enemy.Id), "no heals across factions");
+    }
+
+    [Test("Consumables: potions restore instantly (shared cooldown); food refuses combat.")]
+    public static void Consumables_PotionsAndFood()
+    {
+        var world = new World();
+        ServerEntity p = world.SpawnPlayer(new PeerId(1), "Soiffard", raceId: 1, classId: 2); // Mage (mana)
+        ServerEntity foe = world.SpawnPlayer(new PeerId(2), "F", raceId: 2, classId: 1);
+        world.Step(SimulationConstants.TickDelta); // tick 0 means « never fought » — move past it
+
+        // Drain some mana, then drink the mana potion.
+        p.SpendResource(60);
+        world.AddItem(p, 26, 2);
+        double before = p.CurrentResource;
+        Assert.True(world.TryUseItem(p.Id, 26, out _));
+        Assert.True(p.CurrentResource > before, "mana potion must restore");
+        Assert.Equal(1, p.Inventory.CountOf(26));
+
+        // Shared potion cooldown: a second one right away is refused.
+        Assert.False(world.TryUseItem(p.Id, 26, out string cd));
+        Assert.True(cd.Contains("pas encore"), "cooldown message expected");
+
+        // Food out of combat: fine. In combat: refused.
+        world.AddItem(p, 27, 2);
+        Assert.True(world.TryUseItem(p.Id, 27, out _), "eating in peace is fine");
+
+        world.Teleport(foe, p.Position + new Aetheria.Shared.Math.Vec2(1.5f, 0f)); // step into melee range
+        foe.FacingRadians = System.MathF.Atan2(p.Position.Y - foe.Position.Y,
+            p.Position.X - foe.Position.X);
+        Assert.True(world.TryUseAbility(foe.Id, foe.BasicAbilityId, p.Id), "the blow must land");
+        Assert.False(world.TryUseItem(p.Id, 27, out string busy));
+        Assert.True(busy.Contains("combat"), "food must refuse combat");
+    }
 }
+
