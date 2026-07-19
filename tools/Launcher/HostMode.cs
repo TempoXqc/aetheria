@@ -270,15 +270,26 @@ public static class HostMode
     /// No repo, no server launcher, no game inside — the launcher downloads the game from the
     /// patch server on first run, so the zip never goes stale. Returns the zip path, or null.
     /// </summary>
-    public static string? CreateShareZip()
+    public static async Task<string?> CreateShareZip()
     {
         try
         {
-            string source = Path.Combine(RepoRoot!, "artifacts", "bin", "Launcher", "release");
-            if (!File.Exists(Path.Combine(source, "Launcher.exe")) &&
-                !File.Exists(Path.Combine(source, "Launcher.dll")))
+            // Build a FRESH player launcher from the CURRENT code, into its own folder
+            // (never artifacts/: those date from whenever the HOST launcher last started,
+            // and a stale copy already shipped an old bug to a friend once).
+            string source = Path.Combine(RepoRoot!, "run", "partage-build");
+            if (Directory.Exists(source)) { Directory.Delete(source, recursive: true); }
+            Log("── ZIP amis : compilation d'un launcher tout frais…");
+
+            // ArtifactsPath is REDIRECTED for this build: the running host launcher locks
+            // its own DLLs under artifacts/, and touching them would fail the compile.
+            string scratch = Path.Combine(RepoRoot!, "run", "partage-arts");
+            (int code, string output) = await RunDotnet(
+                $"publish -c Release tools/Launcher -o \"{source}\" -p:ArtifactsPath=\"{scratch}\"");
+            if (code != 0 || !File.Exists(Path.Combine(source, "Launcher.dll")))
             {
-                Log("ZIP amis : binaires du launcher introuvables.");
+                Log(TailOf(output, 1200));
+                Log("ZIP amis : compilation du launcher échouée.");
                 return null;
             }
 

@@ -306,9 +306,9 @@ app.MapPost("/api/host/update", async (HttpRequest request) =>
     return started ? Results.Ok(new { started = true }) : Results.BadRequest(new { error = "Déjà en cours." });
 });
 
-app.MapPost("/api/host/sharezip", () =>
+app.MapPost("/api/host/sharezip", async () =>
 {
-    string? zip = Aetheria.Launcher.HostMode.CreateShareZip();
+    string? zip = await Aetheria.Launcher.HostMode.CreateShareZip();
     if (zip is null)
     {
         return Results.BadRequest(new { error = "Création du ZIP impossible (voir le journal)." });
