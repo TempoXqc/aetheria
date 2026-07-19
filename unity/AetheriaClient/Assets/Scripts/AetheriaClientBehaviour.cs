@@ -447,9 +447,15 @@ namespace Aetheria.UnityClient
 
             if (Input.GetKeyDown(KeyCode.Escape))
             {
+                // ÉCHAP ferme les fenêtres UNE PAR UNE (la plus « haute » d'abord),
+                // puis vide la cible, et enfin seulement ouvre le menu.
                 if (_chatInputActive) { _chatInputActive = false; _chatInput = ""; }
+                else if (_chatTabConfig >= 0) { _chatTabConfig = -1; }
                 else if (_awaitingBind != null) { _awaitingBind = null; }
+                else if (_partyMenuFor >= 0) { _partyMenuFor = -1; }
                 else if (_contextEntityId >= 0) { _contextEntityId = -1; }
+                else if (_client.TradeActive) { _client.SendTradeCancel(); }
+                else if (_client.LastInspect != null) { _client.ClearInspect(); }
                 else if (_questWindowOpen) { _questWindowOpen = false; }
                 else if (_shopOpen) { _shopOpen = false; }
                 else if (_bankOpen) { _bankOpen = false; }
