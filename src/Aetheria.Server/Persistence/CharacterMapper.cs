@@ -30,6 +30,8 @@ public static class CharacterMapper
             HasPosition = true,
             PosX = entity.Position.X,
             PosY = entity.Position.Y,
+            HomeX = entity.HomeX,
+            HomeY = entity.HomeY,
             ActiveQuestId = entity.ActiveQuestId,
             QuestKills = entity.QuestKills,
             QuestCompletedUpTo = entity.QuestCompletedUpTo,
@@ -85,6 +87,9 @@ public static class CharacterMapper
         {
             world.Teleport(entity, new Aetheria.Shared.Math.Vec2(record.PosX, record.PosY));
         }
+
+        entity.HomeX = record.HomeX;
+        entity.HomeY = record.HomeY;
 
         if (record.Equipment.Count > 0)
         {

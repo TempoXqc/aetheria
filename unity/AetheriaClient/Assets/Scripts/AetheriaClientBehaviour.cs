@@ -128,6 +128,8 @@ namespace Aetheria.UnityClient
         private bool _worldMapOpen;
         private bool _questLogOpen;
         private byte _trackedQuestId; // quest whose hunting zone is highlighted on the maps
+        private int _questLogTab;     // 0 = actives, 1 = terminées
+        private float _mapBlinkUntil; // the zone circle pulses until this time (tracker click)
         private readonly WorldMapView _worldMapView = new WorldMapView();
         private float _logoutAt = -1f; // Time.time when the seated logout completes (-1 = off)
         private static Texture2D _zoneDisc; // soft translucent circle for map zone overlays
@@ -149,6 +151,8 @@ namespace Aetheria.UnityClient
         private int _nearbyQuestGiverId = -1;
         private bool _shopOpen;
         private int _nearbyMerchantId = -1;
+        private int _nearbyInnkeeperId = -1;
+        private float _hearthReadyTime; // local display only — the server is the judge
         private readonly Dictionary<byte, float> _cooldownReadyAt = new Dictionary<byte, float>();
 
         // Right-click context menu on a friendly player.
@@ -1092,6 +1096,20 @@ namespace Aetheria.UnityClient
             {
                 _shopOpen = false; // walked away: the shop closes
             }
+
+            // The innkeeper too (npcType 7): F binds the hearthstone at her inn.
+            _nearbyInnkeeperId = -1;
+            for (int i = 0; i < visible.Count; i++)
+            {
+                EntitySnapshot e = visible[i];
+                if (e.Kind != EntityKind.Npc || e.RaceId != 7) { continue; }
+                if (Vec2.DistanceSquared(self.Position, e.Position) <=
+                    SimulationConstants.InnkeeperRange * SimulationConstants.InnkeeperRange)
+                {
+                    _nearbyInnkeeperId = e.Id;
+                    break;
+                }
+            }
         }
 
         /// <summary>The bank chest you stand next to, if any (the sanctuary's Npc chest).</summary>
@@ -1314,7 +1332,18 @@ namespace Aetheria.UnityClient
                     break;
 
                 case EntityKind.Npc when target.RaceId == 2:
+                    // Right-click on the quest giver: TARGET him too, then open his window.
+                    _targetHostile = false;
+                    _targetId = target.Id;
+                    _client.SendAttackTarget(0);
                     if (_nearbyQuestGiverId >= 0) { _questWindowOpen = true; }
+                    break;
+
+                case EntityKind.Npc:
+                    // Any other NPC: right-click selects it, same sticky rules as left-click.
+                    _targetHostile = false;
+                    _targetId = target.Id;
+                    _client.SendAttackTarget(0);
                     break;
 
                 case EntityKind.Monster:
@@ -1326,7 +1355,10 @@ namespace Aetheria.UnityClient
                     break;
 
                 case EntityKind.Player:
-                    _contextEntityId = target.Id; // ally: open the context menu
+                    _targetHostile = false;                // ally: select AND open the menu
+                    _targetId = target.Id;
+                    _client.SendAttackTarget(0);
+                    _contextEntityId = target.Id;
                     _contextPos = new Vector2(Input.mousePosition.x / _cfg.UiScale,
                         (Screen.height - Input.mousePosition.y) / _cfg.UiScale);
                     break;
@@ -1371,6 +1403,7 @@ namespace Aetheria.UnityClient
             else if (_nearbyMerchantId >= 0) { _shopOpen = true; _bagsOpen = true; }
             else if (_bankOpen) { _bankOpen = false; }
             else if (_nearbyBankId >= 0) { _bankOpen = true; }
+            else if (_nearbyInnkeeperId >= 0) { _client.SendSetHome(); }
         }
 
         private void TryCastOnTarget(byte abilityId)
@@ -1393,6 +1426,16 @@ namespace Aetheria.UnityClient
                 if (Vec2.DistanceSquared(self.Position, target.Position) > def.Range * def.Range)
                 {
                     ShowError("Trop loin.");
+                    return;
+                }
+
+                // FACING (WoW rule): the server refuses a strike at what's behind you — warn
+                // here so the refusal is never silent.
+                float fdx = target.Position.X - self.Position.X;
+                float fdy = target.Position.Y - self.Position.Y;
+                if ((Mathf.Cos(_lastFacing) * fdx) + (Mathf.Sin(_lastFacing) * fdy) < 0f)
+                {
+                    ShowError("Tu dois faire face à ta cible.");
                     return;
                 }
             }
@@ -1571,6 +1614,7 @@ namespace Aetheria.UnityClient
             DrawCorpsePrompt();
             DrawBankPrompt();
             DrawMerchantPrompt();
+            DrawInnkeeperPrompt();
             DrawPlayerFrame();
             DrawPartyFrames();
             DrawTargetFrame();
@@ -2730,6 +2774,37 @@ namespace Aetheria.UnityClient
                 }
             }
 
+            // HEARTHSTONE: the last slot of the bar — teleports home, 15-minute cooldown.
+            {
+                int hearthIndex = slots.Count + (_classId == 4 ? DruidForms.Length : 0);
+                Rect hr = new Rect(bar.x + (hearthIndex * (slot + Pad)) + 20f, bar.y, slot, slot);
+                WowUi.Slot(new Rect(hr.x - 2, hr.y - 2, hr.width + 4, hr.height + 4));
+                float hearthCd = _hearthReadyTime - Time.time;
+
+                if (GUI.Button(hr, "") && hearthCd <= 0f)
+                {
+                    _client.SendHearthstone();
+                    _hearthReadyTime = Time.time + (15f * 60f);
+                }
+
+                GUI.Label(new Rect(hr.x + 3, hr.y + 2, hr.width - 6, 16), "<size=10>Foyer</size>", Rich());
+                GUI.Label(new Rect(hr.x + (hr.width / 2f) - 10, hr.y + (hr.height / 2f) - 10, 20, 20),
+                    "<size=14>⌂</size>", RichCentered());
+                if (hearthCd > 0f)
+                {
+                    Dim(hr, 0.7f);
+                    GUI.Label(new Rect(hr.x, hr.y + (hr.height / 2f) - 9, hr.width, 18),
+                        "<size=10>" + Mathf.CeilToInt(hearthCd / 60f) + " min</size>", RichCentered());
+                }
+
+                if (hr.Contains(Event.current.mousePosition))
+                {
+                    _tooltip = "<b><color=#ffffff>Pierre de foyer</color></b>\n<color=#a0a0a0>" +
+                        "Te ramène à ton auberge (demande à un aubergiste pour en changer)." +
+                        "\nRecharge : 15 minutes.</color>";
+                }
+            }
+
             // DRUID: three shapeshift slots after the abilities — keys 4/5/6 toggle the form.
             if (_classId == 4)
             {
@@ -2920,6 +2995,22 @@ namespace Aetheria.UnityClient
             Rect r = new Rect((screen.x / _cfg.UiScale) - 100,
                 ((Screen.height - screen.y) / _cfg.UiScale) - 14, 200, 24);
             GUI.Box(r, "[" + KeyLabel(HudConfig.Bind.Interact) + "] Commercer");
+        }
+
+        private void DrawInnkeeperPrompt()
+        {
+            if (_nearbyInnkeeperId < 0 || _nearbyCorpseId >= 0 || _nearbyMerchantId >= 0) { return; }
+
+            EntityView view;
+            if (!_views.TryGetValue(_nearbyInnkeeperId, out view) || view == null || Camera.main == null) { return; }
+
+            Vector3 screen = Camera.main.WorldToScreenPoint(
+                view.transform.position + (Vector3.up * (view.HeadHeight + 0.35f)));
+            if (screen.z < 0f) { return; }
+
+            Rect r = new Rect((screen.x / _cfg.UiScale) - 130,
+                ((Screen.height - screen.y) / _cfg.UiScale) - 14, 260, 24);
+            GUI.Box(r, "[" + KeyLabel(HudConfig.Bind.Interact) + "] Faire de cette auberge ton foyer");
         }
 
         /// <summary>An item tile: its ICON (generated PNG), stack count, and hover name.</summary>
@@ -3510,6 +3601,18 @@ namespace Aetheria.UnityClient
             WowUi.Body(new Rect(r.x, r.y + 40, r.width, 20), done
                 ? "<color=#70e070>Terminé — retourne voir Aldric</color>"
                 : "Tués : " + _client.QuestKills + " / " + q.RequiredKills);
+
+            // LEFT-CLICK the tracked quest: the world map opens and the hunting zone BLINKS.
+            var clickZone = new Rect(r.x, r.y + 18, r.width, 44);
+            Event evt = Event.current;
+            if (evt.type == EventType.MouseDown && evt.button == 0 && clickZone.Contains(evt.mousePosition) &&
+                !_layoutEditMode)
+            {
+                _trackedQuestId = active;
+                _worldMapOpen = true;
+                _mapBlinkUntil = Time.time + 4f;
+                evt.Use();
+            }
         }
 
         /// <summary>The loot window's rect (also used to keep clicks there off the camera).</summary>
@@ -3777,12 +3880,23 @@ namespace Aetheria.UnityClient
             WowUi.GoldCentered(new Rect(win.x, win.y + 8, win.width, 20), "<b>Carnet de quêtes</b>");
             if (GUI.Button(new Rect(win.xMax - 26, win.y + 5, 21, 21), "X")) { _questLogOpen = false; return; }
 
-            float y = win.y + 36;
+            // TABS: the finished quests live in their own tab — the first shows only the hunt.
+            if (_questLogTab == 0) { WowUi.Highlight(new Rect(win.x + 12, win.y + 30, 110, 24)); }
+            if (WowUi.Button(new Rect(win.x + 12, win.y + 30, 110, 24), "Actives")) { _questLogTab = 0; }
+            if (_questLogTab == 1) { WowUi.Highlight(new Rect(win.x + 130, win.y + 30, 110, 24)); }
+            if (WowUi.Button(new Rect(win.x + 130, win.y + 30, 110, 24), "Terminées")) { _questLogTab = 1; }
+
+            float y = win.y + 62;
             foreach (Aetheria.Shared.Data.QuestDefinition q in _client.QuestCatalog)
             {
                 bool done = q.Id <= _client.QuestCompletedUpTo;
                 bool active = q.Id == _client.ActiveQuestId;
                 bool available = !done && !active && QuestIsNext(q.Id);
+                if (_questLogTab == 0 ? done : !done)
+                {
+                    continue; // wrong tab
+                }
+
                 if (!done && !active && !available)
                 {
                     continue; // still locked behind the chain: keep the log clean
@@ -3874,15 +3988,37 @@ namespace Aetheria.UnityClient
                 GUI.DrawTexture(map, _worldMapView.Texture, ScaleMode.StretchToFill);
             }
 
-            // Quest zone circle.
+            // Quest zone circle — PULSING while the tracker click asked for attention.
             Aetheria.Shared.Data.QuestDefinition? quest = HighlightedQuest();
             if (quest != null)
             {
                 Vector2 c = WorldMapView.ToMap(map, quest.ZoneX, quest.ZoneY);
                 float r = quest.ZoneRadius / WorldMapView.Extent * (size / 2f);
+                Color prevZone = GUI.color;
+                if (Time.time < _mapBlinkUntil)
+                {
+                    GUI.color = new Color(1f, 1f, 1f, 0.55f + (Mathf.Abs(Mathf.Sin(Time.time * 6f)) * 0.45f));
+                }
+
                 GUI.DrawTexture(new Rect(c.x - r, c.y - r, r * 2f, r * 2f), ZoneDisc(), ScaleMode.StretchToFill);
+                GUI.color = prevZone;
                 GUI.Label(new Rect(c.x - 90, c.y - r - 20, 180, 18),
                     "<size=10><color=#ffd100><b>" + quest.Name + "</b></color></size>", RichCentered());
+
+                // Every quest monster currently in sight: a red-gold dot at its live position.
+                IReadOnlyList<EntitySnapshot> seen = _client.Visible;
+                Color prevDot = GUI.color;
+                GUI.color = new Color(1f, 0.35f, 0.2f);
+                for (int i = 0; i < seen.Count; i++)
+                {
+                    if (seen[i].Kind == EntityKind.Monster && seen[i].RaceId == quest.TargetMonsterId)
+                    {
+                        Vector2 mp = WorldMapView.ToMap(map, seen[i].Position.X, seen[i].Position.Y);
+                        GUI.DrawTexture(new Rect(mp.x - 3, mp.y - 3, 6, 6), Texture2D.whiteTexture);
+                    }
+                }
+
+                GUI.color = prevDot;
             }
 
             // The player: a gold dot exactly where you stand.
@@ -4821,8 +4957,30 @@ namespace Aetheria.UnityClient
                 float cy = mapRect.y + (mapRect.height / 2f) - ((zone.ZoneY - selfForZone.Position.Y) * pxPerUnit);
                 float r = zone.ZoneRadius * pxPerUnit;
                 GUI.BeginGroup(mapRect);
+                Color prevZone = GUI.color;
+                if (Time.time < _mapBlinkUntil)
+                {
+                    GUI.color = new Color(1f, 1f, 1f, 0.55f + (Mathf.Abs(Mathf.Sin(Time.time * 6f)) * 0.45f));
+                }
+
                 GUI.DrawTexture(new Rect(cx - mapRect.x - r, cy - mapRect.y - r, r * 2f, r * 2f),
                     ZoneDisc(), ScaleMode.StretchToFill);
+                GUI.color = prevZone;
+
+                // Quest monsters in sight: red-gold dots, live, clipped to the map square.
+                IReadOnlyList<EntitySnapshot> seen = _client.Visible;
+                GUI.color = new Color(1f, 0.35f, 0.2f);
+                for (int i = 0; i < seen.Count; i++)
+                {
+                    if (seen[i].Kind == EntityKind.Monster && seen[i].RaceId == zone.TargetMonsterId)
+                    {
+                        float mx = (mapRect.width / 2f) + ((seen[i].Position.X - selfForZone.Position.X) * pxPerUnit);
+                        float my = (mapRect.height / 2f) - ((seen[i].Position.Y - selfForZone.Position.Y) * pxPerUnit);
+                        GUI.DrawTexture(new Rect(mx - 3, my - 3, 6, 6), Texture2D.whiteTexture);
+                    }
+                }
+
+                GUI.color = prevZone;
                 GUI.EndGroup();
             }
 

@@ -25,6 +25,24 @@ public static class CombatTests
         Assert.Equal(maxHp - 25, target.Health); // Slash 18 at WoW swing pace hits harder per blow
     }
 
+    [Test("WoW facing rule: a player cannot strike a target behind them; facing it lands.")]
+    public static void TryUseAbility_FacingAway_Fails()
+    {
+        var world = new World();
+        ServerEntity attacker = world.SpawnPlayer(new PeerId(1));
+        ServerEntity target = world.SpawnPlayer(new PeerId(2), "T", raceId: 2, classId: 1);
+
+        // Turn the BACK to the target: facing exactly away.
+        float toTarget = System.MathF.Atan2(target.Position.Y - attacker.Position.Y,
+            target.Position.X - attacker.Position.X);
+        attacker.FacingRadians = toTarget + System.MathF.PI;
+        Assert.False(world.TryUseAbility(attacker.Id, attacker.BasicAbilityId, target.Id),
+            "back turned: the strike must be refused");
+
+        attacker.FacingRadians = toTarget; // face the target: the same strike lands
+        Assert.True(world.TryUseAbility(attacker.Id, attacker.BasicAbilityId, target.Id));
+    }
+
     [Test("An ability out of range does not land.")]
     public static void TryUseAbility_OutOfRange_Fails()
     {

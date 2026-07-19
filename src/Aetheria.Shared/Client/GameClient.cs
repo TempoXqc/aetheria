@@ -156,6 +156,12 @@ public sealed class GameClient
         Send(new EnterWorld());
     }
 
+    /// <summary>Teleport home with the hearthstone (15 min cooldown, server-enforced).</summary>
+    public void SendHearthstone() => Send(new Hearthstone());
+
+    /// <summary>Bind the hearthstone to the inn you're standing at.</summary>
+    public void SendSetHome() => Send(new SetHome());
+
     /// <summary>Permanently delete this server's character (character screen only).</summary>
     public void SendDeleteCharacter()
     {
@@ -608,6 +614,8 @@ public sealed class GameClient
     private void Send(CreateCharacter msg) => SendWith(msg.Write);
     private void Send(EnterWorld msg) => SendWith(msg.Write);
     private void Send(DeleteCharacter msg) => SendWith(msg.Write);
+    private void Send(Hearthstone msg) => SendWith(msg.Write);
+    private void Send(SetHome msg) => SendWith(msg.Write);
     private void Send(InputCommand msg) => SendWith(msg.Write);
     private void Send(UseAbility msg) => SendWith(msg.Write);
     private void Send(UseRacial msg) => SendWith(msg.Write);

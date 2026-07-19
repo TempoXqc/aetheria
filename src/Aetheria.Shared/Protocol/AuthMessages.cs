@@ -279,3 +279,22 @@ public readonly struct DeleteCharacter
 
     public static DeleteCharacter Read(ref PacketReader r) => default;
 }
+
+/// <summary>
+/// Use the HEARTHSTONE: teleport home (the bound inn). 15-minute cooldown, server-enforced.
+/// From an instance it walks you out first. Refusals come back as an InstanceResult message.
+/// </summary>
+public readonly struct Hearthstone
+{
+    public void Write(PacketWriter w) => w.WriteByte((byte)MessageType.Hearthstone);
+
+    public static Hearthstone Read(ref PacketReader r) => default;
+}
+
+/// <summary>Bind the hearthstone HERE — accepted only while standing near an innkeeper.</summary>
+public readonly struct SetHome
+{
+    public void Write(PacketWriter w) => w.WriteByte((byte)MessageType.SetHome);
+
+    public static SetHome Read(ref PacketReader r) => default;
+}

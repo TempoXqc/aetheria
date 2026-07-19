@@ -98,6 +98,9 @@ public static class EquipmentTests
         ServerEntity killer = world.SpawnPlayer(new PeerId(9), "Faucheur", raceId: 1, classId: 1);
         world.GrantExperience(killer, 3000); // enough muscle to cut through the armor
 
+        killer.FacingRadians = System.MathF.Atan2(victim.Position.Y - killer.Position.Y,
+            victim.Position.X - killer.Position.X); // un tueur regarde sa proie
+
         for (int i = 0; i < 2000 && victim.IsAlive; i++)
         {
             if (killer.IsAbilityReady(killer.BasicAbilityId, world.Tick))

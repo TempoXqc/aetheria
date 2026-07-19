@@ -52,6 +52,10 @@ public sealed class CharacterRecord
     public float PosX { get; set; }
     public float PosY { get; set; }
 
+    /// <summary>Hearthstone home (bound inn). (0,0) = the sanctuary.</summary>
+    public float HomeX { get; set; }
+    public float HomeY { get; set; }
+
     // Quest chain progress (linear): active quest, its kill counter, highest completed.
     public byte ActiveQuestId { get; set; }
     public int QuestKills { get; set; }

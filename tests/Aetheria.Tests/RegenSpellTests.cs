@@ -13,6 +13,7 @@ public static class RegenSpellTests
         ServerEntity human = world.SpawnPlayer(new PeerId(1), "H", 1, 1);   // Human Warrior
         ServerEntity orc = world.SpawnPlayer(new PeerId(2), "O", 2, 1);     // hits him first
 
+        orc.FacingRadians = System.MathF.Atan2(human.Position.Y - orc.Position.Y, human.Position.X - orc.Position.X); // face la cible
         world.TryUseAbility(orc.Id, orc.BasicAbilityId, human.Id);
         int damagedHp = human.Health;
         Assert.True(damagedHp < human.EffectiveMaxHealth);

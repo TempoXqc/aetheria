@@ -122,6 +122,7 @@ public static class CharacterSystemTests
         ServerEntity human = world.SpawnPlayer(new PeerId(1), "H", 1, 1); // Human Warrior, racial = Second Wind
         ServerEntity attacker = world.SpawnPlayer(new PeerId(2), "A", raceId: 2, classId: 1); // Orc attacker (opposite faction)
 
+        attacker.FacingRadians = System.MathF.Atan2(human.Position.Y - attacker.Position.Y, human.Position.X - attacker.Position.X); // face la cible
         world.TryUseAbility(attacker.Id, attacker.BasicAbilityId, human.Id); // damage the human
         int damagedHp = human.Health;
         Assert.True(damagedHp < human.Stats.MaxHealth);

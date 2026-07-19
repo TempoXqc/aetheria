@@ -216,6 +216,13 @@ public sealed class ServerEntity
     /// </summary>
     public byte FormId { get; set; }
 
+    /// <summary>The hearthstone's bound HOME (an inn); (0,0) = the sanctuary by default.</summary>
+    public float HomeX { get; set; }
+    public float HomeY { get; set; }
+
+    /// <summary>First tick the hearthstone may fire again (15-minute cooldown).</summary>
+    public uint HearthReadyTick { get; set; }
+
     private float FormAttackFactor => FormId switch { 1 => 0.9f, 2 => 1.25f, 3 => 1.25f, _ => 1f };
     private float FormDefenseFactor => FormId switch { 1 => 1.6f, _ => 1f };
     private float FormHealthFactor => FormId switch { 1 => 1.3f, _ => 1f };

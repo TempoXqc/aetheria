@@ -45,6 +45,8 @@ public enum MessageType : byte
     PartyKick = 35,
     ShapeShift = 36,
     DeleteCharacter = 37,
+    Hearthstone = 38,
+    SetHome = 39,
 
     // --- Server -> Client ---
     ConnectAccepted = 128,

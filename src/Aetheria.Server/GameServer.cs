@@ -199,6 +199,7 @@ public sealed class GameServer
         open.SpawnNpc("Aldric le Guetteur", new Vec2(3.5f, 3.5f), npcType: 2);
         open.SpawnNpc("Mira la Marchande", new Vec2(-3.2f, 5.6f), npcType: 4); // 4 = merchant
         open.SpawnNpc("Brom le Forgeron", new Vec2(-6.0f, -3.8f), npcType: 3);
+        open.SpawnNpc("Aubergiste Marla", new Vec2(6.2f, -2.5f), npcType: 7);  // 7 = innkeeper
 
         // ZONE DE DÉPART — ISOLATED goblins east of the sanctuary: every early fight is a duel,
         // one against one. Packs are endgame content (the dungeon camp below stays grouped).
@@ -382,6 +383,16 @@ public sealed class GameServer
                         SendSelfState(peer, session); // stats changed with the form
                     }
 
+                    break;
+
+                case MessageType.Hearthstone:
+                    _ = Hearthstone.Read(ref reader);
+                    HandleHearthstone(peer, session);
+                    break;
+
+                case MessageType.SetHome:
+                    _ = SetHome.Read(ref reader);
+                    HandleSetHome(peer, session);
                     break;
 
                 case MessageType.ChatSend:
@@ -952,6 +963,66 @@ public sealed class GameServer
     }
 
     // -------------------------------------------------------------- Instances
+
+    /// <summary>Bind the hearthstone HERE — only while standing near an innkeeper (npcType 7).</summary>
+    private void HandleSetHome(PeerId peer, PlayerSession session)
+    {
+        if (!TryGetEntity(session, out ServerEntity? self) || self is null || self.IsDead)
+        {
+            return;
+        }
+
+        foreach (ServerEntity e in session.CurrentWorld.Entities.Values)
+        {
+            if (e.Kind == EntityKind.Npc && e.RaceId == 7 &&
+                Vec2.DistanceSquared(self.Position, e.Position) <=
+                SimulationConstants.InnkeeperRange * SimulationConstants.InnkeeperRange)
+            {
+                self.HomeX = e.Position.X;
+                self.HomeY = e.Position.Y + 1.5f; // land beside the innkeeper, not inside her
+                Send(peer, new InstanceResult(true, 0,
+                    $"Cette auberge est désormais ton foyer ({e.Name})."));
+                _log($"'{self.Name}' bound their hearthstone at {e.Name}.");
+                return;
+            }
+        }
+
+        Send(peer, new InstanceResult(false, 0, "Il faut être auprès d'un aubergiste."));
+    }
+
+    /// <summary>The HEARTHSTONE: teleport home, 15-minute cooldown, instance-safe.</summary>
+    private void HandleHearthstone(PeerId peer, PlayerSession session)
+    {
+        if (!TryGetEntity(session, out ServerEntity? self) || self is null || self.IsDead)
+        {
+            return;
+        }
+
+        uint now = _worlds.OpenWorld.Tick;
+        if (self.HearthReadyTick > now)
+        {
+            int minutes = (int)System.Math.Ceiling(
+                (self.HearthReadyTick - now) * SimulationConstants.TickDelta / 60f);
+            Send(peer, new InstanceResult(false, 0,
+                $"La pierre de foyer se recharge encore ({minutes} min)."));
+            return;
+        }
+
+        // From an instance, the stone walks you OUT first, then carries you home.
+        if (!ReferenceEquals(session.CurrentWorld, _worlds.OpenWorld))
+        {
+            HandleLeaveInstance(peer, session, notify: false);
+        }
+
+        if (!TryGetEntity(session, out ServerEntity? home) || home is null)
+        {
+            return;
+        }
+
+        _worlds.OpenWorld.Teleport(home, new Vec2(home.HomeX, home.HomeY));
+        home.HearthReadyTick = now + SimulationConstants.HearthstoneCooldownTicks;
+        Send(peer, new InstanceResult(true, 0, "La pierre de foyer te ramène chez toi."));
+    }
 
     /// <summary>
     /// The WALK-IN gates: a player standing on a portal enters their party's instance (min 2 —

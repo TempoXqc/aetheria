@@ -643,6 +643,13 @@ public sealed class World
             return false;
         }
 
+        // FACING (WoW rule, players only): you cannot strike what you have your back to. The
+        // front is a generous 180° arc; monsters turn to their prey themselves.
+        if (attacker.Kind == EntityKind.Player && !IsFacing(attacker, target))
+        {
+            return false;
+        }
+
         AbilityDefinition ability = _gameData.GetAbility(abilityId);
 
         // Players may only use abilities in their class kit that their level has unlocked.
@@ -745,6 +752,22 @@ public sealed class World
             byte swing = player.AutoAttackAbilityId != 0 ? player.AutoAttackAbilityId : player.BasicAbilityId;
             TryUseAbility(player.Id, swing, player.AutoAttackTargetId, fromAuto: true);
         }
+    }
+
+    /// <summary>Is the target inside the attacker's FRONT half (180° arc around his facing)?</summary>
+    public static bool IsFacing(ServerEntity attacker, ServerEntity target)
+    {
+        float dx = target.Position.X - attacker.Position.X;
+        float dy = target.Position.Y - attacker.Position.Y;
+        if ((dx * dx) + (dy * dy) < 0.0001f)
+        {
+            return true; // on top of each other: no meaningful facing
+        }
+
+        // FacingRadians is the yaw the client streams with its input (0 = +X).
+        float fx = System.MathF.Cos(attacker.FacingRadians);
+        float fy = System.MathF.Sin(attacker.FacingRadians);
+        return ((fx * dx) + (fy * dy)) >= 0f; // dot ≥ 0 → within the front 180°
     }
 
     /// <summary>Pay the costs and land the ability (shared by instant casts and finished incantations).</summary>
