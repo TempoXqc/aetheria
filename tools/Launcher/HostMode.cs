@@ -19,6 +19,7 @@ public static class HostMode
     private static string _jobPhase = "idle"; // idle | pull | build | publish | done | error
     private static DateTime _lastFetch = DateTime.MinValue;
     private static int _behind = -1;
+    private static bool _launcherOutdated;
     private static readonly string[] StagingOnly = { "staging" };
 
     public static string? RepoRoot { get; private set; }
@@ -160,6 +161,7 @@ public static class HostMode
             ["log"] = log.Length > 4000 ? log[^4000..] : log,
             ["servers"] = servers,
             ["unityFound"] = FindUnity() is not null,
+            ["launcherOutdated"] = _launcherOutdated,
         };
     }
 
@@ -184,9 +186,21 @@ public static class HostMode
             try
             {
                 Log("── Récupération des derniers changements (git pull)…");
+                string beforeHead = (await Git("rev-parse", "HEAD")).output.Trim();
                 (int code, string output) = await Git("pull", "--rebase", "--autostash", "origin", "master");
                 Log(output);
                 if (code != 0) { Fail("git pull a échoué."); return; }
+
+                // Did the pull change the LAUNCHER's own code? Then this running backend is
+                // stale — flag it so the page tells the host to restart Launcher-Serveur.bat.
+                string changed = (await Git("diff", "--name-only", beforeHead, "HEAD")).output;
+                if (changed.Split('\n').Any(f =>
+                    f.StartsWith("tools/Launcher/", StringComparison.Ordinal) &&
+                    !f.EndsWith("launcher.html", StringComparison.Ordinal)))
+                {
+                    _launcherOutdated = true;
+                    Log("⚠ Le launcher lui-même a changé : relance Launcher-Serveur.bat après cette mise à jour.");
+                }
 
                 SetPhase("build");
                 string unity = FindUnity() ?? throw new InvalidOperationException(

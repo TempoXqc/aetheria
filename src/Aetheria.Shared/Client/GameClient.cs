@@ -113,6 +113,9 @@ public sealed class GameClient
     public byte CharacterLevel { get; private set; } = 1;
     public Appearance CharacterAppearance { get; private set; }
 
+    /// <summary>Item id per equip slot for the account's character (lobby preview loadout).</summary>
+    public byte[] CharacterEquipment { get; private set; } = System.Array.Empty<byte>();
+
     /// <summary>Player chat lines received since the last drain (world chat, players only).</summary>
     private readonly List<ChatMessage> _chatFeed = [];
 
@@ -447,6 +450,7 @@ public sealed class GameClient
                         CharacterGender = login.Gender;
                         CharacterLevel = login.Level;
                         CharacterAppearance = login.Appearance;
+                        CharacterEquipment = login.Equipment;
                     }
                     else
                     {

@@ -21,7 +21,8 @@ public static class ProtocolTests
         Assert.True(login.CreateAccount);
 
         var w2 = new PacketWriter();
-        new LoginResult(true, "", true, "Aria", 3, 2, Gender.Female, 4).Write(w2);
+        new LoginResult(true, "", true, "Aria", 3, 2, Gender.Female, 4,
+            equipment: new byte[] { 0, 7, 3, 0, 0 }).Write(w2);
         var r2 = new PacketReader(w2.WrittenSpan);
         Assert.Equal(MessageType.LoginResult, (MessageType)r2.ReadByte());
         LoginResult result = LoginResult.Read(ref r2);
@@ -30,6 +31,9 @@ public static class ProtocolTests
         Assert.Equal("Aria", result.CharacterName);
         Assert.Equal(Gender.Female, result.Gender);
         Assert.Equal((byte)4, result.Level);
+        Assert.Equal(5, result.Equipment.Length);   // the lobby preview loadout survives the wire
+        Assert.Equal((byte)7, result.Equipment[1]);
+        Assert.Equal((byte)3, result.Equipment[2]);
 
         var w3 = new PacketWriter();
         new CreateCharacter("Borin", 4, 1, Gender.Male).Write(w3);

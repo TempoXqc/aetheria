@@ -410,6 +410,12 @@ async function refreshHost() {
     if (!HOST.unityFound) { git.innerHTML += '<br><span class="status-err">Unity introuvable — installe-le via Unity Hub.</span>'; }
   }
 
+  // The pull brought a NEW version of the launcher itself: this running backend is stale.
+  if (HOST.launcherOutdated) {
+    git.innerHTML += '<br><span class="status-warn">⚠ Le launcher lui-même a été mis à jour — ' +
+      'ferme cette fenêtre (et la console) puis relance Launcher-Serveur.bat.</span>';
+  }
+
   for (const name of ['prod','tts','patch']) {
     document.getElementById('srv-' + name).classList.toggle('on', !!HOST.servers[name]);
   }
@@ -435,10 +441,12 @@ async function shareZip() {
   line.innerHTML = '<span class="spin"></span>Création du ZIP…';
   try {
     const res = await fetch('/api/host/sharezip', { method: 'POST' });
-    const out = await res.json();
-    line.innerHTML = res.ok
+    const txt = await res.text();
+    let out = {}; try { out = txt ? JSON.parse(txt) : {}; } catch (_) { /* réponse non-JSON */ }
+    line.innerHTML = res.ok && out.path
       ? '<span class="status-ok">📦 ZIP prêt (le dossier s\'ouvre) : ' + esc(out.path) + '</span>'
-      : '<span class="status-err">' + esc(out.error || 'échec — voir le journal ci-dessous') + '</span>';
+      : '<span class="status-err">' + esc(out.error || ('échec (HTTP ' + res.status +
+          ') — le launcher est sans doute périmé : ferme-le et relance Launcher-Serveur.bat')) + '</span>';
   } catch (e) {
     line.innerHTML = '<span class="status-err">Échec : ' + esc(String(e)) + '</span>';
   } finally {

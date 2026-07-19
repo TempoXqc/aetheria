@@ -62,46 +62,41 @@ namespace Aetheria.UnityClient
             _previewSlot.SetParent(r, false);
             _previewSlot.localPosition = new Vector3(0f, 0.22f, 0f);
 
-            // Campfire to the side: stone ring (real kit pebbles when available), bark logs,
-            // animated flames, warm light.
+            // FIRE PIT, kept low and clean: a ring of textured stones, bark logs laid FLAT
+            // across each other, and a bed of GLOWING EMBERS — no flame mesh at all. The
+            // flickering warm light does the storytelling; nothing here can render wrong.
             Vector3 fire = new Vector3(2.6f, 0f, -1.6f);
-            for (int i = 0; i < 6; i++)
+            for (int i = 0; i < 8; i++)
             {
-                float a = i * Mathf.PI * 2f / 6f;
-                Vector3 at = fire + new Vector3(Mathf.Cos(a) * 0.55f, 0f, Mathf.Sin(a) * 0.55f);
-                if (!NatureModels.Available ||
-                    NatureModels.Spawn(r, "Pebble_Round_" + ((i % 3) + 1), at, 0.18f, i * 61f) == null)
-                {
-                    Tex.Apply(Block(r, "FireStone", at + new Vector3(0f, 0.08f, 0f),
-                        new Vector3(0.22f, 0.16f, 0.22f), new Color(0.35f, 0.34f, 0.36f)),
-                        "stone", 1f, 1f);
-                }
+                float a = i * Mathf.PI * 2f / 8f;
+                GameObject stone = Block(r, "FireStone",
+                    fire + new Vector3(Mathf.Cos(a) * 0.55f, 0.07f, Mathf.Sin(a) * 0.55f),
+                    new Vector3(0.24f, 0.14f, 0.18f), new Color(0.38f, 0.37f, 0.40f));
+                stone.transform.localRotation = Quaternion.Euler(0f, a * Mathf.Rad2Deg, 0f);
+                Tex.Apply(stone, "stone", 1f, 1f);
             }
 
-            // Logs: real cylinders with bark, leaning into the fire like a proper camp pyre.
-            for (int i = 0; i < 4; i++)
+            // Charred logs crossed over the embers.
+            for (int i = 0; i < 3; i++)
             {
-                float a = (i * 90f) + 25f;
+                float a = i * 60f;
                 GameObject log = GameObject.CreatePrimitive(PrimitiveType.Cylinder);
                 log.name = "Log";
                 Object.Destroy(log.GetComponent<Collider>());
                 log.transform.SetParent(r, false);
-                log.transform.localPosition = fire + new Vector3(
-                    Mathf.Cos(a * Mathf.Deg2Rad) * 0.16f, 0.16f, Mathf.Sin(a * Mathf.Deg2Rad) * 0.16f);
-                log.transform.localScale = new Vector3(0.09f, 0.34f, 0.09f);
-                log.transform.localRotation = Quaternion.Euler(52f, a, 0f);
-                Tint(log, new Color(0.30f, 0.19f, 0.10f));
-                Tex.Apply(log, "bark", 1f, 2f, new Color(0.85f, 0.75f, 0.65f));
+                log.transform.localPosition = fire + new Vector3(0f, 0.16f + (i * 0.07f), 0f);
+                log.transform.localScale = new Vector3(0.08f, 0.38f, 0.08f);
+                log.transform.localRotation = Quaternion.Euler(90f, a, 0f);
+                Tint(log, new Color(0.16f, 0.11f, 0.08f));
+                Tex.Apply(log, "bark", 1f, 2f, new Color(0.45f, 0.38f, 0.32f));
             }
 
-            // Flames: layered teardrop spheres (no more orange cube) that flicker in Tick.
+            // The ember bed: two flat discs, deep orange under bright gold, pulsing in Tick.
             _flames.Clear();
-            _flames.Add(FlameOrb(r, fire + new Vector3(0f, 0.42f, 0f), new Vector3(0.42f, 0.60f, 0.42f),
-                new Color(0.95f, 0.35f, 0.05f)));
-            _flames.Add(FlameOrb(r, fire + new Vector3(0.04f, 0.52f, -0.02f), new Vector3(0.28f, 0.46f, 0.28f),
-                new Color(1f, 0.62f, 0.10f)));
-            _flames.Add(FlameOrb(r, fire + new Vector3(-0.02f, 0.58f, 0.02f), new Vector3(0.16f, 0.32f, 0.16f),
-                new Color(1f, 0.88f, 0.35f)));
+            _flames.Add(FlameOrb(r, fire + new Vector3(0f, 0.09f, 0f), new Vector3(0.62f, 0.10f, 0.62f),
+                new Color(0.85f, 0.25f, 0.03f)));
+            _flames.Add(FlameOrb(r, fire + new Vector3(0.05f, 0.13f, 0.04f), new Vector3(0.34f, 0.08f, 0.34f),
+                new Color(1f, 0.62f, 0.12f)));
 
             var lightGo = new GameObject("FireLight");
             lightGo.transform.SetParent(r, false);
@@ -130,21 +125,19 @@ namespace Aetheria.UnityClient
                 PropModels.Spawn(r, "Cauldron", new Vector3(1.6f, 0f, -2.6f), 0.9f, 0f);
             }
 
-            // Pines around the clearing — real textured pines from the nature kit.
-            KitPine(r, new Vector3(-5.5f, 0f, -3f), 1.0f);
-            KitPine(r, new Vector3(-7f, 0f, 2.5f), 1.3f);
-            KitPine(r, new Vector3(6.5f, 0f, 1.5f), 1.1f);
-            KitPine(r, new Vector3(5f, 0f, -5f), 0.9f);
-            KitPine(r, new Vector3(-3f, 0f, -6.5f), 1.2f);
-            KitPine(r, new Vector3(8.5f, 0f, -2f), 1.25f);
-            KitPine(r, new Vector3(-9f, 0f, -1f), 1.1f);
-
-            // A leafy tree or two so the treeline isn't all pines.
-            if (NatureModels.Available)
-            {
-                NatureModels.Spawn(r, "CommonTree_2", new Vector3(-6.2f, 0f, 5.5f), 6.5f, 70f);
-                NatureModels.Spawn(r, "CommonTree_4", new Vector3(7.5f, 0f, 4.5f), 5.8f, 210f);
-            }
+            // Trees around the clearing — Nature Starter Kit 2 first (fully textured, the same
+            // trees as the world's forests), primitive pines otherwise. The MegaKit trees are
+            // deliberately NOT used here: their foliage renders unshaded on some machines.
+            var treeRng = new System.Random(4801);
+            LobbyTree(r, treeRng, new Vector3(-5.5f, 0f, -3f), 1.0f);
+            LobbyTree(r, treeRng, new Vector3(-7f, 0f, 2.5f), 1.3f);
+            LobbyTree(r, treeRng, new Vector3(6.5f, 0f, 1.5f), 1.1f);
+            LobbyTree(r, treeRng, new Vector3(5f, 0f, -5f), 0.9f);
+            LobbyTree(r, treeRng, new Vector3(-3f, 0f, -6.5f), 1.2f);
+            LobbyTree(r, treeRng, new Vector3(8.5f, 0f, -2f), 1.25f);
+            LobbyTree(r, treeRng, new Vector3(-9f, 0f, -1f), 1.1f);
+            LobbyTree(r, treeRng, new Vector3(-6.2f, 0f, 5.5f), 1.15f);
+            LobbyTree(r, treeRng, new Vector3(7.5f, 0f, 4.5f), 1.0f);
 
             DressClearing(r);
 
@@ -187,8 +180,13 @@ namespace Aetheria.UnityClient
             }
         }
 
-        /// <summary>Show (or rebuild) the 3D preview of the character being created.</summary>
-        public void ShowPreview(byte raceId, byte classId, Gender gender, Appearance look, Faction faction)
+        /// <summary>
+        /// Show (or rebuild) the 3D preview: the character being created, or — on the character
+        /// screen — the character EXACTLY as they stand in the world (same armor, same weapon),
+        /// via the equipment the server ships with the login result.
+        /// </summary>
+        public void ShowPreview(byte raceId, byte classId, Gender gender, Appearance look, Faction faction,
+            byte[] equipment = null)
         {
             if (_root == null)
             {
@@ -198,7 +196,7 @@ namespace Aetheria.UnityClient
             ClearPreview();
 
             var snap = new EntitySnapshot(0, EntityKind.Player, faction, Vec2.Zero,
-                1, 1, 0, 0, 0f, 1, "", raceId, classId, gender, look);
+                1, 1, 0, 0, 0f, 1, "", raceId, classId, gender, look, equipment: equipment);
             _previewModel = new GameObject("Preview");
             _previewModel.transform.SetParent(_previewSlot, false);
             _previewRig = CharacterModelBuilder.Build(_previewModel.transform, snap);
@@ -358,11 +356,12 @@ namespace Aetheria.UnityClient
 
             if (NatureModels.Available)
             {
-                // Grass EVERYWHERE — the clearing should read as meadow, not lawn.
+                // Grass EVERYWHERE — the clearing should read as meadow, not lawn. Mostly the
+                // common green tuft (the one that always renders well), a wisp here and there.
                 for (int i = 0; i < 420; i++)
                 {
                     Vector3 pos = ScatterSpot(rng, fire, 1.8f, 16f);
-                    string tuft = (i % 3) == 0 ? "Grass_Wispy_Tall" : "Grass_Common_Tall";
+                    string tuft = (i % 5) == 0 ? "Grass_Wispy_Tall" : "Grass_Common_Tall";
                     NatureModels.Spawn(r, tuft, pos, 0.28f + ((float)rng.NextDouble() * 0.35f),
                         rng.Next(360));
                 }
@@ -376,34 +375,21 @@ namespace Aetheria.UnityClient
                     {
                         float a = (float)rng.NextDouble() * Mathf.PI * 2f;
                         float d = (float)rng.NextDouble() * 1.4f;
-                        string plant = (i % 3) == 0 ? "Grass_Wispy_Tall" : "Grass_Common_Tall";
-                        NatureModels.Spawn(r, plant,
+                        NatureModels.Spawn(r, "Grass_Common_Tall",
                             center + new Vector3(Mathf.Cos(a) * d, 0f, Mathf.Sin(a) * d),
                             0.30f + ((float)rng.NextDouble() * 0.4f), rng.Next(360));
                     }
                 }
 
-                // Ferns, flowers and clover in loose patches.
-                string[] cover = { "Fern_1", "Flower_3_Group", "Flower_4_Group", "Clover_1",
-                    "Bush_Common", "Bush_Common_Flowers", "Plant_1_Big" };
-                for (int i = 0; i < 26; i++)
+                // A few ferns and flowers, sparse and tidy. (No MegaKit rocks, bushes or big
+                // plants here: those models render badly on some machines — keep the scene CLEAN.)
+                string[] cover = { "Fern_1", "Flower_3_Group", "Flower_4_Group" };
+                for (int i = 0; i < 14; i++)
                 {
                     Vector3 pos = ScatterSpot(rng, fire, 2.6f, 13f);
                     NatureModels.Spawn(r, cover[rng.Next(cover.Length)], pos,
-                        0.35f + ((float)rng.NextDouble() * 0.55f), rng.Next(360));
+                        0.30f + ((float)rng.NextDouble() * 0.35f), rng.Next(360));
                 }
-
-                // Mossy rocks at the clearing's edge.
-                for (int i = 0; i < 7; i++)
-                {
-                    Vector3 pos = ScatterSpot(rng, fire, 5.5f, 14f);
-                    NatureModels.Spawn(r, "Rock_Medium_" + ((i % 3) + 1), pos,
-                        0.5f + ((float)rng.NextDouble() * 0.8f), rng.Next(360));
-                }
-
-                // The odd mushroom by the trees — it's night, after all.
-                NatureModels.Spawn(r, "Mushroom_Common", new Vector3(-4.6f, 0f, -2.2f), 0.35f, 40f);
-                NatureModels.Spawn(r, "Mushroom_Common", new Vector3(5.6f, 0f, -3.9f), 0.28f, 190f);
             }
 
             // Nature Starter Kit 2 undergrowth on top, when the user imported it.
@@ -440,15 +426,11 @@ namespace Aetheria.UnityClient
             return new Vector3(0f, 0f, -maxRadius);
         }
 
-        private static void KitPine(Transform r, Vector3 at, float s)
+        private static void LobbyTree(Transform r, System.Random rng, Vector3 at, float s)
         {
-            if (NatureModels.Available)
+            if (NatureKit.HasTrees && NatureKit.SpawnTree(r, rng, at, 6.5f * s) != null)
             {
-                int hash = Mathf.Abs((int)((at.x * 7f) + (at.z * 13f)));
-                if (NatureModels.Spawn(r, "Pine_" + ((hash % 3) + 1), at, 6.5f * s, hash % 360) != null)
-                {
-                    return;
-                }
+                return;
             }
 
             Pine(r, at, s);

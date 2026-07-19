@@ -576,13 +576,18 @@ namespace Aetheria.UnityClient
             {
                 int charKey = 0x40000000 | _client.CharacterRaceId | (_client.CharacterClassId << 4) |
                               ((byte)_client.CharacterGender << 8);
+                for (int i = 0; i < _client.CharacterEquipment.Length; i++)
+                {
+                    charKey = (charKey * 31) ^ (_client.CharacterEquipment[i] + (i << 8));
+                }
+
                 if (charKey != _previewKey)
                 {
                     _previewKey = charKey;
                     byte charRace = _client.CharacterRaceId;
                     Faction charFaction = charRace == 2 || charRace == 3 ? Faction.Horde : Faction.Alliance;
                     _lobby.ShowPreview(charRace, _client.CharacterClassId, _client.CharacterGender,
-                        _client.CharacterAppearance, charFaction);
+                        _client.CharacterAppearance, charFaction, _client.CharacterEquipment);
                 }
 
                 return;

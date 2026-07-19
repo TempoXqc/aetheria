@@ -154,9 +154,15 @@ public readonly struct LoginResult
     /// <summary>The character's cosmetic customisation, so the lobby can render a 3D preview.</summary>
     public readonly Appearance Appearance;
 
+    /// <summary>
+    /// Item id per equipment slot (index = (int)EquipSlot), so the lobby preview shows the
+    /// character EXACTLY as they stand in the world — same armor, same weapon. May be empty.
+    /// </summary>
+    public readonly byte[] Equipment;
+
     public LoginResult(bool ok, string message, bool hasCharacter,
         string characterName, byte raceId, byte classId, Gender gender, byte level,
-        Appearance appearance = default)
+        Appearance appearance = default, byte[]? equipment = null)
     {
         Ok = ok;
         Message = message;
@@ -167,6 +173,7 @@ public readonly struct LoginResult
         Gender = gender;
         Level = level;
         Appearance = appearance;
+        Equipment = equipment ?? System.Array.Empty<byte>();
     }
 
     public static LoginResult Failure(string message)
@@ -184,6 +191,12 @@ public readonly struct LoginResult
         w.WriteByte((byte)Gender);
         w.WriteByte(Level);
         Appearance.Write(w);
+        byte[] equipment = Equipment ?? System.Array.Empty<byte>();
+        w.WriteByte((byte)equipment.Length);
+        for (int i = 0; i < equipment.Length; i++)
+        {
+            w.WriteByte(equipment[i]);
+        }
     }
 
     public static LoginResult Read(ref PacketReader r)
@@ -197,7 +210,14 @@ public readonly struct LoginResult
         var gender = (Gender)r.ReadByte();
         byte level = r.ReadByte();
         Appearance appearance = Appearance.Read(ref r);
-        return new LoginResult(ok, message, hasCharacter, name, raceId, classId, gender, level, appearance);
+        var equipment = new byte[r.ReadByte()];
+        for (int i = 0; i < equipment.Length; i++)
+        {
+            equipment[i] = r.ReadByte();
+        }
+
+        return new LoginResult(ok, message, hasCharacter, name, raceId, classId, gender, level,
+            appearance, equipment);
     }
 }
 

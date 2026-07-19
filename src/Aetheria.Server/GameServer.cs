@@ -534,10 +534,21 @@ public sealed class GameServer
         {
             byte level = (byte)System.Math.Clamp(
                 _worlds.GameData.Progression.LevelForXp(existing.TotalXp), 1, 255);
+
+            // Ship the loadout too: the lobby preview shows the character EXACTLY as in game.
+            var equipment = new byte[Aetheria.Shared.Items.EquipSlots.Count];
+            foreach (System.Collections.Generic.KeyValuePair<string, byte> pair in existing.Equipment)
+            {
+                if (int.TryParse(pair.Key, out int slot) && slot >= 0 && slot < equipment.Length)
+                {
+                    equipment[slot] = pair.Value;
+                }
+            }
+
             Send(peer, new LoginResult(true, "", true, existing.Name,
                 existing.RaceId, existing.ClassId, (Gender)existing.Gender, level,
                 new Appearance(existing.SkinTone, existing.Face, existing.HairStyle,
-                    existing.HairColor, existing.BeardStyle, existing.BeardColor)));
+                    existing.HairColor, existing.BeardStyle, existing.BeardColor), equipment));
         }
 
         _log($"Account '{accountId}' logged in ({peer}); character: {(existing?.Name ?? "none")}.");
