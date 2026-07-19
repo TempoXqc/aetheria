@@ -18,9 +18,35 @@ public sealed class Inventory
 
     public int Gold { get; private set; }
 
+    /// <summary>
+    /// The bag CELLS in player order. May contain EMPTY placeholders (ItemId 0) — holes left by
+    /// removals and drag-organisation, so every stack keeps the cell its owner chose.
+    /// </summary>
     public IReadOnlyList<ItemStack> Stacks => _stacks;
 
-    public bool IsEmpty => _stacks.Count == 0 && Gold == 0;
+    /// <summary>True when a cell holds nothing (placeholder kept for layout).</summary>
+    public static bool IsEmptyCell(ItemStack s) => s.ItemId == 0 || s.Quantity <= 0;
+
+    public bool IsEmpty
+    {
+        get
+        {
+            if (Gold != 0)
+            {
+                return false;
+            }
+
+            foreach (ItemStack s in _stacks)
+            {
+                if (!IsEmptyCell(s))
+                {
+                    return false;
+                }
+            }
+
+            return true;
+        }
+    }
 
     public void AddGold(int amount)
     {
@@ -75,6 +101,19 @@ public sealed class Inventory
             }
         }
 
+        // Fill the HOLES first (cells freed by removals/organisation), then append.
+        for (int i = 0; i < _stacks.Count && quantity > 0; i++)
+        {
+            if (!IsEmptyCell(_stacks[i]))
+            {
+                continue;
+            }
+
+            int take = System.Math.Min(perStackCap, quantity);
+            _stacks[i] = new ItemStack(itemId, take);
+            quantity -= take;
+        }
+
         while (quantity > 0 && _stacks.Count < Capacity)
         {
             int take = System.Math.Min(perStackCap, quantity);
@@ -98,20 +137,25 @@ public sealed class Inventory
 
             int take = System.Math.Min(_stacks[i].Quantity, quantity);
             int remaining = _stacks[i].Quantity - take;
-            if (remaining > 0)
-            {
-                _stacks[i] = _stacks[i].WithQuantity(remaining);
-            }
-            else
-            {
-                _stacks.RemoveAt(i);
-            }
+
+            // A emptied cell becomes a HOLE (placeholder), so the other cells keep their place.
+            _stacks[i] = remaining > 0 ? _stacks[i].WithQuantity(remaining) : new ItemStack(0, 0);
 
             quantity -= take;
             removed += take;
         }
 
+        TrimTail();
         return removed;
+    }
+
+    /// <summary>Drop trailing empty cells — holes only matter BETWEEN items.</summary>
+    private void TrimTail()
+    {
+        while (_stacks.Count > 0 && IsEmptyCell(_stacks[_stacks.Count - 1]))
+        {
+            _stacks.RemoveAt(_stacks.Count - 1);
+        }
     }
 
     /// <summary>Index of the first stack holding this item, or -1.</summary>
@@ -129,40 +173,70 @@ public sealed class Inventory
     }
 
     /// <summary>
-    /// Player-driven bag ordering: drag a stack onto another slot. Same-slot and out-of-range
-    /// sources are refused; a target on an occupied cell SWAPS, a target on an empty cell
-    /// (index at/after the end) moves the stack to the end of the bag.
+    /// Player-driven bag ordering: drag a stack onto ANY cell (even a far empty one — holes are
+    /// padded in so the stack really lands where the player dropped it). Occupied target = swap.
     /// </summary>
     public bool MoveSlot(int from, int to)
     {
-        if (from < 0 || from >= _stacks.Count || to < 0 || from == to)
+        if (from < 0 || from >= _stacks.Count || IsEmptyCell(_stacks[from]) ||
+            to < 0 || to >= Capacity || from == to)
         {
             return false;
         }
 
-        if (to >= _stacks.Count)
+        while (_stacks.Count <= to)
         {
-            ItemStack s = _stacks[from];
-            _stacks.RemoveAt(from);
-            _stacks.Add(s);
-            return true;
+            _stacks.Add(new ItemStack(0, 0)); // pad holes up to the chosen cell
         }
 
         (_stacks[from], _stacks[to]) = (_stacks[to], _stacks[from]);
+        TrimTail();
         return true;
     }
 
-    /// <summary>Insert one item at a precise slot (equip-swap drops the old piece where the
-    /// new one was taken). Falls back to false when the bag is full.</summary>
+    /// <summary>Put one item into a precise cell (equip-swap drops the old piece where the
+    /// new one was taken): fills that hole, else inserts, else takes any hole, else false.</summary>
     public bool TryInsertAt(int index, byte itemId, int quantity)
     {
-        if (_stacks.Count >= Capacity || quantity <= 0)
+        if (quantity <= 0)
         {
             return false;
         }
 
-        _stacks.Insert(System.Math.Clamp(index, 0, _stacks.Count), new ItemStack(itemId, quantity));
-        return true;
+        if (index >= 0 && index < _stacks.Count && IsEmptyCell(_stacks[index]))
+        {
+            _stacks[index] = new ItemStack(itemId, quantity);
+            return true;
+        }
+
+        if (_stacks.Count < Capacity)
+        {
+            _stacks.Insert(System.Math.Clamp(index, 0, _stacks.Count), new ItemStack(itemId, quantity));
+            return true;
+        }
+
+        for (int i = 0; i < _stacks.Count; i++)
+        {
+            if (IsEmptyCell(_stacks[i]))
+            {
+                _stacks[i] = new ItemStack(itemId, quantity);
+                return true;
+            }
+        }
+
+        return false;
+    }
+
+    /// <summary>Restore the EXACT saved cell layout (holes included). Trusted data only.</summary>
+    public void RestoreLayout(IReadOnlyList<ItemStack> cells)
+    {
+        _stacks.Clear();
+        for (int i = 0; i < cells.Count && i < Capacity; i++)
+        {
+            _stacks.Add(cells[i]);
+        }
+
+        TrimTail();
     }
 
     public int CountOf(byte itemId)

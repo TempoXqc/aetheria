@@ -974,11 +974,25 @@ namespace Aetheria.UnityClient
         /// <summary>Portrait yaw in degrees — driven by the player's right-button drag, never automatic.</summary>
         public float Yaw;
 
+        /// <summary>Portrait zoom (1 = full body with air around it; higher = closer).</summary>
+        public float Zoom = 1f;
+
         public void Tick(float dt)
         {
             if (_slot != null)
             {
                 _slot.localRotation = Quaternion.Euler(0f, Yaw, 0f);
+            }
+
+            if (_camera != null)
+            {
+                // Zoom by dollying the camera: further back at 1, closer as Zoom rises.
+                Zoom = Mathf.Clamp(Zoom, 0.6f, 2.2f);
+                float dist = 4.4f / Zoom;
+                var eye = new Vector3(0f, Mathf.Lerp(1.5f, 1.1f, (Zoom - 0.6f) / 1.6f), dist);
+                _camera.transform.localPosition = eye;
+                _camera.transform.localRotation = Quaternion.LookRotation(
+                    new Vector3(0f, 1.0f, 0f) - eye, Vector3.up);
             }
         }
 

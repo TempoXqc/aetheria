@@ -1200,6 +1200,8 @@ public sealed class World
 
         foreach (ItemStack stack in dead.Inventory.Stacks.ToArray())
         {
+            if (Inventory.IsEmptyCell(stack)) { continue; } // layout holes carry nothing
+
             ItemDefinition def = _gameData.GetItem(stack.ItemId);
             loot.TryAdd(stack.ItemId, stack.Quantity, def.Stackable, def.MaxStack);
         }
@@ -1377,7 +1379,11 @@ public sealed class World
         }
 
         gold = corpse.LootContainer!.Gold;
-        items.AddRange(corpse.LootContainer.Stacks);
+        foreach (ItemStack stack in corpse.LootContainer.Stacks)
+        {
+            if (!Inventory.IsEmptyCell(stack)) { items.Add(stack); } // holes are not loot
+        }
+
         return true;
     }
 
@@ -1468,6 +1474,8 @@ public sealed class World
 
         foreach (ItemStack stack in loot.Stacks.ToArray())
         {
+            if (Inventory.IsEmptyCell(stack)) { continue; }
+
             ItemDefinition def = _gameData.GetItem(stack.ItemId);
             int leftover = looter.Inventory.TryAdd(stack.ItemId, stack.Quantity, def.Stackable, def.MaxStack);
             int moved = stack.Quantity - leftover;

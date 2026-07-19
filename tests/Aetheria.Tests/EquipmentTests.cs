@@ -217,25 +217,25 @@ public static class EquipmentTests
         var world = new World();
         ServerEntity p = world.SpawnPlayer(new PeerId(7), "Rangée", raceId: 1, classId: 1);
 
-        // Bags: [Rusty Sword, Wolf Pelt, Steel Sword]; wear the rusty one first.
+        // Bags: [Rusty Sword, Wolf Pelt, Steel Sword]; wear the rusty one first —
+        // its cell becomes a HOLE that the next pickup (Goblin Head) fills.
         world.AddItem(p, 1, 1);
         world.AddItem(p, 10, 1);
         world.AddItem(p, 4, 1);
         Assert.True(world.TryEquipItem(p.Id, 1, EquipSlot.None));
+        world.AddItem(p, 30, 1); // fills the hole left at cell 0
+        Assert.Equal((byte)30, p.Inventory.Stacks[0].ItemId);
 
-        // Now bags are [Pelt, Steel]; equipping the Steel Sword (index 1) must put the
-        // Rusty Sword back at INDEX 1 — not at the end… which is the same here, so use a
-        // richer bag: add two more pelts to make the tail obvious.
-        world.AddItem(p, 30, 1); // Goblin Head after the sword
+        // Equipping the Steel Sword (cell 2) must put the Rusty Sword back at CELL 2.
         Assert.True(world.TryEquipItem(p.Id, 4, EquipSlot.None));
 
         Assert.Equal((byte)4, p.GetEquipped(EquipSlot.Weapon));
-        Assert.Equal((byte)10, p.Inventory.Stacks[0].ItemId); // pelt untouched
-        Assert.Equal((byte)1, p.Inventory.Stacks[1].ItemId);  // rusty sword took the steel sword's slot
-        Assert.Equal((byte)30, p.Inventory.Stacks[2].ItemId); // tail untouched
+        Assert.Equal((byte)30, p.Inventory.Stacks[0].ItemId); // head untouched
+        Assert.Equal((byte)10, p.Inventory.Stacks[1].ItemId); // pelt untouched
+        Assert.Equal((byte)1, p.Inventory.Stacks[2].ItemId);  // rusty sword took the steel sword's cell
     }
 
-    [Test("MoveSlot reorders the bag: swap two cells, move onto an empty cell = to the end.")]
+    [Test("MoveSlot: swap two cells, and a FAR empty cell really keeps the item there (holes pad in).")]
     public static void MoveSlot_ReordersTheBag()
     {
         var world = new World();
@@ -248,11 +248,39 @@ public static class EquipmentTests
         Assert.Equal((byte)20, p.Inventory.Stacks[0].ItemId);
         Assert.Equal((byte)1, p.Inventory.Stacks[2].ItemId);
 
-        Assert.True(world.TryMoveItem(p.Id, 0, 7), "onto an empty cell: goes to the end");
-        Assert.Equal((byte)10, p.Inventory.Stacks[0].ItemId);
-        Assert.Equal((byte)20, p.Inventory.Stacks[2].ItemId);
+        // Drop the first stack onto FAR cell 7: it must sit exactly there, holes in between.
+        Assert.True(world.TryMoveItem(p.Id, 0, 7));
+        Assert.Equal((byte)0, p.Inventory.Stacks[0].ItemId);  // hole where it left
+        Assert.Equal((byte)10, p.Inventory.Stacks[1].ItemId); // untouched
+        Assert.Equal((byte)20, p.Inventory.Stacks[7].ItemId); // parked where the player chose
 
-        Assert.False(world.TryMoveItem(p.Id, 5, 0), "out-of-range source refused");
+        // New loot fills the first hole instead of stacking at the end.
+        world.AddItem(p, 30, 1);
+        Assert.Equal((byte)30, p.Inventory.Stacks[0].ItemId);
+
+        Assert.False(world.TryMoveItem(p.Id, 3, 0), "dragging a hole is refused");
         Assert.False(world.TryMoveItem(p.Id, 1, 1), "same-cell move refused");
+        Assert.False(world.TryMoveItem(p.Id, 1, 200), "beyond the bag refused");
+    }
+
+    [Test("Log back in where you logged out: position and bag layout survive save/restore.")]
+    public static void PositionAndLayout_SurviveRestore()
+    {
+        var world = new World();
+        ServerEntity p = world.SpawnPlayer(new PeerId(9), "Voyageur", raceId: 1, classId: 1);
+        world.AddItem(p, 1, 1);
+        world.AddItem(p, 10, 1);
+        Assert.True(world.TryMoveItem(p.Id, 0, 5)); // park the sword far away
+        world.Teleport(p, new Aetheria.Shared.Math.Vec2(42.5f, -17.25f));
+
+        CharacterRecord record = CharacterMapper.Capture(p);
+        var world2 = new World();
+        ServerEntity back = world2.SpawnPlayer(new PeerId(10), "Voyageur", raceId: 1, classId: 1);
+        CharacterMapper.Restore(world2, back, record);
+
+        Assert.True(System.Math.Abs(back.Position.X - 42.5f) < 0.01f, "X restored");
+        Assert.True(System.Math.Abs(back.Position.Y - -17.25f) < 0.01f, "Y restored");
+        Assert.Equal((byte)10, back.Inventory.Stacks[1].ItemId);
+        Assert.Equal((byte)1, back.Inventory.Stacks[5].ItemId); // the parked cell came back
     }
 }

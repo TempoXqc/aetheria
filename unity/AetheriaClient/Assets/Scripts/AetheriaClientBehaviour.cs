@@ -150,6 +150,66 @@ namespace Aetheria.UnityClient
         // Drag & drop from the character-sheet bag.
         private ItemStack? _draggingItem;
         private int _dragFromIndex = -1; // bag cell the dragged stack came from
+
+        // Bag filter tabs: 0 Tout, 1 Équipement, 2 Consommables, 3 Butin — order is customisable.
+        private int _bagFilter;
+        private readonly List<int> _bagFilterOrder = new List<int> { 0, 1, 2, 3 };
+
+        private static string BagFilterLabel(int filter)
+        {
+            switch (filter)
+            {
+                case 1: return "Équipement";
+                case 2: return "Consommables";
+                case 3: return "Butin";
+                default: return "Tout";
+            }
+        }
+
+        private static bool BagFilterMatches(ItemDefinition def, int filter)
+        {
+            switch (filter)
+            {
+                case 1: return def.IsEquippable;
+                case 2: return def.Type == ItemType.Consumable;
+                case 3: return def.Type == ItemType.Material;
+                default: return true;
+            }
+        }
+
+        /// <summary>Next bag index (from the cursor) matching the active filter, or -1.</summary>
+        private int NextMatchingIndex(IReadOnlyList<ItemStack> items, ref int cursor)
+        {
+            while (cursor < items.Count)
+            {
+                int i = cursor++;
+                if (items[i].ItemId == 0) { continue; }
+                if (BagFilterMatches(Data.GetItem(items[i].ItemId), _bagFilter)) { return i; }
+            }
+
+            return -1;
+        }
+
+        private void SaveBagFilterOrder()
+            => PlayerPrefs.SetString("aetheria.bagFilters", string.Join(",", _bagFilterOrder));
+
+        private void LoadBagFilterOrder()
+        {
+            string saved = PlayerPrefs.GetString("aetheria.bagFilters", "");
+            if (string.IsNullOrEmpty(saved)) { return; }
+
+            var order = new List<int>();
+            foreach (string part in saved.Split(','))
+            {
+                if (int.TryParse(part, out int f) && f >= 0 && f <= 3 && !order.Contains(f)) { order.Add(f); }
+            }
+
+            if (order.Count == 4)
+            {
+                _bagFilterOrder.Clear();
+                _bagFilterOrder.AddRange(order);
+            }
+        }
         private string _lastDuelMessage = "";
         private string _lastTradeMessage = "";
 
@@ -161,6 +221,7 @@ namespace Aetheria.UnityClient
         private void Start()
         {
             _cfg.Load(HudConfig.ActiveProfile());
+            LoadBagFilterOrder();
         }
 
         private void Update()
@@ -1194,7 +1255,7 @@ namespace Aetheria.UnityClient
                     int cells = SimulationConstants.PlayerInventoryCapacity;
                     int rows = ((cells - 1) / Cols) + 1;
                     float w = 24f + (Cols * (Icon + 4f));
-                    float h = 56f + (rows * (Icon + 4f)) + 24f;
+                    float h = 78f + (rows * (Icon + 4f)) + 24f; // +filter tab row
                     return new Rect(VirtW - w - 16 + o.x, VirtH - h - 52 + o.y, w, h);
                 }
 
@@ -2042,6 +2103,8 @@ namespace Aetheria.UnityClient
         {
             ItemDefinition def = Data.GetItem(itemId);
 
+            if (itemId == 0) { WowUi.Slot(rect); return; } // a hole is just an empty socket
+
             Texture2D icon = IconFor(itemId);
             WowUi.Slot(rect);
             if (icon != null)
@@ -2099,7 +2162,7 @@ namespace Aetheria.UnityClient
             {
                 IReadOnlyList<byte> gear = _client.EquipmentSlots;
                 byte equippedId = gear != null && (int)def.Slot < gear.Count ? gear[(int)def.Slot] : (byte)0;
-                if (equippedId != 0 && equippedId != def.Id)
+                if (equippedId != 0) // même le MÊME objet : WoW montre les deux fiches quand même
                 {
                     ItemDefinition worn = Data.GetItem(equippedId);
                     _tooltipCompare = "<b><color=#20d848>Équipé actuellement</color></b>\n"
@@ -2119,7 +2182,7 @@ namespace Aetheria.UnityClient
             {
                 IReadOnlyList<byte> gear = _client.EquipmentSlots;
                 byte worn = gear != null && (int)def.Slot < gear.Count ? gear[(int)def.Slot] : (byte)0;
-                if (worn != 0 && worn != def.Id)
+                if (worn != 0)
                 {
                     text += "\n<size=9><color=#808080>Maj : comparer avec l'objet équipé</color></size>";
                 }
@@ -2391,6 +2454,7 @@ namespace Aetheria.UnityClient
                 var stacks = new List<ItemStack>(_client.InventoryItems);
                 for (int i = 0; i < stacks.Count; i++)
                 {
+                    if (stacks[i].ItemId == 0) { continue; } // layout hole
                     _client.SendBank(BankOp.DepositItem, stacks[i].ItemId, stacks[i].Quantity);
                 }
             }
@@ -2423,6 +2487,12 @@ namespace Aetheria.UnityClient
             for (int i = 0; i < items.Count; i++)
             {
                 Rect cell = new Rect(x + ((i % cols) * (icon + 4f)), y + ((i / cols) * (icon + 4f)), icon, icon);
+                if (items[i].ItemId == 0) // layout hole: an empty socket, nothing clickable
+                {
+                    WowUi.Slot(cell);
+                    continue;
+                }
+
                 DrawItemIcon(cell, items[i].ItemId, items[i].Quantity);
                 Event e = Event.current;
                 if (e.type == EventType.MouseDown && cell.Contains(e.mousePosition))
@@ -2634,6 +2704,23 @@ namespace Aetheria.UnityClient
                 pe.Use();
             }
 
+            // Portrait zoom: − / + buttons in the corner (and the scroll wheel over the portrait).
+            if (GUI.Button(new Rect(portrait.xMax - 46, portrait.yMax - 24, 20, 20), "−"))
+            {
+                _sheetPreview.Zoom -= 0.2f;
+            }
+
+            if (GUI.Button(new Rect(portrait.xMax - 24, portrait.yMax - 24, 20, 20), "+"))
+            {
+                _sheetPreview.Zoom += 0.2f;
+            }
+
+            if (pe.type == EventType.ScrollWheel && portrait.Contains(pe.mousePosition))
+            {
+                _sheetPreview.Zoom -= pe.delta.y * 0.05f;
+                pe.Use();
+            }
+
             // SIDES: five equipment slots per column, WoW order. Click a piece to unequip it.
             IReadOnlyList<byte> gear = _client.EquipmentSlots;
             EquipSlot[] left = { EquipSlot.Head, EquipSlot.Shoulders, EquipSlot.Back, EquipSlot.Chest, EquipSlot.Hands };
@@ -2651,30 +2738,33 @@ namespace Aetheria.UnityClient
             // (No XP, no current HP, no gold here: the XP bar, unit frame and bags show those.)
             float y = win.y + 34f + (5 * (Slot + 4f)) + 6f;
             float half = (W - 30f) / 2f;
-            Rect blockL = new Rect(win.x + 12, y, half, 78);
-            Rect blockR = new Rect(win.x + 18 + half, y, half, 78);
+            float blockH = win.yMax - y - 12f; // fill the sheet to its bottom edge — no dead space
+            Rect blockL = new Rect(win.x + 12, y, half, blockH);
+            Rect blockR = new Rect(win.x + 18 + half, y, half, blockH);
             WowUi.Highlight(blockL);
             WowUi.Highlight(blockR);
 
             AbilityDefinition basic = Data.GetAbility(_classId); // the class's basic strike
             int dmg = basic.BaseDamage + _client.EffectiveAttack;
 
-            GUI.Label(new Rect(blockL.x + 8, blockL.y + 4, half - 16, 18),
+            float rowH = (blockH - 30f) / 3f; // rows breathe to fill the block
+
+            GUI.Label(new Rect(blockL.x + 8, blockL.y + 5, half - 16, 18),
                 "<b><color=#ffd100>Attributs</color></b>", Rich());
-            GUI.Label(new Rect(blockL.x + 8, blockL.y + 22, half - 16, 18),
+            GUI.Label(new Rect(blockL.x + 8, blockL.y + 26, half - 16, 18),
                 StatLine("Endurance", haveSelf ? self.MaxHealth.ToString() : "—"), Rich());
-            GUI.Label(new Rect(blockL.x + 8, blockL.y + 40, half - 16, 18),
+            GUI.Label(new Rect(blockL.x + 8, blockL.y + 26 + rowH, half - 16, 18),
                 StatLine("Force", _client.EffectiveAttack.ToString()), Rich());
-            GUI.Label(new Rect(blockL.x + 8, blockL.y + 58, half - 16, 18),
+            GUI.Label(new Rect(blockL.x + 8, blockL.y + 26 + (rowH * 2), half - 16, 18),
                 StatLine("Armure", _client.EffectiveDefense.ToString()), Rich());
 
-            GUI.Label(new Rect(blockR.x + 8, blockR.y + 4, half - 16, 18),
+            GUI.Label(new Rect(blockR.x + 8, blockR.y + 5, half - 16, 18),
                 "<b><color=#ffd100>Combat</color></b>", Rich());
-            GUI.Label(new Rect(blockR.x + 8, blockR.y + 22, half - 16, 18),
+            GUI.Label(new Rect(blockR.x + 8, blockR.y + 26, half - 16, 18),
                 StatLine("Dégâts", dmg.ToString()), Rich());
-            GUI.Label(new Rect(blockR.x + 8, blockR.y + 40, half - 16, 18),
+            GUI.Label(new Rect(blockR.x + 8, blockR.y + 26 + rowH, half - 16, 18),
                 StatLine("Puissance", _client.EffectiveAttack.ToString()), Rich());
-            GUI.Label(new Rect(blockR.x + 8, blockR.y + 58, half - 16, 18),
+            GUI.Label(new Rect(blockR.x + 8, blockR.y + 26 + (rowH * 2), half - 16, 18),
                 StatLine("Défense", _client.EffectiveDefense.ToString()), Rich());
         }
 
@@ -2731,18 +2821,57 @@ namespace Aetheria.UnityClient
                 return;
             }
 
+            // FILTER TABS: click = filter the view; right-click = move that filter first
+            // (the order is yours, saved with the interface profile).
+            float fx = win.x + 10;
+            for (int f = 0; f < _bagFilterOrder.Count; f++)
+            {
+                int filter = _bagFilterOrder[f];
+                string label = BagFilterLabel(filter);
+                float bw2 = 14 + (label.Length * 7f);
+                var tab = new Rect(fx, win.y + 26, bw2, 20);
+                bool active = _bagFilter == filter;
+                if (active) { WowUi.Highlight(tab); }
+                if (GUI.Button(tab, "<size=10>" + (active ? "<color=#ffd100>" + label + "</color>" : label) + "</size>",
+                    new GUIStyle(GUI.skin.button) { richText = true }))
+                {
+                    _bagFilter = filter;
+                }
+
+                Event fe = Event.current;
+                if (fe.type == EventType.MouseDown && fe.button == 1 && tab.Contains(fe.mousePosition))
+                {
+                    _bagFilterOrder.RemoveAt(f);
+                    _bagFilterOrder.Insert(0, filter);
+                    SaveBagFilterOrder();
+                    fe.Use();
+                }
+
+                fx += bw2 + 4;
+            }
+
             IReadOnlyList<ItemStack> items = _client.InventoryItems;
+            bool filtered = _bagFilter != 0;
+            int shown = 0;
             for (int i = 0; i < cells; i++)
             {
-                Rect cell = new Rect(win.x + 12 + ((i % Cols) * (Icon + 4f)),
-                    win.y + 28 + ((i / Cols) * (Icon + 4f)), Icon, Icon);
-                if (i >= items.Count)
+                // Filtered view: matching items pack into sequential cells (drag-reorder is
+                // only meaningful in « Tout », where cells are the REAL bag layout).
+                int index = i;
+                if (filtered)
                 {
-                    WowUi.Slot(cell); // empty bag cell, WoW-style socket
+                    index = NextMatchingIndex(items, ref shown);
+                }
+
+                Rect cell = new Rect(win.x + 12 + ((i % Cols) * (Icon + 4f)),
+                    win.y + 50 + ((i / Cols) * (Icon + 4f)), Icon, Icon);
+                if (index < 0 || index >= items.Count || items[index].ItemId == 0)
+                {
+                    WowUi.Slot(cell); // empty bag cell (or a layout hole), WoW-style socket
                     continue;
                 }
 
-                ItemStack stack = items[i];
+                ItemStack stack = items[index];
                 DrawItemIcon(cell, stack.ItemId, stack.Quantity);
 
                 Event e = Event.current;
@@ -2754,7 +2883,7 @@ namespace Aetheria.UnityClient
                         // LEFT hold = pick the item up: drop it on another cell to reorder,
                         // on an ally to trade, or on the ground to let it go.
                         _draggingItem = stack;
-                        _dragFromIndex = i;
+                        _dragFromIndex = index;
                         e.Use();
                     }
                     else if (e.button == 1 && def.Slot != EquipSlot.None && !_client.TradeActive)
@@ -2953,6 +3082,7 @@ namespace Aetheria.UnityClient
             for (int i = 0; i < bag.Count && y < win.y + win.height - 60; i++)
             {
                 ItemStack s = bag[i];
+                if (s.ItemId == 0) { continue; } // layout hole
                 bool alreadyOffered = false;
                 for (int k = 0; k < _myOffer.Count; k++)
                 {
@@ -3108,7 +3238,7 @@ namespace Aetheria.UnityClient
             }
 
             int col = Mathf.FloorToInt((guiPoint.x - (win.x + 12)) / (Icon + 4f));
-            int row = Mathf.FloorToInt((guiPoint.y - (win.y + 28)) / (Icon + 4f));
+            int row = Mathf.FloorToInt((guiPoint.y - (win.y + 50)) / (Icon + 4f));
             if (col < 0 || col >= Cols || row < 0)
             {
                 return -1;

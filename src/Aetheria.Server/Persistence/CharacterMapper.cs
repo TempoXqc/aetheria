@@ -27,6 +27,9 @@ public static class CharacterMapper
             BeardColor = entity.Appearance.BeardColor,
             TotalXp = entity.TotalXp,
             Gold = entity.Inventory.Gold,
+            HasPosition = true,
+            PosX = entity.Position.X,
+            PosY = entity.Position.Y,
             ActiveQuestId = entity.ActiveQuestId,
             QuestKills = entity.QuestKills,
             QuestCompletedUpTo = entity.QuestCompletedUpTo,
@@ -68,9 +71,19 @@ public static class CharacterMapper
         entity.QuestKills = record.QuestKills;
         entity.QuestCompletedUpTo = record.QuestCompletedUpTo;
 
+        // EXACT bag layout (holes included): the cells come back where the player left them.
+        var cells = new List<ItemStack>(record.Items.Count);
         foreach (ItemStackRecord item in record.Items)
         {
-            world.AddItem(entity, item.ItemId, item.Quantity);
+            cells.Add(new ItemStack(item.ItemId, item.Quantity));
+        }
+
+        entity.Inventory.RestoreLayout(cells);
+
+        // Log back in exactly where you logged out (records saved before 0.38 have no position).
+        if (record.HasPosition)
+        {
+            world.Teleport(entity, new Aetheria.Shared.Math.Vec2(record.PosX, record.PosY));
         }
 
         if (record.Equipment.Count > 0)

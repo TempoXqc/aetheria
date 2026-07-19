@@ -47,6 +47,11 @@ public sealed class CharacterRecord
     public int TotalXp { get; set; }
     public int Gold { get; set; }
 
+    // Last known position in the open world: log back in where you logged out.
+    public bool HasPosition { get; set; }
+    public float PosX { get; set; }
+    public float PosY { get; set; }
+
     // Quest chain progress (linear): active quest, its kill counter, highest completed.
     public byte ActiveQuestId { get; set; }
     public int QuestKills { get; set; }
