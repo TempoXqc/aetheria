@@ -572,7 +572,7 @@ namespace Aetheria.UnityClient
                 {
                     foreach (string line in System.IO.File.ReadAllLines(path))
                     {
-                        fromFile |= AddServerEntry(ParseRealmLine(line));
+                        fromFile |= AddRealmLine(line);
                     }
                 }
             }
@@ -587,17 +587,29 @@ namespace Aetheria.UnityClient
             }
         }
 
-        /// <summary>"Zul'jin|82.65.12.34:27015" → (name, address); a bare address names itself.</summary>
-        private static (string, string) ParseRealmLine(string line)
+        /// <summary>
+        /// "Zul'jin|82.65.12.34:27015|192.168.1.10:27015|127.0.0.1:27015" → the SAME realm with
+        /// several routes. The browser shows ONE row per realm and joins whichever route answers —
+        /// the host plays via localhost while friends come in through the public IP, and nobody
+        /// fights their own router (hairpin NAT).
+        /// </summary>
+        private bool AddRealmLine(string line)
         {
             line = line.Trim();
-            int bar = line.IndexOf('|');
-            return bar > 0
-                ? (line.Substring(0, bar).Trim(), line.Substring(bar + 1).Trim())
-                : (line, line);
+            if (line.Length == 0) { return false; }
+
+            string[] parts = line.Split('|');
+            string label = parts.Length > 1 ? parts[0].Trim() : line;
+            bool any = false;
+            for (int i = parts.Length > 1 ? 1 : 0; i < parts.Length; i++)
+            {
+                any |= AddServerEntry((label, parts[i].Trim()));
+            }
+
+            return any;
         }
 
-        /// <summary>Add one named realm to the list (ignoring blanks and duplicates).</summary>
+        /// <summary>Add one named route to the list (ignoring blanks and duplicates).</summary>
         private bool AddServerEntry((string Label, string Address) realm)
         {
             if (string.IsNullOrEmpty(realm.Address) ||
@@ -1667,16 +1679,43 @@ namespace Aetheria.UnityClient
             DrawErrorsAt(new Rect((VirtW / 2f) - 240, VirtH - 170, 480, 30));
         }
 
-        /// <summary>The server browser: NAMED servers, their population, and your character there.</summary>
+        /// <summary>ONE row per realm: among its routes, an ONLINE one wins (localhost for the
+        /// host, public IP for friends), else a still-probing one, else the first.</summary>
+        private List<ServerEntry> RealmRows()
+        {
+            var rows = new List<ServerEntry>();
+            var bestByLabel = new Dictionary<string, int>();
+            foreach (ServerEntry e in _servers)
+            {
+                string key = string.IsNullOrEmpty(e.Label) ? e.Address : e.Label;
+                int at;
+                if (!bestByLabel.TryGetValue(key, out at))
+                {
+                    bestByLabel[key] = rows.Count;
+                    rows.Add(e);
+                    continue;
+                }
+
+                ServerEntry current = rows[at];
+                bool better = (e.HasInfo && !current.HasInfo) ||
+                              (!e.Failed && current.Failed && !current.HasInfo);
+                if (better) { rows[at] = e; }
+            }
+
+            return rows;
+        }
+
+        /// <summary>The server browser: NAMED realms, their population, and your character there.</summary>
         private void DrawServerBrowser()
         {
-            float height = 150f + (_servers.Count * 54f) + 70f;
+            List<ServerEntry> rows = RealmRows();
+            float height = 150f + (rows.Count * 54f) + 70f;
             DrawTitledBox(out Rect box, Mathf.Min(height, VirtH * 0.8f), "Liste des serveurs", 560f);
             GUILayout.BeginArea(new Rect(box.x + 15, box.y + 48, box.width - 30, box.height - 60));
 
             GUILayout.Space(6);
 
-            foreach (ServerEntry e in _servers)
+            foreach (ServerEntry e in rows)
             {
                 GUILayout.BeginHorizontal(GUI.skin.box);
 
