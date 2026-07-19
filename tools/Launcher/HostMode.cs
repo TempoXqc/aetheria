@@ -485,7 +485,12 @@ public static class HostMode
             {
                 if (running)
                 {
-                    try { existing!.Kill(entireProcessTree: true); } catch (Exception) { /* already gone */ }
+                    try
+                    {
+                        existing!.Kill(entireProcessTree: true);
+                        existing.WaitForExit(4000); // let the OS release the socket for real
+                    }
+                    catch (Exception) { /* already gone */ }
                 }
 
                 Servers.Remove(name);
@@ -536,6 +541,11 @@ public static class HostMode
             catch (ArgumentException) { /* pid no longer exists: nothing to do */ }
             catch (Exception e) { Log($"[{name}] garde anti-orphelin : {e.Message}"); }
 
+            // HEAVY ARTILLERY: whatever still HOLDS the port (an orphan from an even older
+            // session, unknown to any pid file) is found via netstat and killed. This is what
+            // finally ends the « port déjà utilisé » saga for good.
+            KillPortOwner(name);
+
             string runDir = Path.Combine(RepoRoot!, "run", name);
             CopyDirectory(sourceDir, runDir);
 
@@ -557,6 +567,87 @@ public static class HostMode
             Servers[name] = process;
             try { File.WriteAllText(pidFile, process.Id.ToString()); } catch (IOException) { }
             return "démarré";
+        }
+    }
+
+    /// <summary>Each hosted server's fixed port (game realms are UDP, the patch server TCP).</summary>
+    private static (int port, bool udp) PortOf(string name) => name switch
+    {
+        "prod" => (27015, true),
+        "tts" => (27016, true),
+        "patch" => (27080, false),
+        _ => (0, true),
+    };
+
+    /// <summary>
+    /// Ask Windows WHO holds this server's port (netstat -ano) and kill it — but only if it
+    /// looks like one of OURS (dotnet / Aetheria / PatchServer), never someone else's app.
+    /// Orphans from long-dead launcher sessions are exactly what this catches.
+    /// </summary>
+    private static void KillPortOwner(string name)
+    {
+        (int port, bool udp) = PortOf(name);
+        if (port == 0 || !OperatingSystem.IsWindows())
+        {
+            return;
+        }
+
+        try
+        {
+            var psi = new ProcessStartInfo("netstat", "-ano")
+            {
+                RedirectStandardOutput = true,
+                UseShellExecute = false,
+                CreateNoWindow = true,
+            };
+            using Process netstat = Process.Start(psi)!;
+            string output = netstat.StandardOutput.ReadToEnd();
+            netstat.WaitForExit(5000);
+
+            string proto = udp ? "UDP" : "TCP";
+            int self = Environment.ProcessId;
+            foreach (string raw in output.Split('\n'))
+            {
+                string line = raw.Trim();
+                if (!line.StartsWith(proto, StringComparison.OrdinalIgnoreCase))
+                {
+                    continue;
+                }
+
+                string[] cols = line.Split(' ', StringSplitOptions.RemoveEmptyEntries);
+                if (cols.Length < 4 || !cols[1].EndsWith(":" + port, StringComparison.Ordinal))
+                {
+                    continue;
+                }
+
+                if (!int.TryParse(cols[^1], out int pid) || pid <= 4 || pid == self)
+                {
+                    continue;
+                }
+
+                try
+                {
+                    Process owner = Process.GetProcessById(pid);
+                    string pname = owner.ProcessName;
+                    bool ours = pname.Contains("dotnet", StringComparison.OrdinalIgnoreCase) ||
+                                pname.Contains("Aetheria", StringComparison.OrdinalIgnoreCase) ||
+                                pname.Contains("PatchServer", StringComparison.OrdinalIgnoreCase);
+                    if (!ours)
+                    {
+                        Log($"[{name}] le port {port} est tenu par « {pname} » (pid {pid}) — pas un de nos serveurs, on n'y touche pas.");
+                        continue;
+                    }
+
+                    Log($"[{name}] serveur orphelin « {pname} » (pid {pid}) tient le port {port} — arrêt forcé.");
+                    owner.Kill(entireProcessTree: true);
+                    owner.WaitForExit(4000);
+                }
+                catch (ArgumentException) { /* already gone */ }
+            }
+        }
+        catch (Exception e)
+        {
+            Log($"[{name}] libération du port {port} : {e.Message}");
         }
     }
 
