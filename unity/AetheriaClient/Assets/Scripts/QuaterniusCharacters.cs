@@ -55,6 +55,10 @@ namespace Aetheria.UnityClient
             var root = new GameObject("Quaternius");
             root.transform.SetParent(parent, false);
 
+            // The pack's models face the viewer (-Z); our characters face +Z. Without this the
+            // whole world seems to moonwalk.
+            root.transform.localRotation = Quaternion.Euler(0f, 180f, 0f);
+
             // MASTER piece: the body (chest slot decides Peasant cloth vs Ranger armor).
             GameObject master = Spawn(root.transform,
                 g + (snapshot.EquippedIn(EquipSlot.Chest) != 0 ? "Ranger_Body" : "Peasant_Body"));
@@ -134,11 +138,23 @@ namespace Aetheria.UnityClient
 
             rig.CaptureRestPose();
 
-            // The pack exports a raised-arms bind pose: fold the arms down into a natural
-            // stance (root-space roll), so characters stand like people, not like scarecrows.
-            rig.PreRotate(rig.ArmL, Vector3.forward, 70f);
-            rig.PreRotate(rig.ArmR, Vector3.forward, -70f);
+            // The pack binds with raised arms: point each upper arm DOWN and slightly outward,
+            // measured from where the limb actually is — immune to the export's axis conventions.
+            LowerArm(rig, rig.ArmL, FindBone(bones, "lowerarm_l"), root.transform);
+            LowerArm(rig, rig.ArmR, FindBone(bones, "lowerarm_r"), root.transform);
             return rig;
+        }
+
+        /// <summary>Fold one arm down to a natural stance (out to which side is measured, not assumed).</summary>
+        private static void LowerArm(ModelRig rig, Transform upperArm, Transform lowerArm, Transform root)
+        {
+            if (upperArm == null || lowerArm == null)
+            {
+                return;
+            }
+
+            float side = upperArm.position.x - root.position.x >= 0f ? 1f : -1f;
+            rig.PoseTowards(upperArm, lowerArm, new Vector3(side * 0.22f, -1f, 0f));
         }
 
         /// <summary>Hairstyle resource for our creation-screen styles (0 court, 1 long, 2 iroquois, 3 chauve).</summary>
@@ -246,6 +262,20 @@ namespace Aetheria.UnityClient
             if (piece == null)
             {
                 return null;
+            }
+
+            // GRAFT bones the master skeleton lacks (facial/eye bones on the base head, etc.):
+            // move them under their master parent so the meshes that need them keep working.
+            foreach (Transform t in piece.GetComponentsInChildren<Transform>(true))
+            {
+                Transform masterParent;
+                if (t != null && t.parent != null && !masterBones.ContainsKey(t.name) &&
+                    t.GetComponent<SkinnedMeshRenderer>() == null && !t.name.Contains("Armature") &&
+                    masterBones.TryGetValue(t.parent.name, out masterParent))
+                {
+                    t.SetParent(masterParent, false);
+                    masterBones[t.name] = t;
+                }
             }
 
             foreach (SkinnedMeshRenderer smr in piece.GetComponentsInChildren<SkinnedMeshRenderer>(true))

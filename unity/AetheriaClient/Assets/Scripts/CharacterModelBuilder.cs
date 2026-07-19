@@ -69,18 +69,26 @@ namespace Aetheria.UnityClient
         }
 
         /// <summary>
-        /// Fold a constant pose offset into a bone's captured rest (root-space axis + degrees) and
-        /// apply it right away. Used to lower a T-posed rig's arms into a natural stance — every
-        /// later swing composes on top of the corrected pose.
+        /// Re-aim a limb so the segment from <paramref name="pivot"/> to <paramref name="child"/>
+        /// points along a WORLD direction, folding the fix into the captured rest. Convention-proof:
+        /// it measures where the limb actually points instead of assuming the pack's bind pose or
+        /// facing, so "lower the arms" works whatever the export's axes were.
         /// </summary>
-        public void PreRotate(Transform pivot, Vector3 rootAxis, float degrees)
+        public void PoseTowards(Transform pivot, Transform child, Vector3 worldDirection)
         {
-            Quaternion rest;
-            if (pivot != null && _rest.TryGetValue(pivot, out rest))
+            if (pivot == null || child == null || BoneRoot == null || !_rest.ContainsKey(pivot))
             {
-                _rest[pivot] = Quaternion.AngleAxis(degrees, rootAxis) * rest;
-                SwingX(pivot, 0f);
+                return;
             }
+
+            Vector3 dir = child.position - pivot.position;
+            if (dir.sqrMagnitude < 0.000001f)
+            {
+                return;
+            }
+
+            pivot.rotation = Quaternion.FromToRotation(dir.normalized, worldDirection.normalized) * pivot.rotation;
+            _rest[pivot] = Quaternion.Inverse(BoneRoot.rotation) * pivot.rotation;
         }
 
         /// <summary>Swing a pivot by X degrees around the character's sideways axis.</summary>
