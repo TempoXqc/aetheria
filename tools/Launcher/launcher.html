@@ -97,11 +97,11 @@
 <body>
 <header>
   <h1>Aetheria</h1>
-  <div class="sub">Launcher officiel</div>
+  <div class="sub" id="subTitle">Launcher officiel</div>
 </header>
 
 <main>
-  <div class="col-left">
+  <div class="col-left" id="playerLeft">
     <div class="panel">
       <h2>Canal</h2>
       <div class="channels">
@@ -147,7 +147,7 @@
              border:1px solid var(--border); color:var(--muted); font-weight:600; font-size:12px; }
       .srv.on { border-color:#3f8a46; color:#7de582; box-shadow:0 0 0 1px #3f8a46; }
     </style>
-    <div class="panel">
+    <div class="panel" id="loginPanel">
       <h2>Connexion</h2>
       <label>Nom de compte</label>
       <input id="account" placeholder="ton compte">
@@ -156,7 +156,7 @@
       <div class="hint">Sauvegardés sur CE PC : le jeu se connecte tout seul jusqu'à l'écran
       de personnage. Laisse vide pour te connecter dans le jeu comme avant.</div>
     </div>
-    <div class="panel">
+    <div class="panel" id="hostCfgPanel">
       <h2>Serveur de mises à jour</h2>
       <input id="host" placeholder="ip:27080">
       <div class="hint">L'adresse du PC qui héberge le jeu (remplie automatiquement si un
@@ -171,6 +171,7 @@
 </footer>
 
 <script>
+const MODE = '__MODE__'; // 'player' ou 'host'
 let STATE = null;
 let channel = localStorage_getItem_safe('aeth.channel') || 'prod';
 let busy = false;
@@ -349,11 +350,20 @@ async function toggleServer(name) {
 }
 
 document.getElementById('host').addEventListener('change', async () => { await saveConfig(); await refresh(); await loadNews(); });
+if (MODE === 'host') {
+  document.getElementById('subTitle').textContent = 'Launcher serveur';
+  for (const id of ['playerLeft','loginPanel','hostCfgPanel']) {
+    const el = document.getElementById(id); if (el) { el.style.display = 'none'; }
+  }
+  document.querySelector('footer').style.display = 'none';
+} else {
+  document.getElementById('hostPanel').remove(); // players NEVER see hosting
+}
 refresh();
 loadNews();
-refreshHost();
+if (MODE === 'host') { refreshHost(); }
 setInterval(refresh, 15000);  // the PLAY button flips to METTRE À JOUR by itself
-setInterval(refreshHost, 5000); // host: git watch + build progress + server dots
+if (MODE === 'host') { setInterval(refreshHost, 5000); } // git watch + serveurs
 </script>
 </body>
 </html>

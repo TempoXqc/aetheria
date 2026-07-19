@@ -15,6 +15,12 @@ using System.Text.Json.Nodes;
 // straight to the character screen. Login in-game still works without the launcher.
 // ---------------------------------------------------------------------------------------------
 
+// Two personalities, two windows:
+//   Launcher.bat          → PLAYER mode (default): channels, updates, play. No hosting, ever.
+//   Launcher-Serveur.bat  → HOST mode (--host): servers + the git→build→publish pipeline.
+bool hostMode = args.Contains("--host");
+int uiPort = hostMode ? 5181 : 5180;
+
 string baseDir = AppContext.BaseDirectory;
 string configPath = Path.Combine(BaseDataDir(), "launcher.json");
 string htmlPath = FindAsset("launcher.html");
@@ -25,9 +31,11 @@ object updateLock = new();
 WebApplicationBuilder builder = WebApplication.CreateBuilder();
 builder.Logging.SetMinimumLevel(LogLevel.Warning);
 WebApplication app = builder.Build();
-app.Urls.Add("http://localhost:5180");
+app.Urls.Add($"http://localhost:{uiPort}");
 
-app.MapGet("/", () => Results.Content(File.ReadAllText(htmlPath, Encoding.UTF8), "text/html; charset=utf-8"));
+app.MapGet("/", () => Results.Content(
+    File.ReadAllText(htmlPath, Encoding.UTF8).Replace("__MODE__", hostMode ? "host" : "player"),
+    "text/html; charset=utf-8"));
 
 // Everything the page needs: config + the up-to-date status of both channels.
 app.MapGet("/api/state", async () =>
@@ -168,7 +176,14 @@ app.MapPost("/api/play", (HttpRequest request) =>
 // ---------------------------------------------------------------- HOST MODE
 // When the launcher runs from the game's repo (the owner's PC), it also drives the whole
 // pipeline: git watch → one-click pull + headless Unity build + publish — and the servers.
-Aetheria.Launcher.HostMode.Detect();
+if (hostMode)
+{
+    Aetheria.Launcher.HostMode.Detect();
+    if (!Aetheria.Launcher.HostMode.IsHost)
+    {
+        Console.WriteLine("  Launcher-Serveur : à lancer depuis le dépôt du jeu (dossier avec .git).");
+    }
+}
 
 app.MapGet("/api/host", async () =>
     Results.Content((await Aetheria.Launcher.HostMode.State()).ToJsonString(jsonOptions),
@@ -203,10 +218,11 @@ app.MapPost("/api/host/server", (HttpRequest request) =>
 AppDomain.CurrentDomain.ProcessExit += (_, _) => Aetheria.Launcher.HostMode.StopAll();
 
 Console.WriteLine();
-Console.WriteLine("  Launcher Aetheria — http://localhost:5180" +
-    (Aetheria.Launcher.HostMode.IsHost ? "  (mode hébergeur actif)" : ""));
+Console.WriteLine(hostMode
+    ? $"  Launcher SERVEUR Aetheria — http://localhost:{uiPort}"
+    : $"  Launcher Aetheria — http://localhost:{uiPort}");
 Console.WriteLine();
-OpenBrowser("http://localhost:5180");
+OpenBrowser($"http://localhost:{uiPort}");
 app.Run();
 
 // --------------------------------------------------------------------------- helpers
