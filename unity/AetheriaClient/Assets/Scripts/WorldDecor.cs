@@ -92,8 +92,35 @@ namespace Aetheria.UnityClient
                         m.mainTexture = tex;
                         m.color = Color.white;
                     }
+
+                    // Foliage is authored as CARDS with an alpha texture: without alpha-cutout
+                    // the transparent parts render as solid white sheets.
+                    if (IsFoliage(m.name))
+                    {
+                        MakeCutout(m);
+                    }
                 }
             }
+        }
+
+        private static bool IsFoliage(string materialName)
+        {
+            return materialName.Contains("Leaves") || materialName.Contains("Leaf") ||
+                   materialName.Contains("Grass") || materialName.Contains("Flower") ||
+                   materialName.Contains("Petal") || materialName.Contains("Clover") ||
+                   materialName.Contains("Fern");
+        }
+
+        /// <summary>Switch a Standard-shader material to alpha-cutout rendering.</summary>
+        private static void MakeCutout(Material m)
+        {
+            m.SetFloat("_Mode", 1f);
+            m.SetFloat("_Cutoff", 0.45f);
+            m.SetOverrideTag("RenderType", "TransparentCutout");
+            m.EnableKeyword("_ALPHATEST_ON");
+            m.DisableKeyword("_ALPHABLEND_ON");
+            m.DisableKeyword("_ALPHAPREMULTIPLY_ON");
+            m.renderQueue = 2450;
         }
 
         /// <summary>The kit names materials after their texture — resolve with light fuzzing.</summary>
@@ -155,6 +182,20 @@ namespace Aetheria.UnityClient
             for (int i = 0; i < menhirs.Length; i++)
             {
                 float h = 1.7f + ((i % 3) * 0.3f);
+
+                if (NatureModels.Available)
+                {
+                    // A kit rock stretched upright — a real standing stone, not a grey pill.
+                    GameObject stone = NatureModels.Spawn(r, "Rock_Medium_" + ((i % 3) + 1),
+                        new Vector3(menhirs[i].X, 0f, menhirs[i].Y), h * 1.5f, i * 47f);
+                    if (stone != null)
+                    {
+                        Vector3 sc = stone.transform.localScale;
+                        stone.transform.localScale = new Vector3(sc.x * 0.55f, sc.y, sc.z * 0.55f);
+                        continue;
+                    }
+                }
+
                 Tex.Apply(Round(PrimitiveType.Capsule, r, "Menhir",
                     new Vector3(menhirs[i].X, h * 0.45f, menhirs[i].Y),
                     new Vector3(1.0f, h * 0.5f, 0.8f),

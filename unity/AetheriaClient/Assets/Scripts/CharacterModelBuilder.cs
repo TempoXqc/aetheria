@@ -238,6 +238,29 @@ namespace Aetheria.UnityClient
             var model = new GameObject("Model");
             model.transform.SetParent(parent, false);
 
+            // The RPG items pack has a proper chest model — use it when imported.
+            GameObject chestPrefab = RpgItemModels.Load("Chest_Closed");
+            if (chestPrefab != null)
+            {
+                GameObject chest = Object.Instantiate(chestPrefab, model.transform, false);
+                float top = 0f;
+                foreach (Renderer rr in chest.GetComponentsInChildren<Renderer>(true))
+                {
+                    float y = rr.bounds.max.y - model.transform.position.y;
+                    if (y > top) { top = y; }
+                }
+
+                if (top > 0.05f)
+                {
+                    float k = 1.1f / top;
+                    chest.transform.localScale = new Vector3(k, k, k);
+                }
+
+                Cube(model.transform, "Plinth", new Vector3(0f, 0.03f, 0f), new Vector3(1.5f, 0.06f, 1.1f),
+                    new Color(0.45f, 0.45f, 0.50f));
+                return rig;
+            }
+
             Color wood = new Color(0.42f, 0.27f, 0.13f);
             Color iron = new Color(0.35f, 0.35f, 0.40f);
 
@@ -293,6 +316,34 @@ namespace Aetheria.UnityClient
         /// <summary>The equipped weapon, as a model in the hand: your LOOT is your look.</summary>
         private static void AttachWeaponItem(ModelRig rig, byte itemId)
         {
+            // Real weapon meshes (Ultimate RPG Items pack) when imported; primitives otherwise.
+            if (RpgItemModels.Available)
+            {
+                bool offHand = itemId == 5 || itemId == 7;
+                string model = itemId switch
+                {
+                    1 => "Sword", 2 => "Sword", 4 => "Sword_big",
+                    5 => "Bow_Wooden", 7 => "Bow_Golden",
+                    _ => null,
+                };
+
+                if (model != null)
+                {
+                    GameObject go = RpgItemModels.Mount(GripFor(rig, offHand), model,
+                        targetLength: offHand ? 1.1f : 0.95f,
+                        gripFraction: offHand ? 0.5f : 0.16f);
+                    if (go != null)
+                    {
+                        if (itemId == 1)
+                        {
+                            RpgItemModels.Tint(go, new Color(0.72f, 0.60f, 0.48f)); // rusty
+                        }
+
+                        return;
+                    }
+                }
+            }
+
             switch (itemId)
             {
                 case 1: // Rusty Sword: pitted, brownish blade
@@ -319,6 +370,123 @@ namespace Aetheria.UnityClient
                 default: // unknown weapon: a plain steel sword silhouette
                     Sword(rig, new Color(0.7f, 0.7f, 0.75f), 0.66f);
                     break;
+            }
+        }
+
+        /// <summary>
+        /// Loader for the "Ultimate RPG Items" pack (CC0, Assets/Resources/Items): weapons and
+        /// props mounted by MEASUREMENT — the longest axis is aimed forward and the model is
+        /// scaled/offset from its bounds, so the pack's pivot and axis conventions never matter.
+        /// </summary>
+        public static class RpgItemModels
+        {
+            private const string Root = "Items/";
+
+            private static readonly System.Collections.Generic.Dictionary<string, GameObject> Cache =
+                new System.Collections.Generic.Dictionary<string, GameObject>();
+            private static bool _checked;
+            private static bool _available;
+
+            public static bool Available
+            {
+                get
+                {
+                    if (!_checked)
+                    {
+                        _checked = true;
+                        _available = Load("Sword") != null;
+                    }
+
+                    return _available;
+                }
+            }
+
+            public static GameObject Load(string name)
+            {
+                GameObject cached;
+                if (!Cache.TryGetValue(name, out cached))
+                {
+                    cached = Resources.Load<GameObject>(Root + name);
+                    Cache[name] = cached;
+                }
+
+                return cached;
+            }
+
+            /// <summary>Multiply every material colour (e.g. rust on a worn blade).</summary>
+            public static void Tint(GameObject go, Color tint)
+            {
+                foreach (Renderer r in go.GetComponentsInChildren<Renderer>(true))
+                {
+                    foreach (Material m in r.materials)
+                    {
+                        if (m != null)
+                        {
+                            m.color = new Color(m.color.r * tint.r, m.color.g * tint.g, m.color.b * tint.b, m.color.a);
+                        }
+                    }
+                }
+            }
+
+            /// <summary>
+            /// Mount an item under a world-aligned grip: longest axis → forward (+Z), scaled to
+            /// <paramref name="targetLength"/>, with the grip point at <paramref name="gripFraction"/>
+            /// of the way along the length (0.16 = a sword's handle, 0.5 = a bow's middle).
+            /// </summary>
+            public static GameObject Mount(Transform grip, string name, float targetLength, float gripFraction)
+            {
+                GameObject prefab = Load(name);
+                if (prefab == null)
+                {
+                    return null;
+                }
+
+                GameObject go = Object.Instantiate(prefab, grip, false);
+                go.name = name;
+
+                Bounds b;
+                if (!CombinedBounds(go, out b) || b.size.magnitude < 0.001f)
+                {
+                    return go; // stub/no renderers: leave as imported
+                }
+
+                // Aim the longest measured axis forward.
+                if (b.size.y >= b.size.x && b.size.y >= b.size.z)
+                {
+                    go.transform.localRotation = Quaternion.Euler(90f, 0f, 0f);
+                }
+                else if (b.size.x >= b.size.z)
+                {
+                    go.transform.localRotation = Quaternion.Euler(0f, -90f, 0f);
+                }
+
+                float longest = Mathf.Max(b.size.x, Mathf.Max(b.size.y, b.size.z));
+                float k = targetLength / longest;
+                go.transform.localScale = new Vector3(k, k, k);
+
+                // Slide it so the grip point sits at the hand.
+                Bounds after;
+                if (CombinedBounds(go, out after))
+                {
+                    Vector3 gripPoint = new Vector3(after.center.x, after.center.y,
+                        after.min.z + (gripFraction * after.size.z));
+                    go.transform.position += grip.position - gripPoint;
+                }
+
+                return go;
+            }
+
+            private static bool CombinedBounds(GameObject go, out Bounds bounds)
+            {
+                bounds = default;
+                bool first = true;
+                foreach (Renderer r in go.GetComponentsInChildren<Renderer>(true))
+                {
+                    if (first) { bounds = r.bounds; first = false; }
+                    else { bounds.Encapsulate(r.bounds); }
+                }
+
+                return !first;
             }
         }
 
