@@ -302,6 +302,39 @@ public static class EquipmentTests
         Assert.False(world.TryVendorAction(p.Id, sell: false, itemId: 20, quantity: 1), "too far away");
     }
 
+    [Test("Druid shapeshift: forms swap the basic attack and the stat profile; others are refused.")]
+    public static void Druid_ShapeShiftsThroughForms()
+    {
+        var world = new World();
+        ServerEntity druid = world.SpawnPlayer(new PeerId(20), "Sylvara", raceId: 1, classId: 4);
+        int baseAttack = druid.EffectiveAttackPower;
+        int baseDefense = druid.EffectiveDefense;
+        int baseHealth = druid.EffectiveMaxHealth;
+        Assert.Equal((byte)30, druid.BasicAbilityId); // humanoid casts Wrath
+
+        Assert.True(world.TryShapeShift(druid.Id, 1)); // BEAR
+        Assert.Equal((byte)1, druid.FormId);
+        Assert.Equal((byte)31, druid.BasicAbilityId); // Maul
+        Assert.True(druid.EffectiveDefense > baseDefense, "bear tanks harder");
+        Assert.True(druid.EffectiveMaxHealth > baseHealth, "bear has a bigger pool");
+
+        Assert.True(world.TryShapeShift(druid.Id, 2)); // OWL
+        Assert.Equal((byte)30, druid.BasicAbilityId); // ranged Wrath again
+        Assert.True(druid.EffectiveAttackPower > baseAttack, "owl empowers spells");
+        Assert.True(druid.Health <= druid.EffectiveMaxHealth, "health clamped out of bear form");
+
+        Assert.True(world.TryShapeShift(druid.Id, 3)); // CAT
+        Assert.Equal((byte)32, druid.BasicAbilityId); // Shred
+        Assert.True(world.TryShapeShift(druid.Id, 0)); // back to humanoid
+        Assert.Equal((byte)0, druid.FormId);
+        Assert.Equal(baseDefense, druid.EffectiveDefense);
+
+        // Only druids shapeshift; garbage forms are refused.
+        ServerEntity warrior = world.SpawnPlayer(new PeerId(21), "Grunt", raceId: 1, classId: 1);
+        Assert.False(world.TryShapeShift(warrior.Id, 1), "warriors stay warriors");
+        Assert.False(world.TryShapeShift(druid.Id, 9), "unknown form refused");
+    }
+
     [Test("Log back in where you logged out: position and bag layout survive save/restore.")]
     public static void PositionAndLayout_SurviveRestore()
     {

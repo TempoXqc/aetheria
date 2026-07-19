@@ -347,6 +347,15 @@ public sealed class GameServer
                     HandlePartyKick(peer, PartyKick.Read(ref reader));
                     break;
 
+                case MessageType.ShapeShift:
+                    ShapeShift shift = ShapeShift.Read(ref reader);
+                    if (world.TryShapeShift(session.EntityId, shift.FormId))
+                    {
+                        SendSelfState(peer, session); // stats changed with the form
+                    }
+
+                    break;
+
                 case MessageType.ChatSend:
                     ChatSend say = ChatSend.Read(ref reader);
                     HandleChat(session, say.Text);

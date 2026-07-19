@@ -211,6 +211,9 @@ public readonly struct EntitySnapshot
     /// <summary>Item id per equipment slot (index = (int)EquipSlot) — the character's whole look.</summary>
     public readonly byte[] Equipment;
 
+    /// <summary>Druid shapeshift form: 0 humanoid, 1 bear, 2 owl, 3 cat — decides the model.</summary>
+    public readonly byte FormId;
+
     public byte EquippedWeaponId => Equipment != null && Equipment.Length > 1 ? Equipment[(int)EquipSlot.Weapon] : (byte)0;
     public byte EquippedArmorId => Equipment != null && Equipment.Length > 2 ? Equipment[(int)EquipSlot.Chest] : (byte)0;
 
@@ -226,7 +229,7 @@ public readonly struct EntitySnapshot
         int health, int maxHealth, int resource, int maxResource, float facingRadians = 0f,
         byte level = 1, string name = "", byte raceId = 0, byte classId = 0, Gender gender = Gender.Male,
         Appearance appearance = default, byte flags = 0, byte castAbilityId = 0, byte castProgress = 0,
-        byte[]? equipment = null)
+        byte[]? equipment = null, byte formId = 0)
     {
         Id = id;
         Kind = kind;
@@ -247,6 +250,7 @@ public readonly struct EntitySnapshot
         CastAbilityId = castAbilityId;
         CastProgress = castProgress;
         Equipment = equipment ?? new byte[EquipSlots.Count];
+        FormId = formId;
     }
 
     public void Write(PacketWriter w)
@@ -274,6 +278,8 @@ public readonly struct EntitySnapshot
         {
             w.WriteByte(Equipment != null && i < Equipment.Length ? Equipment[i] : (byte)0);
         }
+
+        w.WriteByte(FormId);
     }
 
     public static EntitySnapshot Read(ref PacketReader r)
@@ -303,9 +309,10 @@ public readonly struct EntitySnapshot
             equipment[i] = r.ReadByte();
         }
 
+        byte formId = r.ReadByte();
         return new EntitySnapshot(
             id, kind, faction, new Vec2(x, y), health, maxHealth, resource, maxResource, facing, level, name,
-            raceId, classId, gender, appearance, flags, castAbilityId, castProgress, equipment);
+            raceId, classId, gender, appearance, flags, castAbilityId, castProgress, equipment, formId);
     }
 }
 
@@ -697,6 +704,22 @@ public readonly struct PartyInviteNotice
     }
 
     public static PartyInviteNotice Read(ref PacketReader r) => new(r.ReadString());
+}
+
+/// <summary>Druid shapeshift request: 0 back to humanoid, 1 bear, 2 owl, 3 cat.</summary>
+public readonly struct ShapeShift
+{
+    public readonly byte FormId;
+
+    public ShapeShift(byte formId) => FormId = formId;
+
+    public void Write(PacketWriter w)
+    {
+        w.WriteByte((byte)MessageType.ShapeShift);
+        w.WriteByte(FormId);
+    }
+
+    public static ShapeShift Read(ref PacketReader r) => new(r.ReadByte());
 }
 
 /// <summary>Leader-only: throw a member out of the party (by entity id).</summary>

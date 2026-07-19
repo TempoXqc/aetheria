@@ -69,6 +69,9 @@ namespace Aetheria.UnityClient
         // The gear this model was built with — a change means the LOOK changed: rebuild.
         private readonly byte[] _builtEquipment = new byte[EquipSlots.Count];
 
+        // The shapeshift form this model was built as (druids): a change rebuilds the body.
+        private byte _builtFormId;
+
         private void RememberEquipment(EntitySnapshot snapshot)
         {
             for (int i = 0; i < _builtEquipment.Length; i++)
@@ -169,6 +172,47 @@ namespace Aetheria.UnityClient
             CaptureParts();
         }
 
+        /// <summary>Swap the whole body for the druid's current form (or back to the character).</summary>
+        private void RebuildForForm(EntitySnapshot snapshot)
+        {
+            for (int i = _body.childCount - 1; i >= 0; i--)
+            {
+                Transform old = _body.GetChild(i);
+                old.SetParent(null, false);
+                Object.Destroy(old.gameObject);
+            }
+
+            _rig = null;
+            _monsterAnim = null;
+            _extAnimator = null;
+            _builtFormId = snapshot.FormId;
+
+            if (snapshot.FormId != 0)
+            {
+                // A real animated beast when the pack is imported; a procedural one otherwise.
+                MonsterHandle beast = MonsterModels.Available
+                    ? MonsterModels.CreateDruidForm(_body, snapshot.FormId)
+                    : null;
+                if (beast != null)
+                {
+                    _monsterAnim = beast.Animator;
+                    _extHeadHeight = beast.HeadHeight;
+                }
+                else
+                {
+                    _rig = CharacterModelBuilder.BuildDruidForm(_body, snapshot.FormId);
+                }
+            }
+            else
+            {
+                _rig = CharacterModelBuilder.Build(_body, snapshot);
+            }
+
+            RememberEquipment(snapshot);
+            _torsoBaseY = 0f;
+            CaptureParts();
+        }
+
         /// <summary>Apply the latest authoritative snapshot for this entity.</summary>
         public void ApplySnapshot(EntitySnapshot snapshot, Faction viewerFaction, bool isSelf)
         {
@@ -181,8 +225,16 @@ namespace Aetheria.UnityClient
             CastAbilityId = snapshot.CastAbilityId;
             CastFraction = snapshot.CastProgress / 255f;
 
-            // Gear changed → the silhouette changes with it (visible loot!).
-            if (Kind == EntityKind.Player && _extAnimator == null && EquipmentChanged(snapshot))
+            // Shapeshift: the druid's body swaps between character and beast forms.
+            if (Kind == EntityKind.Player && snapshot.FormId != _builtFormId)
+            {
+                RebuildForForm(snapshot);
+            }
+
+            // Gear changed → the silhouette changes with it (visible loot!) — unless a beast
+            // form hides the gear anyway.
+            else if (Kind == EntityKind.Player && _extAnimator == null && _monsterAnim == null &&
+                     EquipmentChanged(snapshot))
             {
                 RebuildModel(snapshot);
             }

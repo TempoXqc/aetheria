@@ -165,6 +165,9 @@ public sealed class GameClient
 
     public void SendVendor(bool sell, byte itemId, byte quantity) => Send(new VendorAction(sell, itemId, quantity));
 
+    /// <summary>Druid shapeshift: 0 humanoid, 1 bear, 2 owl, 3 cat.</summary>
+    public void SendShapeShift(byte formId) => Send(new ShapeShift(formId));
+
     /// <summary>Say something in the world chat.</summary>
     public void SendChat(string text) => Send(new ChatSend(text ?? string.Empty));
 
@@ -614,6 +617,8 @@ public sealed class GameClient
     private void Send(MoveItem msg) => SendWith(msg.Write);
 
     private void Send(VendorAction msg) => SendWith(msg.Write);
+
+    private void Send(ShapeShift msg) => SendWith(msg.Write);
     private void Send(ChatSend msg) => SendWith(msg.Write);
     private void Send(AttackTarget msg) => SendWith(msg.Write);
     private void Send(PartyInvite msg) => SendWith(msg.Write);

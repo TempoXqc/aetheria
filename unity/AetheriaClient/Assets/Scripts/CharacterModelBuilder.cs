@@ -758,6 +758,24 @@ namespace Aetheria.UnityClient
 
         // ------------------------------------------------------------ Monsters
 
+        /// <summary>Procedural druid forms (fallback when the model pack is missing):
+        /// 1 bear (large brown), 2 owl (pale grey), 3 tiger (orange).</summary>
+        public static ModelRig BuildDruidForm(Transform parent, byte formId)
+        {
+            switch (formId)
+            {
+                case 1: // bear: bulky brown quadruped
+                    return BuildQuadruped(parent, 1.5f,
+                        new Color(0.42f, 0.29f, 0.18f), new Color(0.9f, 0.75f, 0.3f), horns: false);
+                case 2: // owl: small pale beast (stand-in until the bird model loads)
+                    return BuildQuadruped(parent, 0.9f,
+                        new Color(0.80f, 0.78f, 0.70f), new Color(1f, 0.8f, 0.2f), horns: false);
+                default: // tiger: swift orange quadruped
+                    return BuildQuadruped(parent, 1.1f,
+                        new Color(0.95f, 0.55f, 0.20f), new Color(0.3f, 0.9f, 0.4f), horns: false);
+            }
+        }
+
         private static ModelRig BuildMonster(Transform parent, byte defId)
         {
             switch (defId)

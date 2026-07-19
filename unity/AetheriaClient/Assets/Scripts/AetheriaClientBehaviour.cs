@@ -96,10 +96,10 @@ namespace Aetheria.UnityClient
 
         private static readonly (byte id, string label, byte[] classes, byte racial)[] Races =
         {
-            (1, "Human (Alliance)", new byte[] { 1, 2 }, (byte)10),
+            (1, "Human (Alliance)", new byte[] { 1, 2, 4 }, (byte)10),
             (4, "Dwarf (Alliance)", new byte[] { 1, 3 }, (byte)11),
             (2, "Orc (Horde)", new byte[] { 1, 3 }, (byte)12),
-            (3, "Elf (Horde)", new byte[] { 2, 3 }, (byte)13),
+            (3, "Elf (Horde)", new byte[] { 2, 3, 4 }, (byte)13),
         };
 
         private static readonly (byte id, string label, byte advancedAbility)[] Classes =
@@ -107,6 +107,7 @@ namespace Aetheria.UnityClient
             (1, "Warrior (Rage)", (byte)20),
             (2, "Mage (Mana)", (byte)21),
             (3, "Ranger (Energy)", (byte)22),
+            (4, "Druide (Mana)", (byte)33),
         };
 
         // --- Session ---
@@ -1028,7 +1029,16 @@ namespace Aetheria.UnityClient
         private void HandleKeys()
         {
             if (_cfg.Down(HudConfig.Bind.NextTarget)) { CycleTarget(); }
-            if (_cfg.Down(HudConfig.Bind.Attack1)) { TryCastOnTarget(_classId); }
+            if (_cfg.Down(HudConfig.Bind.Attack1)) { TryCastOnTarget(CurrentBasicAbility()); }
+
+            // Druid shapeshifts on 4/5/6 (bear/owl/cat) — same key again = back to humanoid.
+            if (_classId == 4)
+            {
+                byte current = SelfForm();
+                if (Input.GetKeyDown(KeyCode.Alpha4)) { _client.SendShapeShift(current == 1 ? (byte)0 : (byte)1); }
+                if (Input.GetKeyDown(KeyCode.Alpha5)) { _client.SendShapeShift(current == 2 ? (byte)0 : (byte)2); }
+                if (Input.GetKeyDown(KeyCode.Alpha6)) { _client.SendShapeShift(current == 3 ? (byte)0 : (byte)3); }
+            }
             if (_cfg.Down(HudConfig.Bind.Attack2)) { TryCastOnTarget(Classes[_classIndex].advancedAbility); }
             if (_cfg.Down(HudConfig.Bind.Renew)) { TryCastSelf(5); }
             if (_cfg.Down(HudConfig.Bind.Racial)) { TryUseRacial(); }
@@ -2265,6 +2275,34 @@ namespace Aetheria.UnityClient
             DrawBar(r, fill, new Color(0.55f, 0.35f, 0.85f), caption);
         }
 
+        /// <summary>Your current shapeshift form (0 humanoid) — from your own snapshot.</summary>
+        private byte SelfForm()
+        {
+            EntitySnapshot self;
+            return _client != null && _client.TryGetSelf(out self) ? self.FormId : (byte)0;
+        }
+
+        /// <summary>The class basic attack — for the druid it follows the FORM (Wrath/Maul/Shred).</summary>
+        private byte CurrentBasicAbility()
+        {
+            if (_classId != 4)
+            {
+                return _classId; // classes 1-3: ability id == class id
+            }
+
+            switch (SelfForm())
+            {
+                case 1: return 31;  // bear: Maul
+                case 3: return 32;  // cat: Shred
+                default: return 30; // humanoid & owl: Wrath
+            }
+        }
+
+        private static readonly (byte form, string label)[] DruidForms =
+        {
+            (1, "Ours"), (2, "Hibou"), (3, "Tigre"),
+        };
+
         private void DrawActionBar()
         {
             Rect bar = FrameRect(HudConfig.Frame.ActionBar);
@@ -2276,7 +2314,7 @@ namespace Aetheria.UnityClient
 
             var slots = new List<(string key, byte ability)>
             {
-                (KeyLabel(HudConfig.Bind.Attack1), _classId),
+                (KeyLabel(HudConfig.Bind.Attack1), CurrentBasicAbility()),
                 (KeyLabel(HudConfig.Bind.Attack2), Classes[_classIndex].advancedAbility),
                 (KeyLabel(HudConfig.Bind.Renew), (byte)5),
                 (KeyLabel(HudConfig.Bind.Racial), _racialId),
@@ -2337,6 +2375,38 @@ namespace Aetheria.UnityClient
                 else if (tooPoor)
                 {
                     Dim(r, 0.45f);
+                }
+            }
+
+            // DRUID: three shapeshift slots after the abilities — keys 4/5/6 toggle the form.
+            if (_classId == 4)
+            {
+                byte current = SelfForm();
+                for (int f = 0; f < DruidForms.Length; f++)
+                {
+                    (byte form, string label) = DruidForms[f];
+                    Rect r = new Rect(bar.x + ((slots.Count + f) * (slot + Pad)) + 10f, bar.y, slot, slot);
+                    WowUi.Slot(new Rect(r.x - 2, r.y - 2, r.width + 4, r.height + 4));
+                    if (current == form) { WowUi.Highlight(r); } // active form glows
+
+                    if (GUI.Button(r, ""))
+                    {
+                        _client.SendShapeShift(current == form ? (byte)0 : form);
+                    }
+
+                    GUI.Label(new Rect(r.x + 3, r.y + 2, r.width - 6, 16),
+                        "<size=10>" + label + "</size>", Rich());
+                    GUI.Label(new Rect(r.x + 3, r.y + r.height - 18, 30, 16),
+                        "<b>" + (4 + f) + "</b>", Rich());
+
+                    if (r.Contains(Event.current.mousePosition))
+                    {
+                        _tooltip = "<b><color=#ffffff>Forme : " + label + "</color></b>\n<color=#a0a0a0>" +
+                            (form == 1 ? "Tank : +60% défense, +30% PV — attaque Maul."
+                             : form == 2 ? "Sorts à distance renforcés (+25%) — incante Wrath."
+                             : "Mêlée féroce : +25% attaque — attaque Shred.") +
+                            "\nRé-appuie pour reprendre forme humaine.</color>";
+                    }
                 }
             }
         }

@@ -54,7 +54,7 @@ public sealed class ServerEntity
 
     public StatBlock Stats { get; }
     public int Health { get; private set; }
-    public byte BasicAbilityId { get; }
+    public byte BasicAbilityId { get; set; } // druid forms swap it
 
     // --- Identity ---
     public Faction Faction { get; set; } = Faction.Neutral;
@@ -210,17 +210,30 @@ public sealed class ServerEntity
     /// <summary>Loot pile for a corpse entity; null for everything else.</summary>
     public Inventory? LootContainer { get; set; }
 
+    /// <summary>
+    /// Druid shapeshift: 0 humanoid, 1 BEAR (tanky, slower hits), 2 OWL (empowered spells),
+    /// 3 CAT (fast fierce melee). Each form multiplies the effective stats below.
+    /// </summary>
+    public byte FormId { get; set; }
+
+    private float FormAttackFactor => FormId switch { 1 => 0.9f, 2 => 1.25f, 3 => 1.25f, _ => 1f };
+    private float FormDefenseFactor => FormId switch { 1 => 1.6f, _ => 1f };
+    private float FormHealthFactor => FormId switch { 1 => 1.3f, _ => 1f };
+
     // --- Effective stats (base + equipment + progression, then multiplied by active buffs) ---
     public int EffectiveAttackPower
-        => (int)MathF.Round((Stats.AttackPower + EquipmentAttackBonus + ProgressionAttackBonus) * (1f + SumMagnitude(EffectType.BuffAttack)));
+        => (int)MathF.Round((Stats.AttackPower + EquipmentAttackBonus + ProgressionAttackBonus)
+            * (1f + SumMagnitude(EffectType.BuffAttack)) * FormAttackFactor);
 
     public int EffectiveDefense
-        => (int)MathF.Round((Stats.Defense + EquipmentDefenseBonus + ProgressionDefenseBonus) * (1f + SumMagnitude(EffectType.BuffDefense)));
+        => (int)MathF.Round((Stats.Defense + EquipmentDefenseBonus + ProgressionDefenseBonus)
+            * (1f + SumMagnitude(EffectType.BuffDefense)) * FormDefenseFactor);
 
     public float EffectiveMoveSpeed => Stats.MoveSpeed * (1f + SumMagnitude(EffectType.BuffMoveSpeed));
 
-    /// <summary>Max health after equipment and progression bonuses.</summary>
-    public int EffectiveMaxHealth => Stats.MaxHealth + EquipmentHealthBonus + ProgressionHealthBonus;
+    /// <summary>Max health after equipment and progression bonuses (and the bear's thick hide).</summary>
+    public int EffectiveMaxHealth
+        => (int)MathF.Round((Stats.MaxHealth + EquipmentHealthBonus + ProgressionHealthBonus) * FormHealthFactor);
 
     /// <summary>Initialize the resource pool for a class (rage starts empty; mana/energy start full).</summary>
     public void InitResource(ResourceType type, int max, float regenPerTick)
@@ -278,6 +291,9 @@ public sealed class ServerEntity
 
     /// <summary>Set health to the current effective maximum (after gear/progression are applied).</summary>
     public void RestoreToFull() => Health = EffectiveMaxHealth;
+
+    /// <summary>Clamp health into the current pool (leaving bear form shrinks it).</summary>
+    public void ClampHealthToMax() => Health = System.Math.Min(Health, EffectiveMaxHealth);
 
     /// <summary>Restore a fraction of the max resource pool (instant effect).</summary>
     public void RestoreResourceFraction(float fractionOfMax) => GainResource(EffectiveMaxResource * fractionOfMax);

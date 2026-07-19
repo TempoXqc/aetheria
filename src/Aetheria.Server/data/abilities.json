@@ -1,17 +1,173 @@
 [
-  { "id": 1,  "name": "Slash",             "baseDamage": 18, "range": 2.5,  "cooldownTicks": 40,   "resourceCost": 0,  "skillLineId": 1 },
-  { "id": 2,  "name": "Firebolt",          "baseDamage": 16, "range": 12.0, "cooldownTicks": 16,   "resourceCost": 20, "skillLineId": 2, "castTimeTicks": 30 },
-  { "id": 3,  "name": "Shot",              "baseDamage": 20, "range": 10.0, "cooldownTicks": 50,   "resourceCost": 30, "skillLineId": 3 },
-  { "id": 4,  "name": "Claw",              "baseDamage": 9,  "range": 2.5,  "cooldownTicks": 36,   "resourceCost": 0 },
-  { "id": 6,  "name": "Wand Shot",         "baseDamage": 10, "range": 12.0, "cooldownTicks": 30,   "resourceCost": 0 },
-  { "id": 5,  "name": "Renew",             "baseDamage": 0,  "range": 0.0,  "cooldownTicks": 600,  "resourceCost": 0, "effect": 6, "effectMagnitude": 0.04, "effectDurationTicks": 200 },
-
-  { "id": 20, "name": "Whirlwind",         "baseDamage": 25, "range": 3.0,  "cooldownTicks": 40,   "resourceCost": 25, "unlockLevel": 3, "skillLineId": 1 },
-  { "id": 21, "name": "Frostbolt",         "baseDamage": 24, "range": 12.0, "cooldownTicks": 24,   "resourceCost": 30, "unlockLevel": 3, "skillLineId": 2, "castTimeTicks": 40 },
-  { "id": 22, "name": "Aimed Shot",        "baseDamage": 22, "range": 12.0, "cooldownTicks": 30,   "resourceCost": 50, "unlockLevel": 3, "skillLineId": 3, "castTimeTicks": 30 },
-
-  { "id": 10, "name": "Second Wind",       "baseDamage": 0,  "range": 0.0,  "cooldownTicks": 1200, "resourceCost": 0, "effect": 1, "effectMagnitude": 0.25, "effectDurationTicks": 0 },
-  { "id": 11, "name": "Stoneform",         "baseDamage": 0,  "range": 0.0,  "cooldownTicks": 1200, "resourceCost": 0, "effect": 4, "effectMagnitude": 0.50, "effectDurationTicks": 160 },
-  { "id": 12, "name": "Blood Fury",        "baseDamage": 0,  "range": 0.0,  "cooldownTicks": 1200, "resourceCost": 0, "effect": 3, "effectMagnitude": 0.40, "effectDurationTicks": 160 },
-  { "id": 13, "name": "Nature's Swiftness","baseDamage": 0,  "range": 0.0,  "cooldownTicks": 900,  "resourceCost": 0, "effect": 5, "effectMagnitude": 0.40, "effectDurationTicks": 120 }
+  {
+    "id": 1,
+    "name": "Slash",
+    "baseDamage": 18,
+    "range": 2.5,
+    "cooldownTicks": 40,
+    "resourceCost": 0,
+    "skillLineId": 1
+  },
+  {
+    "id": 2,
+    "name": "Firebolt",
+    "baseDamage": 16,
+    "range": 12.0,
+    "cooldownTicks": 16,
+    "resourceCost": 20,
+    "skillLineId": 2,
+    "castTimeTicks": 30
+  },
+  {
+    "id": 3,
+    "name": "Shot",
+    "baseDamage": 20,
+    "range": 10.0,
+    "cooldownTicks": 50,
+    "resourceCost": 30,
+    "skillLineId": 3
+  },
+  {
+    "id": 4,
+    "name": "Claw",
+    "baseDamage": 9,
+    "range": 2.5,
+    "cooldownTicks": 36,
+    "resourceCost": 0
+  },
+  {
+    "id": 6,
+    "name": "Wand Shot",
+    "baseDamage": 10,
+    "range": 12.0,
+    "cooldownTicks": 30,
+    "resourceCost": 0
+  },
+  {
+    "id": 5,
+    "name": "Renew",
+    "baseDamage": 0,
+    "range": 0.0,
+    "cooldownTicks": 600,
+    "resourceCost": 0,
+    "effect": 6,
+    "effectMagnitude": 0.04,
+    "effectDurationTicks": 200
+  },
+  {
+    "id": 20,
+    "name": "Whirlwind",
+    "baseDamage": 25,
+    "range": 3.0,
+    "cooldownTicks": 40,
+    "resourceCost": 25,
+    "unlockLevel": 3,
+    "skillLineId": 1
+  },
+  {
+    "id": 21,
+    "name": "Frostbolt",
+    "baseDamage": 24,
+    "range": 12.0,
+    "cooldownTicks": 24,
+    "resourceCost": 30,
+    "unlockLevel": 3,
+    "skillLineId": 2,
+    "castTimeTicks": 40
+  },
+  {
+    "id": 22,
+    "name": "Aimed Shot",
+    "baseDamage": 22,
+    "range": 12.0,
+    "cooldownTicks": 30,
+    "resourceCost": 50,
+    "unlockLevel": 3,
+    "skillLineId": 3,
+    "castTimeTicks": 30
+  },
+  {
+    "id": 10,
+    "name": "Second Wind",
+    "baseDamage": 0,
+    "range": 0.0,
+    "cooldownTicks": 1200,
+    "resourceCost": 0,
+    "effect": 1,
+    "effectMagnitude": 0.25,
+    "effectDurationTicks": 0
+  },
+  {
+    "id": 11,
+    "name": "Stoneform",
+    "baseDamage": 0,
+    "range": 0.0,
+    "cooldownTicks": 1200,
+    "resourceCost": 0,
+    "effect": 4,
+    "effectMagnitude": 0.5,
+    "effectDurationTicks": 160
+  },
+  {
+    "id": 12,
+    "name": "Blood Fury",
+    "baseDamage": 0,
+    "range": 0.0,
+    "cooldownTicks": 1200,
+    "resourceCost": 0,
+    "effect": 3,
+    "effectMagnitude": 0.4,
+    "effectDurationTicks": 160
+  },
+  {
+    "id": 13,
+    "name": "Nature's Swiftness",
+    "baseDamage": 0,
+    "range": 0.0,
+    "cooldownTicks": 900,
+    "resourceCost": 0,
+    "effect": 5,
+    "effectMagnitude": 0.4,
+    "effectDurationTicks": 120
+  },
+  {
+    "id": 30,
+    "name": "Wrath",
+    "baseDamage": 15,
+    "range": 12.0,
+    "cooldownTicks": 30,
+    "resourceCost": 12,
+    "skillLineId": 4,
+    "castTimeTicks": 24
+  },
+  {
+    "id": 31,
+    "name": "Maul",
+    "baseDamage": 22,
+    "range": 2.5,
+    "cooldownTicks": 44,
+    "resourceCost": 0,
+    "skillLineId": 4
+  },
+  {
+    "id": 32,
+    "name": "Shred",
+    "baseDamage": 20,
+    "range": 2.5,
+    "cooldownTicks": 24,
+    "resourceCost": 12,
+    "skillLineId": 4
+  },
+  {
+    "id": 33,
+    "name": "Regrowth",
+    "baseDamage": 0,
+    "range": 0.0,
+    "cooldownTicks": 400,
+    "resourceCost": 30,
+    "unlockLevel": 3,
+    "effect": 1,
+    "effectMagnitude": 0.2,
+    "effectDurationTicks": 0
+  }
 ]

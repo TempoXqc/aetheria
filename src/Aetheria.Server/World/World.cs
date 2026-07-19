@@ -158,6 +158,39 @@ public sealed class World
                player.Inventory.MoveSlot(from, to);
     }
 
+    /// <summary>Druid ability ids per form: humanoid/owl cast Wrath, bear mauls, cat shreds.</summary>
+    public const byte DruidClassId = 4;
+
+    private static byte DruidBasicAbilityFor(byte formId)
+        => formId switch { 1 => 31, 3 => 32, _ => 30 };
+
+    /// <summary>
+    /// Shapeshift (druids only): swap the form, the basic attack that goes with it, and the
+    /// form's stat profile — bear tanks, owl empowers spells, cat shreds. Same form = no-op;
+    /// health is clamped when leaving the bear's bigger pool.
+    /// </summary>
+    public bool TryShapeShift(int playerId, byte formId)
+    {
+        if (formId > 3 ||
+            !_entities.TryGetValue(playerId, out ServerEntity? player) ||
+            player.IsDead || player.Kind != EntityKind.Player || player.ClassId != DruidClassId)
+        {
+            return false;
+        }
+
+        if (player.FormId == formId)
+        {
+            return true; // already there
+        }
+
+        player.FormId = formId;
+        player.BasicAbilityId = DruidBasicAbilityFor(formId);
+        player.AutoAttackAbilityId = player.BasicAbilityId; // the server swings the form's attack
+        player.CancelCast();
+        player.ClampHealthToMax();
+        return true;
+    }
+
     public bool TryEquipItem(int playerId, byte itemId, EquipSlot slot, int bagIndex = -1)
     {
         if (!_entities.TryGetValue(playerId, out ServerEntity? player) ||
@@ -893,7 +926,8 @@ public sealed class World
                     e.FacingRadians, (byte)System.Math.Clamp(e.Level, 1, 255), e.Name,
                     raceOrDef, e.ClassId, e.Gender, e.Appearance, flags,
                     e.CastAbilityId, e.CastProgressAt(Tick),
-                    e.Kind == EntityKind.Player ? e.CopyEquipment() : null));
+                    e.Kind == EntityKind.Player ? e.CopyEquipment() : null,
+                    e.FormId));
             }
         }
 

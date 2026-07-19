@@ -67,6 +67,22 @@ namespace Aetheria.UnityClient
             return Spawn(parent, defId, remains: false);
         }
 
+        /// <summary>Druid shapeshift models: 1 bear (Yeti, fur-tinted), 2 owl (Birb), 3 cat.</summary>
+        public static MonsterHandle CreateDruidForm(Transform parent, byte formId)
+        {
+            switch (formId)
+            {
+                case 1:
+                    return SpawnNamed(parent, "Yeti", 2.0f, new Color(0.62f, 0.45f, 0.30f)); // bear
+                case 2:
+                    return SpawnNamed(parent, "Birb", 1.5f, Color.white);                    // owl
+                case 3:
+                    return SpawnNamed(parent, "Cat", 1.1f, new Color(1f, 0.62f, 0.28f));     // tiger
+                default:
+                    return null;
+            }
+        }
+
         /// <summary>Spawn the SLAIN monster: it plays its death clip once and stays down.</summary>
         public static MonsterHandle CreateRemains(Transform parent, byte defId)
         {
@@ -75,12 +91,20 @@ namespace Aetheria.UnityClient
 
         private static MonsterHandle Spawn(Transform parent, byte defId, bool remains)
         {
+            Cast cast = For(defId);
+            return SpawnNamed(parent, cast.Model, cast.Height, cast.Tint, remains);
+        }
+
+        /// <summary>Spawn ANY pack model by name (monsters, druid forms) with the shared plumbing.</summary>
+        private static MonsterHandle SpawnNamed(Transform parent, string model, float height,
+            Color tint, bool remains = false)
+        {
             if (!Available)
             {
                 return null;
             }
 
-            Cast cast = For(defId);
+            Cast cast = new Cast { Model = model, Height = height, Tint = tint };
             Object[] assets = Resources.LoadAll("Monsters/" + cast.Model);
             if (assets == null || assets.Length == 0)
             {

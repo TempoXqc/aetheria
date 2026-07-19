@@ -43,6 +43,7 @@ public enum MessageType : byte
     MoveItem = 33,
     VendorAction = 34,
     PartyKick = 35,
+    ShapeShift = 36,
 
     // --- Server -> Client ---
     ConnectAccepted = 128,

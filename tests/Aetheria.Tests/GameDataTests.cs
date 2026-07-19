@@ -11,7 +11,7 @@ public static class GameDataTests
         GameData data = GameData.CreateDefault();
 
         Assert.Equal(4, data.Races.Count); // Human, Dwarf, Orc, Elf
-        Assert.Equal(3, data.Classes.Count);
+        Assert.Equal(4, data.Classes.Count); // Warrior, Mage, Ranger, Druid
         Assert.Equal(4, data.Monsters.Count); // Grunt, Wolf, Goblin King, Ashmaw
         Assert.Equal("Warrior", data.GetClass(1).Name);
         Assert.Equal("Goblin Grunt", data.GetMonster(1).Name);

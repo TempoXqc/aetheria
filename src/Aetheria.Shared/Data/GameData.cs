@@ -187,17 +187,19 @@ public sealed class GameData
         races:
         [
             // Alliance
-            new RaceDefinition { Id = 1, Name = "Human", Faction = Faction.Alliance, HealthBonus = 0,   AttackBonus = 0, DefenseBonus = 0,  MoveSpeedMultiplier = 1.00f, AllowedClassIds = [1, 2], RacialAbilityId = 10 },
+            new RaceDefinition { Id = 1, Name = "Human", Faction = Faction.Alliance, HealthBonus = 0,   AttackBonus = 0, DefenseBonus = 0,  MoveSpeedMultiplier = 1.00f, AllowedClassIds = [1, 2, 4], RacialAbilityId = 10 },
             new RaceDefinition { Id = 4, Name = "Dwarf", Faction = Faction.Alliance, HealthBonus = 15,  AttackBonus = 0, DefenseBonus = 2,  MoveSpeedMultiplier = 0.95f, AllowedClassIds = [1, 3], RacialAbilityId = 11 },
             // Horde
             new RaceDefinition { Id = 2, Name = "Orc",   Faction = Faction.Horde,    HealthBonus = 20,  AttackBonus = 3, DefenseBonus = -1, MoveSpeedMultiplier = 0.95f, AllowedClassIds = [1, 3], RacialAbilityId = 12 },
-            new RaceDefinition { Id = 3, Name = "Elf",   Faction = Faction.Horde,    HealthBonus = -10, AttackBonus = 1, DefenseBonus = 0,  MoveSpeedMultiplier = 1.10f, AllowedClassIds = [2, 3], RacialAbilityId = 13 },
+            new RaceDefinition { Id = 3, Name = "Elf",   Faction = Faction.Horde,    HealthBonus = -10, AttackBonus = 1, DefenseBonus = 0,  MoveSpeedMultiplier = 1.10f, AllowedClassIds = [2, 3, 4], RacialAbilityId = 13 },
         ],
         classes:
         [
             new ClassDefinition { Id = 1, Name = "Warrior", MaxHealth = 120, MoveSpeed = 5.0f, AttackPower = 12, Defense = 6, BasicAbilityId = 1, AbilityIds = [1, 20, 5], Resource = ResourceType.Rage,   MaxResource = 100, ResourceRegenPerSec = 0f },
             new ClassDefinition { Id = 2, Name = "Mage",    MaxHealth = 80,  MoveSpeed = 5.0f, AttackPower = 18, Defense = 2, BasicAbilityId = 2, AutoAttackAbilityId = 6, AbilityIds = [2, 21, 5, 6], Resource = ResourceType.Mana,   MaxResource = 100, ResourceRegenPerSec = 8f },
             new ClassDefinition { Id = 3, Name = "Ranger",  MaxHealth = 95,  MoveSpeed = 5.5f, AttackPower = 14, Defense = 3, BasicAbilityId = 3, AbilityIds = [3, 22, 5], Resource = ResourceType.Energy, MaxResource = 100, ResourceRegenPerSec = 20f },
+            // The DRUID shapeshifts: humanoid/owl cast Wrath (30), bear mauls (31), cat shreds (32).
+            new ClassDefinition { Id = 4, Name = "Druid",   MaxHealth = 100, MoveSpeed = 5.0f, AttackPower = 14, Defense = 4, BasicAbilityId = 30, AbilityIds = [30, 31, 32, 33, 5], Resource = ResourceType.Mana, MaxResource = 100, ResourceRegenPerSec = 8f },
         ],
         abilities:
         [
@@ -214,6 +216,11 @@ public sealed class GameData
             new AbilityDefinition { Id = 20, Name = "Whirlwind",  BaseDamage = 25, Range = 3f,  CooldownTicks = 40, ResourceCost = 25, UnlockLevel = 3, SkillLineId = 1 },
             new AbilityDefinition { Id = 21, Name = "Frostbolt",  BaseDamage = 24, Range = 12f, CooldownTicks = 24, ResourceCost = 30, UnlockLevel = 3, SkillLineId = 2, CastTimeTicks = 40 },
             new AbilityDefinition { Id = 22, Name = "Aimed Shot", BaseDamage = 22, Range = 12f, CooldownTicks = 30, ResourceCost = 50, UnlockLevel = 3, SkillLineId = 3, CastTimeTicks = 30 },
+            // Druid kit: one basic attack per FORM, plus an instant self-heal at level 3.
+            new AbilityDefinition { Id = 30, Name = "Wrath",    BaseDamage = 15, Range = 12f,  CooldownTicks = 30, ResourceCost = 12, SkillLineId = 4, CastTimeTicks = 24 },
+            new AbilityDefinition { Id = 31, Name = "Maul",     BaseDamage = 22, Range = 2.5f, CooldownTicks = 44, ResourceCost = 0,  SkillLineId = 4 },
+            new AbilityDefinition { Id = 32, Name = "Shred",    BaseDamage = 20, Range = 2.5f, CooldownTicks = 24, ResourceCost = 12, SkillLineId = 4 },
+            new AbilityDefinition { Id = 33, Name = "Regrowth", Range = 0f, CooldownTicks = 400, ResourceCost = 30, UnlockLevel = 3, Effect = EffectType.Heal, EffectMagnitude = 0.20f, EffectDurationTicks = 0 },
             // Racials (self-cast, no resource cost, long cooldown)
             new AbilityDefinition { Id = 10, Name = "Second Wind",       Range = 0f, CooldownTicks = 1200, Effect = EffectType.Heal,          EffectMagnitude = 0.25f, EffectDurationTicks = 0 },
             new AbilityDefinition { Id = 11, Name = "Stoneform",         Range = 0f, CooldownTicks = 1200, Effect = EffectType.BuffDefense,   EffectMagnitude = 0.50f, EffectDurationTicks = 160 },
