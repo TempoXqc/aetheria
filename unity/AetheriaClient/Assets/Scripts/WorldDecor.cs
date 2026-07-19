@@ -302,6 +302,18 @@ namespace Aetheria.UnityClient
                 NatureModels.Spawn(r, name, new Vector3(x, 0f, z), h, rng.Next(360));
             }
 
+            // DENSE grass pass, Northshire-style: the fields should read as meadow, not lawn.
+            for (int i = 0; i < 360; i++)
+            {
+                float x = ((float)rng.NextDouble() * 160f) - 80f;
+                float z = ((float)rng.NextDouble() * 160f) - 80f;
+                if (Mathf.Sqrt((x * x) + (z * z)) < 17f) { continue; }
+                if (x > 70f && z > 70f) { continue; }
+                string tuft = (i % 3) == 0 ? "Grass_Wispy_Tall" : "Grass_Common_Tall";
+                NatureModels.Spawn(r, tuft, new Vector3(x, 0f, z),
+                    0.28f + ((float)rng.NextDouble() * 0.35f), rng.Next(360));
+            }
+
             // Goblin camp: gnarled trees and mushrooms — it should feel WRONG there.
             NatureModels.Spawn(r, "TwistedTree_1", new Vector3(21f, 0f, 15.5f), 5.0f, 40f);
             NatureModels.Spawn(r, "TwistedTree_2", new Vector3(29.5f, 0f, 13f), 4.4f, 210f);
@@ -435,6 +447,62 @@ namespace Aetheria.UnityClient
             }
 
             return go;
+        }
+    }
+
+    /// <summary>
+    /// The WoW-style minimap: a second orthographic camera looking straight down at the player,
+    /// rendered into a RenderTexture the HUD draws in the top-right corner.
+    /// </summary>
+    public sealed class MinimapView
+    {
+        private GameObject _root;
+        private Camera _camera;
+
+        public RenderTexture Texture { get; private set; }
+
+        public void EnsureBuilt()
+        {
+            if (_root != null)
+            {
+                return;
+            }
+
+            _root = new GameObject("MinimapCam");
+            Texture = new RenderTexture(192, 192, 16);
+            _camera = _root.AddComponent<Camera>();
+            _camera.orthographic = true;
+            _camera.orthographicSize = 26f;
+            _camera.targetTexture = Texture;
+            _camera.clearFlags = CameraClearFlags.SolidColor;
+            _camera.backgroundColor = new Color(0.24f, 0.34f, 0.18f); // grass from above
+            _root.transform.rotation = Quaternion.Euler(90f, 0f, 0f);
+        }
+
+        /// <summary>Keep the camera parked high above the player, looking straight down.</summary>
+        public void Tick(Vector3 playerPos)
+        {
+            if (_root != null)
+            {
+                _root.transform.position = playerPos + new Vector3(0f, 70f, 0f);
+            }
+        }
+
+        public void Teardown()
+        {
+            if (_root != null)
+            {
+                Object.Destroy(_root);
+                _root = null;
+                _camera = null;
+            }
+
+            if (Texture != null)
+            {
+                Texture.Release();
+                Object.Destroy(Texture);
+                Texture = null;
+            }
         }
     }
 

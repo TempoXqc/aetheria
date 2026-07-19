@@ -60,6 +60,9 @@ namespace Aetheria.UnityClient
         public byte CastAbilityId { get; private set; }
         public float CastFraction { get; private set; }
 
+        /// <summary>True while this character has a hostile engaged: weapon-raised idle stance.</summary>
+        public bool CombatStance { get; set; }
+
         // The gear this model was built with — a change means the LOOK changed: rebuild.
         private readonly byte[] _builtEquipment = new byte[EquipSlots.Count];
 
@@ -385,6 +388,19 @@ namespace Aetheria.UnityClient
                     ? Mathf.Lerp(20f, -105f, atk) // wind up slightly, then strike down/forward
                     : (swing * 0.7f) - sway;
                 _rig.SwingX(_rig.ArmR, armAngle);
+
+                // COMBAT STANCE (a hostile is targeted): weapon raised and ready, WoW-style —
+                // even out of range — and a slightly planted step when standing still.
+                if (CombatStance && atk <= 0f)
+                {
+                    _rig.SwingX(_rig.ArmR, -58f + (sway * 0.5f));
+                    _rig.SwingX(_rig.ArmL, -20f - (sway * 0.5f));
+                    if (stride < 0.2f)
+                    {
+                        _rig.SwingX(_rig.LegL, 8f);
+                        _rig.SwingX(_rig.LegR, -8f);
+                    }
+                }
 
                 // Idle breathing: a subtle torso pulse when standing still.
                 if (_rig.Torso != null)

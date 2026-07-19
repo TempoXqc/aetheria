@@ -58,6 +58,7 @@ namespace Aetheria.UnityClient
         private readonly LobbyStage _lobby = new LobbyStage();
         private readonly WorldDecor _decor = new WorldDecor();
         private readonly SheetPreview _sheetPreview = new SheetPreview();
+        private readonly MinimapView _minimap = new MinimapView();
         private LobbyScreen _lobbyScreen = LobbyScreen.Auth;
         private string _secret2 = "";
         private bool _wasRegistering;
@@ -177,11 +178,17 @@ namespace Aetheria.UnityClient
                 _lobby.Tick(Time.deltaTime);
                 PumpServerProbes();
                 if (_decor.Active) { _decor.Teardown(); }
+                _minimap.Teardown();
             }
             else
             {
                 if (_lobby.Active) { _lobby.Teardown(); }
                 _decor.EnsureBuilt(); // zone scenery: sanctuary, path, goblin camp, wolf field
+                _minimap.EnsureBuilt();
+                if (_client.TryGetSelf(out EntitySnapshot mapSelf))
+                {
+                    _minimap.Tick(new Vector3(mapSelf.Position.X, 0f, mapSelf.Position.Y));
+                }
             }
 
             if (!_connected)
@@ -284,6 +291,14 @@ namespace Aetheria.UnityClient
             SyncViews();
             PlayCombatAnimations();
             UpdateTargetRing();
+
+            // WoW combat stance: as soon as a hostile is engaged, MY character raises the weapon.
+            EntityView stanceView;
+            if (_client.EntityId.HasValue &&
+                _views.TryGetValue(_client.EntityId.Value, out stanceView) && stanceView != null)
+            {
+                stanceView.CombatStance = _targetId >= 0;
+            }
             FindNearbyCorpse();
             FindNearbyBank();
             PumpChat();
@@ -1119,6 +1134,7 @@ namespace Aetheria.UnityClient
             }
 
             if (_cfg.ShowHealthBars || _cfg.ShowNameplates) { DrawNameplates(); }
+            DrawMinimap();
             DrawCorpsePrompt();
             DrawBankPrompt();
             DrawPlayerFrame();
@@ -1200,62 +1216,104 @@ namespace Aetheria.UnityClient
         }
 
         /// <summary>Screen 1 — sign-in only: login + password. Nothing else.</summary>
+        /// <summary>Golden game title + version + the news panel — the WoW login chrome.</summary>
+        private void DrawAuthChrome(bool withNews)
+        {
+            WowUi.Title(new Rect((VirtW / 2f) - 300, 34, 600, 40), "<size=34>AETHERIA</size>");
+            WowUi.GoldCentered(new Rect((VirtW / 2f) - 300, 74, 600, 18),
+                "<size=11><color=#c04040>H A R D C O R E</color></size>");
+
+            GUI.Label(new Rect(16, VirtH - 24, 400, 18),
+                "<size=10><color=#b0b0b0>Version " + SimulationConstants.GameVersion + " (proto " +
+                SimulationConstants.ProtocolVersion + ")</color></size>", Rich());
+
+            if (withNews)
+            {
+                Rect news = new Rect(24, 120, 300, 250);
+                WowUi.Panel(news, "Dernières nouvelles");
+                WowUi.Body(new Rect(news.x + 14, news.y + 44, news.width - 28, news.height - 56),
+                    "Bienvenue en Aetheria !\n\n" +
+                    "· Monde re-décoré : arbres, pierres levées et végétation.\n" +
+                    "· Équipement complet façon WoW : 10 emplacements, sacs, butin fenêtré.\n" +
+                    "· MODE HARDCORE : la mort est définitive. Dépose tes biens à la banque du sanctuaire…\n\n" +
+                    "Bon courage, aventurier.");
+            }
+        }
+
+        private void DrawErrorsAt(Rect r)
+        {
+            string error = _error;
+            if (string.IsNullOrEmpty(error) && _client != null) { error = _client.LoginError; }
+            if (!string.IsNullOrEmpty(error))
+            {
+                GUI.Label(r, "<color=#ff7070>" + error + "</color>", RichCentered());
+            }
+        }
+
         private void DrawLoginScreen()
         {
-            DrawTitledBox(out Rect box, 235, "Connexion");
-            GUILayout.BeginArea(new Rect(box.x + 15, box.y + 48, box.width - 30, box.height - 60));
+            DrawAuthChrome(withNews: true);
 
-            GUILayout.BeginHorizontal();
-            GUILayout.Label("Identifiant", GUILayout.Width(90));
-            _account = GUILayout.TextField(_account);
-            GUILayout.EndHorizontal();
+            float cx = VirtW / 2f;
+            float y = VirtH * 0.40f;
 
-            GUILayout.BeginHorizontal();
-            GUILayout.Label("Mot de passe", GUILayout.Width(90));
-            _secret = GUILayout.PasswordField(_secret, '*');
-            GUILayout.EndHorizontal();
+            WowUi.GoldCentered(new Rect(cx - 140, y, 280, 20), "Nom de compte");
+            _account = WowUi.TextField(new Rect(cx - 140, y + 22, 280, 30), _account);
 
-            GUILayout.Space(10);
-            if (GUILayout.Button("SE CONNECTER", GUILayout.Height(34)))
+            WowUi.GoldCentered(new Rect(cx - 140, y + 62, 280, 20), "Mot de passe");
+            _secret = WowUi.TextField(new Rect(cx - 140, y + 84, 280, 30), _secret, password: true);
+
+            if (WowUi.Button(new Rect(cx - 110, y + 132, 220, 38), "Se connecter"))
             {
                 Connect(LastServerFor(_account.Trim()), createAccount: false);
             }
 
-            GUILayout.Space(4);
-            if (GUILayout.Button("Créer un compte", GUILayout.Height(24)))
+            DrawErrorsAt(new Rect(cx - 240, y + 178, 480, 40));
+
+            // The account column, bottom-left — like the launcher's stacked buttons.
+            if (WowUi.Button(new Rect(24, VirtH - 148, 190, 30), "Créer un compte"))
             {
                 _secret2 = "";
                 _error = "";
                 _lobbyScreen = LobbyScreen.Register;
             }
 
-            DrawErrors();
-            GUILayout.EndArea();
+            if (WowUi.Button(new Rect(24, VirtH - 112, 190, 30), "Liste des serveurs"))
+            {
+                OpenServerBrowser();
+            }
+
+            if (WowUi.Button(new Rect(VirtW - 140, VirtH - 64, 116, 30), "Quitter"))
+            {
+                _cfg.Save();
+#if UNITY_EDITOR
+                UnityEditor.EditorApplication.isPlaying = false;
+#else
+                Application.Quit();
+#endif
+            }
         }
 
         /// <summary>Screen 1b — its own registration modal: login + password + confirmation.</summary>
         private void DrawRegisterScreen()
         {
-            DrawTitledBox(out Rect box, 265, "Créer un compte");
-            GUILayout.BeginArea(new Rect(box.x + 15, box.y + 48, box.width - 30, box.height - 60));
+            DrawAuthChrome(withNews: false);
 
-            GUILayout.BeginHorizontal();
-            GUILayout.Label("Identifiant", GUILayout.Width(110));
-            _account = GUILayout.TextField(_account);
-            GUILayout.EndHorizontal();
+            float cx = VirtW / 2f;
+            Rect panel = new Rect(cx - 180, VirtH * 0.30f, 360, 330);
+            WowUi.Panel(panel, "Créer un compte");
 
-            GUILayout.BeginHorizontal();
-            GUILayout.Label("Mot de passe", GUILayout.Width(110));
-            _secret = GUILayout.PasswordField(_secret, '*');
-            GUILayout.EndHorizontal();
+            float y = panel.y + 52;
+            WowUi.GoldCentered(new Rect(cx - 140, y, 280, 20), "Nom de compte");
+            _account = WowUi.TextField(new Rect(cx - 140, y + 22, 280, 30), _account);
 
-            GUILayout.BeginHorizontal();
-            GUILayout.Label("Confirmation", GUILayout.Width(110));
-            _secret2 = GUILayout.PasswordField(_secret2, '*');
-            GUILayout.EndHorizontal();
+            WowUi.GoldCentered(new Rect(cx - 140, y + 60, 280, 20), "Mot de passe");
+            _secret = WowUi.TextField(new Rect(cx - 140, y + 82, 280, 30), _secret, password: true);
 
-            GUILayout.Space(10);
-            if (GUILayout.Button("CRÉER LE COMPTE", GUILayout.Height(34)))
+            WowUi.GoldCentered(new Rect(cx - 140, y + 120, 280, 20), "Confirmation");
+            _secret2 = WowUi.TextField(new Rect(cx - 140, y + 142, 280, 30), _secret2, password: true);
+
+            if (WowUi.Button(new Rect(cx - 120, y + 188, 240, 36), "Créer le compte"))
             {
                 if (_secret != _secret2)
                 {
@@ -1267,23 +1325,18 @@ namespace Aetheria.UnityClient
                 }
             }
 
-            GUILayout.Space(4);
-            if (GUILayout.Button("Retour", GUILayout.Height(24)))
+            if (WowUi.Button(new Rect(cx - 60, y + 230, 120, 28), "Retour"))
             {
                 _error = "";
                 _lobbyScreen = LobbyScreen.Auth;
             }
 
-            DrawErrors();
-            GUILayout.EndArea();
+            DrawErrorsAt(new Rect(cx - 240, panel.yMax + 8, 480, 40));
         }
 
-        /// <summary>Screen 2 — YOUR character in 3D, and a big JOUER button.</summary>
+        /// <summary>Screen 2 — YOUR character in 3D centre-stage, WoW character-select layout.</summary>
         private void DrawCharacterScreen()
         {
-            DrawTitledBox(out Rect box, 300, "Ton personnage");
-            GUILayout.BeginArea(new Rect(box.x + 15, box.y + 48, box.width - 30, box.height - 60));
-
             string race = "?";
             for (int i = 0; i < Races.Length; i++)
             {
@@ -1296,22 +1349,35 @@ namespace Aetheria.UnityClient
                 if (Classes[i].id == _client.CharacterClassId) { cls = Classes[i].label; }
             }
 
-            GUILayout.Label("<size=15><b>" + _client.CharacterName + "</b></size>", Rich());
-            GUILayout.Label(race + " · " + cls + " · niveau " + _client.CharacterLevel);
-
-            GUILayout.Space(14);
-            if (GUILayout.Button("JOUER", GUILayout.Height(40))) { EnterExisting(); }
-
-            GUILayout.FlexibleSpace();
-            if (GUILayout.Button("Changer de serveur", GUILayout.Height(24)))
+            // RIGHT: the realm + character list panel, WoW-style.
+            Rect panel = new Rect(VirtW - 330, 24, 306, VirtH - 220);
+            WowUi.Panel(panel);
+            WowUi.GoldCentered(new Rect(panel.x, panel.y + 10, panel.width, 22),
+                "<size=14>" + _host + "</size>");
+            if (WowUi.Button(new Rect(panel.x + (panel.width / 2f) - 80, panel.y + 36, 160, 26), "Changer de serveur"))
             {
                 Disconnect();
                 OpenServerBrowser();
+                return;
             }
 
-            GUILayout.BeginHorizontal();
-            if (GUILayout.Button("Déconnexion", GUILayout.Height(26))) { Disconnect(); }
-            if (GUILayout.Button("Quitter le jeu", GUILayout.Height(26)))
+            Rect card = new Rect(panel.x + 12, panel.y + 76, panel.width - 24, 58);
+            WowUi.Highlight(card);
+            WowUi.Gold(new Rect(card.x + 10, card.y + 6, card.width - 20, 20),
+                "<size=13>" + _client.CharacterName + "</size>");
+            WowUi.Body(new Rect(card.x + 10, card.y + 28, card.width - 20, 24),
+                cls + " niveau " + _client.CharacterLevel + "\n<color=#a0a0a0>" + race + "</color>");
+
+            // BOTTOM CENTRE: the character's name over the big enter button.
+            WowUi.GoldCentered(new Rect((VirtW / 2f) - 220, VirtH - 134, 440, 26),
+                "<size=17>" + _client.CharacterName + "</size>");
+            if (WowUi.Button(new Rect((VirtW / 2f) - 150, VirtH - 100, 300, 42), "Entrer dans le monde"))
+            {
+                EnterExisting();
+            }
+
+            if (WowUi.Button(new Rect(24, VirtH - 64, 150, 30), "Déconnexion")) { Disconnect(); }
+            if (WowUi.Button(new Rect(184, VirtH - 64, 150, 30), "Quitter le jeu"))
             {
                 _cfg.Save();
 #if UNITY_EDITOR
@@ -1321,9 +1387,7 @@ namespace Aetheria.UnityClient
 #endif
             }
 
-            GUILayout.EndHorizontal();
-            DrawErrors();
-            GUILayout.EndArea();
+            DrawErrorsAt(new Rect((VirtW / 2f) - 240, VirtH - 170, 480, 30));
         }
 
         /// <summary>The server browser: NAMED servers, their population, and your character there.</summary>
@@ -1408,11 +1472,12 @@ namespace Aetheria.UnityClient
 
         private void DrawWaitScreen(string message)
         {
-            DrawTitledBox(out Rect box, 150, message);
-            GUILayout.BeginArea(new Rect(box.x + 15, box.y + 60, box.width - 30, 70));
-            DrawErrors();
-            if (GUILayout.Button("Annuler", GUILayout.Height(26))) { Disconnect(); }
-            GUILayout.EndArea();
+            DrawAuthChrome(withNews: false);
+            float cx = VirtW / 2f;
+            Rect panel = new Rect(cx - 180, VirtH * 0.40f, 360, 130);
+            WowUi.Panel(panel, message);
+            DrawErrorsAt(new Rect(cx - 170, panel.y + 48, 340, 30));
+            if (WowUi.Button(new Rect(cx - 60, panel.y + 86, 120, 28), "Annuler")) { Disconnect(); }
         }
 
         /// <summary>One "◀ valeur ▶" row of the customisation panel, with an optional colour swatch.</summary>
@@ -1436,97 +1501,156 @@ namespace Aetheria.UnityClient
             return index;
         }
 
-        private void DrawCreationScreen()
+        private static readonly string[] RaceLore =
         {
-            DrawTitledBox(out Rect box, 500, "Crée ton personnage");
-            GUILayout.BeginArea(new Rect(box.x + 15, box.y + 48, box.width - 30, box.height - 60));
+            "Fiers et adaptables, les Humains de l'Alliance tiennent la ligne du sanctuaire depuis la première nuit.",
+            "Les Orcs de la Horde vivent pour l'honneur du combat ; leur fureur fait plier les armures.",
+            "Les Elfes de la Horde sont vifs et précis — flèches et sorts trouvent toujours leur cible.",
+            "Courts sur pattes, durs comme la pierre : les Nains de l'Alliance ne reculent JAMAIS.",
+        };
 
-            GUILayout.BeginHorizontal();
-            GUILayout.Label("Nom", GUILayout.Width(70));
-            _name = GUILayout.TextField(_name);
-            GUILayout.EndHorizontal();
+        private static readonly string[] ClassLore =
+        {
+            "Le Guerrier vit au corps à corps : la rage nourrit ses coups, l'acier fait le reste.",
+            "Le Mage incante feu et givre à distance — fragile, mais dévastateur.",
+            "Le Chasseur harcèle à l'arc et ne laisse aucune proie s'échapper.",
+        };
 
-            GUILayout.Space(6);
-            string[] raceLabels = { Races[0].label, Races[1].label, Races[2].label, Races[3].label };
-            int newRace = GUILayout.SelectionGrid(_raceIndex, raceLabels, 2);
-            if (newRace != _raceIndex)
+        /// <summary>A rect-based "◀ valeur ▶" appearance row (WoW's arrow pickers).</summary>
+        private int ArrowPicker(float x, ref float y, string label, int index, string[] options, Color? swatch)
+        {
+            WowUi.Body(new Rect(x, y, 96, 20), "<b>" + label + "</b>");
+            if (WowUi.Button(new Rect(x + 96, y, 22, 20), "<")) { index = (index + options.Length - 1) % options.Length; }
+            GUI.Label(new Rect(x + 122, y, 84, 20), "<size=10>" + options[index] + "</size>", RichCentered());
+            if (swatch.HasValue)
             {
-                _raceIndex = newRace;
-                if (System.Array.IndexOf(Races[_raceIndex].classes, Classes[_classIndex].id) < 0)
+                Color prev = GUI.color;
+                GUI.color = swatch.Value;
+                GUI.DrawTexture(new Rect(x + 208, y + 3, 16, 14), Texture2D.whiteTexture);
+                GUI.color = prev;
+            }
+
+            if (WowUi.Button(new Rect(x + 228, y, 22, 20), ">")) { index = (index + 1) % options.Length; }
+            y += 26f;
+            return index;
+        }
+
+        private void SelectRace(int index)
+        {
+            _raceIndex = index;
+            if (System.Array.IndexOf(Races[_raceIndex].classes, Classes[_classIndex].id) < 0)
+            {
+                for (int i = 0; i < Classes.Length; i++)
                 {
-                    for (int i = 0; i < Classes.Length; i++)
+                    if (System.Array.IndexOf(Races[_raceIndex].classes, Classes[i].id) >= 0)
                     {
-                        if (System.Array.IndexOf(Races[_raceIndex].classes, Classes[i].id) >= 0)
-                        {
-                            _classIndex = i;
-                            break;
-                        }
+                        _classIndex = i;
+                        break;
                     }
                 }
             }
+        }
 
-            GUILayout.Space(4);
-            GUILayout.BeginHorizontal();
+        private void DrawCreationScreen()
+        {
+            // LEFT: factions, races, class, sex, appearance — the WoW creation column.
+            Rect left = new Rect(20, 24, 288, VirtH - 150);
+            WowUi.Panel(left);
+            float x = left.x + 16;
+            float y = left.y + 12;
+
+            // Factions side by side, their races below (Alliance blue / Horde red).
+            WowUi.Gold(new Rect(x, y, 120, 20), "<color=#4a7bd0>Alliance</color>");
+            WowUi.Gold(new Rect(x + 132, y, 120, 20), "<color=#c04040>Horde</color>");
+            y += 24f;
+
+            int[] allianceRaces = { 0, 3 }; // Humain, Nain
+            int[] hordeRaces = { 1, 2 };    // Orc, Elfe
+            for (int row = 0; row < 2; row++)
+            {
+                Rect a = new Rect(x, y, 118, 26);
+                if (_raceIndex == allianceRaces[row]) { WowUi.Highlight(new Rect(a.x - 2, a.y - 2, a.width + 4, a.height + 4)); }
+                if (WowUi.Button(a, Races[allianceRaces[row]].label)) { SelectRace(allianceRaces[row]); }
+
+                Rect h = new Rect(x + 132, y, 118, 26);
+                if (_raceIndex == hordeRaces[row]) { WowUi.Highlight(new Rect(h.x - 2, h.y - 2, h.width + 4, h.height + 4)); }
+                if (WowUi.Button(h, Races[hordeRaces[row]].label)) { SelectRace(hordeRaces[row]); }
+
+                y += 32f;
+            }
+
+            y += 6f;
+            WowUi.Gold(new Rect(x, y, 200, 20), "Classe");
+            y += 22f;
             for (int i = 0; i < Classes.Length; i++)
             {
                 bool allowed = System.Array.IndexOf(Races[_raceIndex].classes, Classes[i].id) >= 0;
+                Rect r = new Rect(x + (i * 84), y, 78, 26);
                 GUI.enabled = allowed;
-                if (GUILayout.Toggle(_classIndex == i, Classes[i].label, "Button") && allowed)
-                {
-                    _classIndex = i;
-                }
-
+                if (_classIndex == i) { WowUi.Highlight(new Rect(r.x - 2, r.y - 2, r.width + 4, r.height + 4)); }
+                if (WowUi.Button(r, Classes[i].label) && allowed) { _classIndex = i; }
                 GUI.enabled = true;
             }
 
-            GUILayout.EndHorizontal();
+            y += 34f;
+            WowUi.Gold(new Rect(x, y, 200, 20), "Sexe");
+            y += 22f;
+            if (_genderIndex == 0) { WowUi.Highlight(new Rect(x - 2, y - 2, 122, 30)); }
+            if (WowUi.Button(new Rect(x, y, 118, 26), "Homme") && _genderIndex != 0) { _genderIndex = 0; _hairStyle = 0; }
+            if (_genderIndex == 1) { WowUi.Highlight(new Rect(x + 130, y - 2, 122, 30)); }
+            if (WowUi.Button(new Rect(x + 132, y, 118, 26), "Femme") && _genderIndex != 1) { _genderIndex = 1; _hairStyle = 1; }
 
-            GUILayout.Space(4);
-            int newGender = GUILayout.SelectionGrid(_genderIndex, new[] { "Male", "Female" }, 2);
-            if (newGender != _genderIndex)
-            {
-                _genderIndex = newGender;
-                _hairStyle = _genderIndex == 1 ? 1 : 0; // suggestion : cheveux longs par défaut au féminin
-            }
-
-            // --- Customisation ---
-            GUILayout.Space(8);
-            GUILayout.Label("<size=11><b>Apparence</b></size>", Rich());
+            y += 38f;
+            WowUi.Gold(new Rect(x, y, 200, 20), "Apparence");
+            y += 24f;
             byte raceId = Races[_raceIndex].id;
-            _skinTone = DrawOptionPicker("Teint", _skinTone, SkinLabels,
+            _skinTone = ArrowPicker(x, ref y, "Teint", _skinTone, SkinLabels,
                 CharacterModelBuilder.SkinColor(raceId, (byte)_skinTone));
-            _faceIndex = DrawOptionPicker("Visage", _faceIndex, FaceLabels, null);
-            _hairStyle = DrawOptionPicker("Coiffure", _hairStyle, HairStyleLabels, null);
+            _faceIndex = ArrowPicker(x, ref y, "Visage", _faceIndex, FaceLabels, null);
+            _hairStyle = ArrowPicker(x, ref y, "Coiffure", _hairStyle, HairStyleLabels, null);
             if (_hairStyle != 3) // pas de couleur pour un crâne chauve
             {
-                _hairColor = DrawOptionPicker("Cheveux", _hairColor, HairColorLabels,
+                _hairColor = ArrowPicker(x, ref y, "Cheveux", _hairColor, HairColorLabels,
                     CharacterModelBuilder.HairColors[_hairColor]);
             }
 
             bool beardAllowed = _genderIndex == 0 || raceId == 4; // hommes — et tous les Nains
             if (beardAllowed)
             {
-                _beardStyle = DrawOptionPicker("Barbe", _beardStyle, BeardStyleLabels, null);
+                _beardStyle = ArrowPicker(x, ref y, "Barbe", _beardStyle, BeardStyleLabels, null);
                 if (_beardStyle != 0)
                 {
-                    _beardColor = DrawOptionPicker("Couleur barbe", _beardColor, HairColorLabels,
+                    _beardColor = ArrowPicker(x, ref y, "Couleur barbe", _beardColor, HairColorLabels,
                         CharacterModelBuilder.HairColors[_beardColor]);
                 }
             }
 
-            GUILayout.Space(10);
-            if (GUILayout.Button("CRÉER ET ENTRER EN JEU", GUILayout.Height(38))) { CreateAndEnter(); }
+            // RIGHT: lore panels for the selected race and class, WoW-style.
+            Rect racePanel = new Rect(VirtW - 320, 24, 296, 150);
+            WowUi.Panel(racePanel, Races[_raceIndex].label);
+            WowUi.Body(new Rect(racePanel.x + 14, racePanel.y + 44, racePanel.width - 28, racePanel.height - 56),
+                RaceLore[_raceIndex]);
 
-            GUILayout.Space(4);
-            GUILayout.Label("<size=10><i>Tu apparaîtras dans le sanctuaire — une zone sans PvP ni monstres.</i></size>", Rich());
-            if (GUILayout.Button("Liste des serveurs", GUILayout.Height(22)))
+            Rect classPanel = new Rect(VirtW - 320, 186, 296, 150);
+            WowUi.Panel(classPanel, Classes[_classIndex].label);
+            WowUi.Body(new Rect(classPanel.x + 14, classPanel.y + 44, classPanel.width - 28, classPanel.height - 56),
+                ClassLore[_classIndex]);
+
+            // BOTTOM CENTRE: name + accept, like WoW's Name / Accept row.
+            float cx = VirtW / 2f;
+            WowUi.GoldCentered(new Rect(cx - 130, VirtH - 138, 260, 20), "Nom");
+            _name = WowUi.TextField(new Rect(cx - 130, VirtH - 116, 260, 30), _name);
+            WowUi.Body(new Rect(cx - 220, VirtH - 82, 440, 18),
+                "<i>Tu apparaîtras dans le sanctuaire — une zone sans PvP ni monstres.</i>");
+
+            if (WowUi.Button(new Rect(VirtW - 268, VirtH - 64, 118, 32), "Accepter")) { CreateAndEnter(); }
+            if (WowUi.Button(new Rect(VirtW - 142, VirtH - 64, 118, 32), "Retour"))
             {
                 Disconnect();
                 OpenServerBrowser();
             }
 
-            DrawErrors();
-            GUILayout.EndArea();
+            DrawErrorsAt(new Rect(cx - 240, VirtH - 40, 480, 30));
         }
 
         // --- Frames ---
@@ -1537,16 +1661,25 @@ namespace Aetheria.UnityClient
             EntitySnapshot self;
             bool haveSelf = _client.TryGetSelf(out self);
 
-            GUI.Box(frame, "");
-            GUI.Label(new Rect(frame.x + 8, frame.y + 4, 170, 20), "<b>" + _name + "</b>", Rich());
-            GUI.Label(new Rect(frame.x + frame.width - 70, frame.y + 4, 64, 20), "Niv. " + _client.Level, Rich());
+            WowUi.Panel(frame);
+
+            // WoW-style: round class-coloured portrait on the LEFT, name + bars beside it.
+            Rect portrait = new Rect(frame.x + 6, frame.y + 8, 52, 52);
+            WowUi.Portrait(portrait, ResourceColor() * 0.85f,
+                _name.Length > 0 ? _name.Substring(0, 1).ToUpperInvariant() : "?");
+            WowUi.GoldCentered(new Rect(portrait.x, portrait.yMax - 4, portrait.width, 16),
+                "<size=10>" + _client.Level + "</size>");
+
+            float bx = portrait.xMax + 6;
+            float bw = frame.xMax - bx - 8;
+            WowUi.Gold(new Rect(bx, frame.y + 4, bw, 18), _name);
 
             float hpFill = haveSelf && self.MaxHealth > 0 ? self.Health / (float)self.MaxHealth : 0f;
-            DrawBar(new Rect(frame.x + 8, frame.y + 26, frame.width - 16, 16), hpFill,
+            DrawBar(new Rect(bx, frame.y + 26, bw, 16), hpFill,
                 new Color(0.20f, 0.75f, 0.25f), haveSelf ? self.Health + " / " + self.MaxHealth : "—");
 
             float resFill = haveSelf && self.MaxResource > 0 ? self.Resource / (float)self.MaxResource : 0f;
-            DrawBar(new Rect(frame.x + 8, frame.y + 46, frame.width - 16, 14), resFill,
+            DrawBar(new Rect(bx, frame.y + 46, bw, 14), resFill,
                 ResourceColor(), haveSelf ? self.Resource + " / " + self.MaxResource : "—");
 
             bool inSanctuary = false;
@@ -1583,12 +1716,21 @@ namespace Aetheria.UnityClient
             if (!_client.TryGetEntity(_targetId, out target)) { return; }
 
             Rect frame = FrameRect(HudConfig.Frame.TargetFrame);
-            GUI.Box(frame, "");
+            WowUi.Panel(frame);
             string name = string.IsNullOrEmpty(target.Name) ? target.Kind.ToString() : target.Name;
-            GUI.Label(new Rect(frame.x + 8, frame.y + 4, frame.width - 16, 20),
-                "<b>" + name + "</b>  <size=10>niv. " + target.Level +
-                (target.Kind == EntityKind.Player ? " · " + target.Faction : "") + "</size>", Rich());
-            DrawBar(new Rect(frame.x + 8, frame.y + 28, frame.width - 16, 16),
+
+            // Mirrored WoW target frame: bars left, round portrait on the RIGHT.
+            Rect portrait = new Rect(frame.xMax - 58, frame.y + 5, 52, 52);
+            WowUi.Portrait(portrait, new Color(0.62f, 0.16f, 0.14f),
+                name.Length > 0 ? name.Substring(0, 1).ToUpperInvariant() : "?");
+            WowUi.GoldCentered(new Rect(portrait.x, portrait.yMax - 4, portrait.width, 16),
+                "<size=10>" + target.Level + "</size>");
+
+            float bw = portrait.x - frame.x - 14;
+            GUI.Label(new Rect(frame.x + 8, frame.y + 4, bw, 20),
+                "<b><color=#ffd100>" + name + "</color></b>" +
+                (target.Kind == EntityKind.Player ? "  <size=10>" + target.Faction + "</size>" : ""), Rich());
+            DrawBar(new Rect(frame.x + 8, frame.y + 28, bw, 16),
                 target.Health / (float)Mathf.Max(1, target.MaxHealth),
                 new Color(0.85f, 0.2f, 0.2f), target.Health + " / " + target.MaxHealth);
         }
@@ -1638,6 +1780,7 @@ namespace Aetheria.UnityClient
                 }
                 bool usable = !locked && !tooPoor && cd <= 0f && (_targetId >= 0 || def.Range <= 0f);
 
+                WowUi.Slot(new Rect(r.x - 2, r.y - 2, r.width + 4, r.height + 4)); // WoW slot trim
                 GUI.enabled = usable;
                 if (GUI.Button(r, ""))
                 {
@@ -2850,10 +2993,52 @@ namespace Aetheria.UnityClient
 
         private void DrawVersionTag()
         {
-            GUI.Label(new Rect(VirtW - 150, 8, 142, 18),
+            GUI.Label(new Rect(VirtW - 150, VirtH - 22, 142, 18),
                 "<size=10>v" + SimulationConstants.GameVersion + " · proto " +
                 SimulationConstants.ProtocolVersion + "</size>",
                 new GUIStyle(GUI.skin.label) { richText = true, alignment = TextAnchor.UpperRight });
+        }
+
+        /// <summary>The zone the player currently stands in (for the minimap header).</summary>
+        private string ZoneName(EntitySnapshot self)
+        {
+            if (_client.InInstance) { return "Instance"; }
+
+            float dx = self.Position.X - SimulationConstants.SafeZoneCenterX;
+            float dy = self.Position.Y - SimulationConstants.SafeZoneCenterY;
+            if ((dx * dx) + (dy * dy) <=
+                SimulationConstants.SafeZoneRadius * SimulationConstants.SafeZoneRadius)
+            {
+                return "Sanctuaire";
+            }
+
+            if (self.Position.X < -30f) { return "Champ des loups"; }
+            if (self.Position.X > 60f && self.Position.Y > 60f) { return "Terres brûlées"; }
+            if (self.Position.X > 15f && self.Position.Y > 2f) { return "Camp gobelin"; }
+            return "Plaines d'Aetheria";
+        }
+
+        /// <summary>The WoW top-right minimap: zone name header + live top-down view.</summary>
+        private void DrawMinimap()
+        {
+            if (_minimap.Texture == null) { return; }
+
+            Rect panel = new Rect(VirtW - 196, 8, 188, 216);
+            WowUi.Panel(panel);
+
+            EntitySnapshot self;
+            if (_client.TryGetSelf(out self))
+            {
+                WowUi.GoldCentered(new Rect(panel.x, panel.y + 5, panel.width, 18),
+                    "<size=11>" + ZoneName(self) + "</size>");
+            }
+
+            GUI.DrawTexture(new Rect(panel.x + 6, panel.y + 26, panel.width - 12, panel.width - 12),
+                _minimap.Texture, ScaleMode.ScaleToFit);
+
+            // The player is always dead-centre: a golden arrow-dot.
+            WowUi.GoldCentered(new Rect(panel.x + (panel.width / 2f) - 8, panel.y + 26 + ((panel.width - 12) / 2f) - 8, 16, 16),
+                "<size=12>◆</size>");
         }
 
         /// <summary>

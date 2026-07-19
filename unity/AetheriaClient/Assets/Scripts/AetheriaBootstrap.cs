@@ -21,21 +21,22 @@ namespace Aetheria.UnityClient
             GameObject ground = GameObject.CreatePrimitive(PrimitiveType.Plane);
             ground.name = "Ground";
             ground.transform.localScale = new Vector3(40f, 1f, 40f); // 400x400 units
-            ground.GetComponent<Renderer>().material.color = new Color(0.22f, 0.30f, 0.20f);
+            ground.GetComponent<Renderer>().material.color = new Color(0.30f, 0.34f, 0.18f); // Northshire green-gold
             Tex.Apply(ground, "grass", tileX: 90f, tileY: 90f); // real dirt-and-blades surface
 
-            // Light: warm sun with SOFT SHADOWS, plus a cool ambient fill so shade stays readable.
+            // Light: a LOW golden sun with soft shadows and a warm ambient — the late-afternoon
+            // Elwynn feel, instead of a flat noon.
             var lightGo = new GameObject("Sun");
             Light sun = lightGo.AddComponent<Light>();
             sun.type = LightType.Directional;
-            sun.intensity = 1.15f;
-            sun.color = new Color(1f, 0.96f, 0.88f);
+            sun.intensity = 1.22f;
+            sun.color = new Color(1f, 0.90f, 0.72f);
             sun.shadows = LightShadows.Soft;
-            sun.shadowStrength = 0.75f;
-            lightGo.transform.rotation = Quaternion.Euler(55f, 30f, 0f);
+            sun.shadowStrength = 0.8f;
+            lightGo.transform.rotation = Quaternion.Euler(38f, 40f, 0f);
 
             RenderSettings.ambientMode = UnityEngine.Rendering.AmbientMode.Flat;
-            RenderSettings.ambientLight = new Color(0.42f, 0.45f, 0.52f);
+            RenderSettings.ambientLight = new Color(0.48f, 0.44f, 0.40f);
 
             // Isometric camera rig.
             Camera cam = Camera.main;
