@@ -195,14 +195,11 @@ namespace Aetheria.UnityClient
         /// <summary>Weapon + shield for an FBX-based character (its clothes are real meshes).</summary>
         private static void AttachHandheld(ModelRig rig, EntitySnapshot snapshot)
         {
+            // No weapon equipped = EMPTY hands. What you see is what you wear.
             byte weaponItemId = snapshot.EquippedIn(EquipSlot.Weapon);
             if (weaponItemId != 0)
             {
                 AttachWeaponItem(rig, weaponItemId);
-            }
-            else
-            {
-                AttachWeapon(rig, snapshot.ClassId);
             }
 
             AttachOffHand(rig, snapshot.EquippedIn(EquipSlot.OffHand));
@@ -260,14 +257,12 @@ namespace Aetheria.UnityClient
                 (byte)(seed % 4), (byte)(seed % 3), (byte)(female ? 1 : seed % 3),
                 (byte)(seed % 6), (byte)(female ? 0 : (seed % 4)), (byte)(seed % 6));
 
-            // The quest giver wears watchman's gear (chest + boots); villagers stay in peasant cloth.
-            byte[] gear = null;
-            if (snapshot.RaceId == 2)
-            {
-                gear = new byte[Aetheria.Shared.Items.EquipSlots.Count];
-                gear[(int)Aetheria.Shared.Items.EquipSlot.Chest] = 9;
-                gear[(int)Aetheria.Shared.Items.EquipSlot.Feet] = 15;
-            }
+            // Villagers are always DRESSED (bare slots read as naked since 0.39): cloth basics
+            // for everyone, watchman's mail + boots for the quest giver.
+            var gear = new byte[Aetheria.Shared.Items.EquipSlots.Count];
+            gear[(int)Aetheria.Shared.Items.EquipSlot.Chest] = snapshot.RaceId == 2 ? (byte)9 : (byte)12;
+            gear[(int)Aetheria.Shared.Items.EquipSlot.Legs] = 17;
+            gear[(int)Aetheria.Shared.Items.EquipSlot.Feet] = 15;
 
             var person = new EntitySnapshot(snapshot.Id, EntityKind.Player, Faction.Neutral, snapshot.Position,
                 1, 1, 0, 0, 0f, 1, name, raceId: 1, classId: 1,
@@ -346,15 +341,11 @@ namespace Aetheria.UnityClient
 
             ModelRig rig = BuildHumanoid(parent, p, snapshot.Gender, snapshot.Appearance);
 
-            // The EQUIPPED weapon decides what sits in the hand; class default when bare-handed.
+            // The EQUIPPED weapon decides what sits in the hand — nothing equipped, bare hands.
             byte weaponItemId = snapshot.EquippedIn(EquipSlot.Weapon);
             if (weaponItemId != 0)
             {
                 AttachWeaponItem(rig, weaponItemId);
-            }
-            else
-            {
-                AttachWeapon(rig, snapshot.ClassId);
             }
 
             // Every other visible slot: your LOOT is your look, piece by piece.

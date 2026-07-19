@@ -135,6 +135,8 @@ namespace Aetheria.UnityClient
         private bool _uiPress; // the current mouse press began over the character sheet
         private bool _questWindowOpen;
         private int _nearbyQuestGiverId = -1;
+        private bool _shopOpen;
+        private int _nearbyMerchantId = -1;
         private readonly Dictionary<byte, float> _cooldownReadyAt = new Dictionary<byte, float>();
 
         // Right-click context menu on a friendly player.
@@ -338,6 +340,7 @@ namespace Aetheria.UnityClient
                 else if (_awaitingBind != null) { _awaitingBind = null; }
                 else if (_contextEntityId >= 0) { _contextEntityId = -1; }
                 else if (_questWindowOpen) { _questWindowOpen = false; }
+                else if (_shopOpen) { _shopOpen = false; }
                 else if (_bankOpen) { _bankOpen = false; }
                 else if (_client.OpenCorpseId >= 0) { _client.CloseCorpse(); }
                 else if (_bagsOpen) { _bagsOpen = false; }
@@ -389,6 +392,7 @@ namespace Aetheria.UnityClient
             FindNearbyCorpse();
             FindNearbyBank();
             FindNearbyQuestGiver();
+            FindNearbyMerchant();
             PumpChat();
             TrackSocialState();
 
@@ -843,6 +847,32 @@ namespace Aetheria.UnityClient
             }
         }
 
+        /// <summary>The merchant NPC you stand next to, if any (npcType 4).</summary>
+        private void FindNearbyMerchant()
+        {
+            _nearbyMerchantId = -1;
+            EntitySnapshot self;
+            if (!_client.TryGetSelf(out self)) { return; }
+
+            IReadOnlyList<EntitySnapshot> visible = _client.Visible;
+            for (int i = 0; i < visible.Count; i++)
+            {
+                EntitySnapshot e = visible[i];
+                if (e.Kind != EntityKind.Npc || e.RaceId != 4) { continue; }
+                if (Vec2.DistanceSquared(self.Position, e.Position) <=
+                    SimulationConstants.VendorRange * SimulationConstants.VendorRange)
+                {
+                    _nearbyMerchantId = e.Id;
+                    break;
+                }
+            }
+
+            if (_shopOpen && _nearbyMerchantId < 0)
+            {
+                _shopOpen = false; // walked away: the shop closes
+            }
+        }
+
         /// <summary>The bank chest you stand next to, if any (the sanctuary's Npc chest).</summary>
         private void FindNearbyBank()
         {
@@ -1082,6 +1112,8 @@ namespace Aetheria.UnityClient
             else if (_nearbyCorpseId >= 0) { _client.SendOpenCorpse(_nearbyCorpseId); }
             else if (_questWindowOpen) { _questWindowOpen = false; }
             else if (_nearbyQuestGiverId >= 0) { _questWindowOpen = true; }
+            else if (_shopOpen) { _shopOpen = false; }
+            else if (_nearbyMerchantId >= 0) { _shopOpen = true; _bagsOpen = true; }
             else if (_bankOpen) { _bankOpen = false; }
             else if (_nearbyBankId >= 0) { _bankOpen = true; }
         }
@@ -1282,6 +1314,7 @@ namespace Aetheria.UnityClient
             DrawMinimap();
             DrawCorpsePrompt();
             DrawBankPrompt();
+            DrawMerchantPrompt();
             DrawPlayerFrame();
             DrawTargetFrame();
             DrawXpBar();
@@ -1293,6 +1326,7 @@ namespace Aetheria.UnityClient
             DrawChat();
             DrawQuestTracker();
             DrawQuestWindow();
+            DrawShopWindow();
             DrawLootWindow();
             DrawBankWindow();
             DrawBagsWindow();
@@ -2030,6 +2064,10 @@ namespace Aetheria.UnityClient
                     continue;
                 }
 
+                // Nothing over YOUR OWN head (WoW): your unit frame already says it all.
+                bool isSelf = _client.EntityId.HasValue && view.EntityId == _client.EntityId.Value;
+                if (isSelf) { continue; }
+
                 Vector3 screen = cam.WorldToScreenPoint(view.transform.position + (Vector3.up * (view.HeadHeight + 0.5f)));
                 if (screen.z < 0f) { continue; }
 
@@ -2038,15 +2076,13 @@ namespace Aetheria.UnityClient
 
                 if (_cfg.ShowNameplates)
                 {
-                    bool isSelf = _client.EntityId.HasValue && view.EntityId == _client.EntityId.Value;
                     bool hostile = view.Kind == EntityKind.Monster ||
                                    (view.Kind == EntityKind.Player && view.Faction != myFaction);
-                    string colour = isSelf ? "#50e060" : hostile ? "#ff6060" :
+                    string colour = hostile ? "#ff6060" :
                         view.Kind == EntityKind.Npc ? "#f0d060" : "#60a0ff";
-                    string levelTag = view.Kind == EntityKind.Npc
-                        ? "" : "  <size=9>niv." + view.Level + "</size>";
-                    string label = "<color=" + colour + "><size=11>" + view.DisplayName +
-                                   levelTag + "</size></color>";
+
+                    // NAME ONLY — level, stats and gear are for right-click → Inspecter.
+                    string label = "<color=" + colour + "><size=11>" + view.DisplayName + "</size></color>";
                     GUI.Label(new Rect(x - 80, y - 18, 160, 16), label, RichCentered());
                 }
 
@@ -2097,6 +2133,22 @@ namespace Aetheria.UnityClient
             Rect r = new Rect((screen.x / _cfg.UiScale) - 100,
                 ((Screen.height - screen.y) / _cfg.UiScale) - 14, 200, 24);
             GUI.Box(r, "[" + KeyLabel(HudConfig.Bind.Interact) + "] Ouvrir la banque");
+        }
+
+        private void DrawMerchantPrompt()
+        {
+            if (_nearbyMerchantId < 0 || _shopOpen || _nearbyCorpseId >= 0) { return; }
+
+            EntityView view;
+            if (!_views.TryGetValue(_nearbyMerchantId, out view) || view == null || Camera.main == null) { return; }
+
+            Vector3 screen = Camera.main.WorldToScreenPoint(
+                view.transform.position + (Vector3.up * (view.HeadHeight + 0.35f)));
+            if (screen.z < 0f) { return; }
+
+            Rect r = new Rect((screen.x / _cfg.UiScale) - 100,
+                ((Screen.height - screen.y) / _cfg.UiScale) - 14, 200, 24);
+            GUI.Box(r, "[" + KeyLabel(HudConfig.Bind.Interact) + "] Commercer");
         }
 
         /// <summary>An item tile: its ICON (generated PNG), stack count, and hover name.</summary>
@@ -2584,6 +2636,50 @@ namespace Aetheria.UnityClient
         }
 
         /// <summary>The on-screen objective tracker under the minimap, WoW-style.</summary>
+        /// <summary>The merchant's shop: buy from the stock; sell by right-clicking bag items.</summary>
+        private void DrawShopWindow()
+        {
+            if (!_shopOpen) { return; }
+
+            byte[] stock = SimulationConstants.VendorStock;
+            float height = 78f + (stock.Length * 30f) + 40f;
+            Rect win = new Rect(20, (VirtH / 2f) - (height / 2f), 330, height);
+            WowUi.Panel(win);
+            WowUi.GoldCentered(new Rect(win.x, win.y + 7, win.width, 18), "<b>Mira la Marchande</b>");
+
+            if (GUI.Button(new Rect(win.x + win.width - 26, win.y + 5, 21, 21), "X"))
+            {
+                _shopOpen = false;
+                return;
+            }
+
+            float y = win.y + 32f;
+            GUI.Label(new Rect(win.x + 12, y, win.width - 24, 18),
+                "<size=10><color=#c0c0c0>« Regarde ma marchandise, voyageur ! »</color></size>", Rich());
+            y += 22f;
+
+            for (int i = 0; i < stock.Length; i++)
+            {
+                ItemDefinition def = Data.GetItem(stock[i]);
+                var iconRect = new Rect(win.x + 12, y, 26, 26);
+                DrawItemIcon(iconRect, stock[i], 1);
+                GUI.Label(new Rect(win.x + 44, y + 3, 150, 20),
+                    "<color=" + QualityHex(def) + ">" + def.Name + "</color>", Rich());
+                GUI.Label(new Rect(win.x + 186, y + 3, 70, 20), FormatMoney(def.GoldValue),
+                    new GUIStyle(GUI.skin.label) { richText = true, alignment = TextAnchor.MiddleRight });
+                if (GUI.Button(new Rect(win.x + win.width - 66, y + 1, 54, 24), "Acheter"))
+                {
+                    _client.SendVendor(sell: false, stock[i], 1);
+                }
+
+                y += 30f;
+            }
+
+            GUI.Label(new Rect(win.x + 12, win.yMax - 30, win.width - 24, 24),
+                "<size=10><color=#909090>Clic droit sur un objet de TES SACS : le vendre (au quart de sa valeur).</color></size>",
+                Rich());
+        }
+
         private void DrawQuestTracker()
         {
             byte active = _client.ActiveQuestId;
@@ -2887,6 +2983,11 @@ namespace Aetheria.UnityClient
                         _dragFromIndex = index;
                         e.Use();
                     }
+                    else if (e.button == 1 && _shopOpen && !_client.TradeActive)
+                    {
+                        _client.SendVendor(sell: true, stack.ItemId, 1); // shop open: RIGHT = sell
+                        e.Use();
+                    }
                     else if (e.button == 1 && def.Slot != EquipSlot.None && !_client.TradeActive)
                     {
                         _client.SendEquipItem(stack.ItemId, (byte)def.Slot); // RIGHT = wear it
@@ -3153,9 +3254,11 @@ namespace Aetheria.UnityClient
         {
             if (!(_client.LastInspect is InspectResult info)) { return; }
 
-            Rect win = new Rect(40, 120, 260, 190);
-            GUI.Box(win, "<b>Inspection — " + info.Name + "</b>", RichCenteredBox());
-            if (GUI.Button(new Rect(win.x + win.width - 24, win.y + 4, 20, 20), "X"))
+            Rect win = new Rect(40, 120, 300, 336);
+            WowUi.Panel(win);
+            WowUi.GoldCentered(new Rect(win.x, win.y + 7, win.width, 18),
+                "<b>Inspection — " + info.Name + "</b>");
+            if (GUI.Button(new Rect(win.x + win.width - 26, win.y + 5, 21, 21), "X"))
             {
                 _client.ClearInspect();
                 return;
@@ -3173,19 +3276,55 @@ namespace Aetheria.UnityClient
                 if (Classes[i].id == info.ClassId) { cls = Classes[i].label; }
             }
 
-            float y = win.y + 28f;
-            GUI.Label(new Rect(win.x + 12, y, win.width - 24, 20), race + " · " + cls);
-            y += 22f;
-            GUI.Label(new Rect(win.x + 12, y, win.width - 24, 20), "Niveau " + info.Level + "   XP " + info.TotalXp);
-            y += 22f;
+            float y = win.y + 30f;
             GUI.Label(new Rect(win.x + 12, y, win.width - 24, 20),
-                "PV max " + info.MaxHealth + "   Atk " + info.Attack + "   Déf " + info.Defense);
-            y += 22f;
-            GUI.Label(new Rect(win.x + 12, y, win.width - 24, 20),
-                "Arme : " + (info.WeaponId != 0 ? Data.GetItem(info.WeaponId).Name : "(aucune)"));
-            y += 22f;
-            GUI.Label(new Rect(win.x + 12, y, win.width - 24, 20),
-                "Armure : " + (info.ArmorId != 0 ? Data.GetItem(info.ArmorId).Name : "(aucune)"));
+                "<color=#c8c8c8>" + race + " · " + cls + " — <b>niveau " + info.Level + "</b></color>", Rich());
+            y += 24f;
+
+            // Stat blocks, mirroring the character sheet.
+            float half = (win.width - 30f) / 2f;
+            WowUi.Highlight(new Rect(win.x + 12, y, half, 66));
+            WowUi.Highlight(new Rect(win.x + 18 + half, y, half, 66));
+            GUI.Label(new Rect(win.x + 20, y + 4, half - 16, 18), "<b><color=#ffd100>Attributs</color></b>", Rich());
+            GUI.Label(new Rect(win.x + 20, y + 24, half - 16, 18), StatLine("Endurance", info.MaxHealth.ToString()), Rich());
+            GUI.Label(new Rect(win.x + 20, y + 43, half - 16, 18), StatLine("Force", info.Attack.ToString()), Rich());
+            GUI.Label(new Rect(win.x + 26 + half, y + 4, half - 16, 18), "<b><color=#ffd100>Combat</color></b>", Rich());
+            GUI.Label(new Rect(win.x + 26 + half, y + 24, half - 16, 18), StatLine("Puissance", info.Attack.ToString()), Rich());
+            GUI.Label(new Rect(win.x + 26 + half, y + 43, half - 16, 18), StatLine("Défense", info.Defense.ToString()), Rich());
+            y += 74f;
+
+            // The FULL loadout: two columns of slots with real icons and hover tooltips.
+            GUI.Label(new Rect(win.x + 12, y, win.width - 24, 18), "<b><color=#ffd100>Équipement</color></b>", Rich());
+            y += 20f;
+            const float Cell = 30f;
+            EquipSlot[] left = { EquipSlot.Head, EquipSlot.Shoulders, EquipSlot.Back, EquipSlot.Chest, EquipSlot.Hands };
+            EquipSlot[] right = { EquipSlot.Waist, EquipSlot.Legs, EquipSlot.Feet, EquipSlot.Weapon, EquipSlot.OffHand };
+            for (int i = 0; i < left.Length; i++)
+            {
+                DrawInspectSlot(new Rect(win.x + 12, y + (i * (Cell + 3f)), Cell, Cell), info, left[i]);
+                DrawInspectSlot(new Rect(win.x + 18 + half, y + (i * (Cell + 3f)), Cell, Cell), info, right[i]);
+            }
+        }
+
+        /// <summary>One inspected equip slot: real icon + tooltip, or a labelled empty socket.</summary>
+        private void DrawInspectSlot(Rect rect, InspectResult info, EquipSlot slot)
+        {
+            byte itemId = (int)slot < info.Equipment.Length ? info.Equipment[(int)slot] : (byte)0;
+            if (itemId != 0)
+            {
+                DrawItemIcon(rect, itemId, 1);
+            }
+            else
+            {
+                WowUi.Slot(rect);
+                GUI.Label(new Rect(rect.x, rect.y + 8, rect.width, 14),
+                    "<size=8><color=#808080>" + SlotLabel(slot) + "</color></size>", RichCentered());
+            }
+
+            GUI.Label(new Rect(rect.xMax + 6, rect.y + 6, 100, 18),
+                itemId != 0
+                    ? "<size=10><color=" + QualityHex(Data.GetItem(itemId)) + ">" + Data.GetItem(itemId).Name + "</color></size>"
+                    : "", Rich());
         }
 
         /// <summary>The item ghost that follows the cursor during a bag drag.</summary>

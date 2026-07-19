@@ -157,6 +157,8 @@ public sealed class GameClient
 
     public void SendMoveItem(byte fromIndex, byte toIndex) => Send(new MoveItem(fromIndex, toIndex));
 
+    public void SendVendor(bool sell, byte itemId, byte quantity) => Send(new VendorAction(sell, itemId, quantity));
+
     /// <summary>Say something in the world chat.</summary>
     public void SendChat(string text) => Send(new ChatSend(text ?? string.Empty));
 
@@ -601,6 +603,8 @@ public sealed class GameClient
     private void Send(EquipItem msg) => SendWith(msg.Write);
 
     private void Send(MoveItem msg) => SendWith(msg.Write);
+
+    private void Send(VendorAction msg) => SendWith(msg.Write);
     private void Send(ChatSend msg) => SendWith(msg.Write);
     private void Send(AttackTarget msg) => SendWith(msg.Write);
     private void Send(PartyInvite msg) => SendWith(msg.Write);

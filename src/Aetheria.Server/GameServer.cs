@@ -184,7 +184,7 @@ public sealed class GameServer
         // The sanctuary's PEOPLE: the quest giver by the plaza, and flavour villagers at their
         // stalls — the safe zone should feel inhabited, not just paved.
         open.SpawnNpc("Aldric le Guetteur", new Vec2(3.5f, 3.5f), npcType: 2);
-        open.SpawnNpc("Mira la Marchande", new Vec2(-3.2f, 5.6f), npcType: 3);
+        open.SpawnNpc("Mira la Marchande", new Vec2(-3.2f, 5.6f), npcType: 4); // 4 = merchant
         open.SpawnNpc("Brom le Forgeron", new Vec2(-6.0f, -3.8f), npcType: 3);
 
         // ZONE DE DÉPART — ISOLATED goblins east of the sanctuary: every early fight is a duel,
@@ -329,6 +329,15 @@ public sealed class GameServer
                     if (world.TryMoveItem(session.EntityId, move.FromIndex, move.ToIndex))
                     {
                         SendSelfState(peer, session); // the bag order is part of self state
+                    }
+
+                    break;
+
+                case MessageType.VendorAction:
+                    VendorAction vendor = VendorAction.Read(ref reader);
+                    if (world.TryVendorAction(session.EntityId, vendor.Sell, vendor.ItemId, vendor.Quantity))
+                    {
+                        SendSelfState(peer, session); // gold and bags changed
                     }
 
                     break;
@@ -904,7 +913,8 @@ public sealed class GameServer
         Send(peer, new InspectResult(target.Name, (byte)System.Math.Clamp(target.Level, 1, 255),
             target.RaceId, target.ClassId, target.EffectiveMaxHealth,
             target.EffectiveAttackPower, target.EffectiveDefense,
-            target.EquippedWeaponId, target.EquippedArmorId, target.TotalXp));
+            target.EquippedWeaponId, target.EquippedArmorId, target.TotalXp,
+            target.CopyEquipment()));
     }
 
     private void HandleDuelRequest(PeerId peer, PlayerSession session, DuelRequest request)

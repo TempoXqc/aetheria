@@ -36,8 +36,12 @@ public readonly struct InspectResult
     public readonly byte ArmorId;
     public readonly int TotalXp;
 
+    /// <summary>The FULL loadout, one item id per equip slot (index = EquipSlot).</summary>
+    public readonly byte[] Equipment;
+
     public InspectResult(string name, byte level, byte raceId, byte classId,
-        int maxHealth, int attack, int defense, byte weaponId, byte armorId, int totalXp)
+        int maxHealth, int attack, int defense, byte weaponId, byte armorId, int totalXp,
+        byte[]? equipment = null)
     {
         Name = name;
         Level = level;
@@ -49,6 +53,7 @@ public readonly struct InspectResult
         WeaponId = weaponId;
         ArmorId = armorId;
         TotalXp = totalXp;
+        Equipment = equipment ?? System.Array.Empty<byte>();
     }
 
     public void Write(PacketWriter w)
@@ -64,6 +69,11 @@ public readonly struct InspectResult
         w.WriteByte(WeaponId);
         w.WriteByte(ArmorId);
         w.WriteInt(TotalXp);
+        w.WriteByte((byte)Equipment.Length);
+        for (int i = 0; i < Equipment.Length; i++)
+        {
+            w.WriteByte(Equipment[i]);
+        }
     }
 
     public static InspectResult Read(ref PacketReader r)
@@ -78,7 +88,15 @@ public readonly struct InspectResult
         byte weaponId = r.ReadByte();
         byte armorId = r.ReadByte();
         int totalXp = r.ReadInt();
-        return new InspectResult(name, level, raceId, classId, maxHealth, attack, defense, weaponId, armorId, totalXp);
+        int count = r.ReadByte();
+        var equipment = new byte[count];
+        for (int i = 0; i < count; i++)
+        {
+            equipment[i] = r.ReadByte();
+        }
+
+        return new InspectResult(name, level, raceId, classId, maxHealth, attack, defense,
+            weaponId, armorId, totalXp, equipment);
     }
 }
 

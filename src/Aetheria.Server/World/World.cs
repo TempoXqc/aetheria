@@ -338,6 +338,74 @@ public sealed class World
         return copy;
     }
 
+    private bool NearMerchant(ServerEntity player)
+    {
+        foreach (ServerEntity e in _entities.Values)
+        {
+            if (e.Kind == EntityKind.Npc && e.RaceId == 4 &&
+                Vec2.DistanceSquared(player.Position, e.Position) <= SimulationConstants.VendorRange * SimulationConstants.VendorRange)
+            {
+                return true;
+            }
+        }
+
+        return false;
+    }
+
+    /// <summary>The merchant's buy-back rate: a quarter of the item's value, at least 1 copper.</summary>
+    public static int VendorSellPrice(ItemDefinition def)
+        => System.Math.Max(1, def.GoldValue / SimulationConstants.VendorSellDivisor);
+
+    /// <summary>
+    /// Buy from or sell to a merchant NPC. Validated: proximity, stock (for buys), ownership
+    /// (for sells), gold, and bag space — gold is refunded when a bought item doesn't fit.
+    /// </summary>
+    public bool TryVendorAction(int playerId, bool sell, byte itemId, int quantity)
+    {
+        if (quantity <= 0 || !_gameData.HasItem(itemId) ||
+            !_entities.TryGetValue(playerId, out ServerEntity? player) ||
+            player.IsDead || player.Kind != EntityKind.Player || !NearMerchant(player))
+        {
+            return false;
+        }
+
+        ItemDefinition def = _gameData.GetItem(itemId);
+
+        if (sell)
+        {
+            if (def.GoldValue <= 0 || player.Inventory.CountOf(itemId) < quantity)
+            {
+                return false;
+            }
+
+            player.Inventory.RemoveQuantity(itemId, quantity);
+            player.Inventory.AddGold(VendorSellPrice(def) * quantity);
+            return true;
+        }
+
+        // Buying: the item must be in the merchant's stock.
+        bool stocked = false;
+        foreach (byte id in SimulationConstants.VendorStock)
+        {
+            if (id == itemId) { stocked = true; break; }
+        }
+
+        int price = def.GoldValue * quantity;
+        if (!stocked || price <= 0 || player.Inventory.Gold < price)
+        {
+            return false;
+        }
+
+        player.Inventory.RemoveGold(price);
+        int leftover = player.Inventory.TryAdd(itemId, quantity, def.Stackable, def.MaxStack);
+        if (leftover > 0)
+        {
+            player.Inventory.AddGold(def.GoldValue * leftover); // refund what didn't fit
+        }
+
+        return leftover < quantity;
+    }
+
     private bool NearQuestGiver(ServerEntity player)
     {
         foreach (ServerEntity e in _entities.Values)

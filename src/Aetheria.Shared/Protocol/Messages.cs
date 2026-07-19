@@ -551,6 +551,32 @@ public readonly struct QuestAction
     public static QuestAction Read(ref PacketReader r) => new(r.ReadByte(), r.ReadByte() != 0);
 }
 
+/// <summary>Buy from / sell to a merchant NPC (validated server-side: stock, gold, proximity).</summary>
+public readonly struct VendorAction
+{
+    public readonly bool Sell; // false = buy from the merchant, true = sell to them
+    public readonly byte ItemId;
+    public readonly byte Quantity;
+
+    public VendorAction(bool sell, byte itemId, byte quantity)
+    {
+        Sell = sell;
+        ItemId = itemId;
+        Quantity = quantity;
+    }
+
+    public void Write(PacketWriter w)
+    {
+        w.WriteByte((byte)MessageType.VendorAction);
+        w.WriteByte(Sell ? (byte)1 : (byte)0);
+        w.WriteByte(ItemId);
+        w.WriteByte(Quantity);
+    }
+
+    public static VendorAction Read(ref PacketReader r)
+        => new(r.ReadByte() != 0, r.ReadByte(), r.ReadByte());
+}
+
 /// <summary>Drag-reorder in the bags: move the stack at FromIndex onto ToIndex (swap/append).</summary>
 public readonly struct MoveItem
 {

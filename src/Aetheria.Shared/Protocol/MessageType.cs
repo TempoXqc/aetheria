@@ -41,6 +41,7 @@ public enum MessageType : byte
     AttackTarget = 31,
     QuestAction = 32,
     MoveItem = 33,
+    VendorAction = 34,
 
     // --- Server -> Client ---
     ConnectAccepted = 128,

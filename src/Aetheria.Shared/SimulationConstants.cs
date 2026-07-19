@@ -80,6 +80,15 @@ public static class SimulationConstants
     /// <summary>How close a player must stand to the quest giver to accept or turn in.</summary>
     public const float QuestGiverRange = 5f;
 
+    /// <summary>How close a player must stand to a merchant NPC to buy and sell.</summary>
+    public const float VendorRange = 5f;
+
+    /// <summary>What the merchant BUYS BACK at, as a fraction denominator of GoldValue (WoW: 1/4).</summary>
+    public const int VendorSellDivisor = 4;
+
+    /// <summary>The merchant's stock (item ids from the item registry): basics + consumables.</summary>
+    public static readonly byte[] VendorStock = { 20, 1, 5, 6, 13, 15, 17, 19, 21, 12 };
+
     /// <summary>Gold a new character starts with.</summary>
     public const int StartingGold = 50;
 
@@ -90,7 +99,7 @@ public static class SimulationConstants
     public const int MaxPartySize = 40;
 
     /// <summary>Protocol version — bump on any wire-format change; handshake rejects mismatches.</summary>
-    public const byte ProtocolVersion = 23;
+    public const byte ProtocolVersion = 24;
 
     /// <summary>How close two players must be to trade (world units).</summary>
     public const float TradeRange = 6f;
@@ -115,5 +124,5 @@ public static class SimulationConstants
     /// in the in-game HUD, and in the server startup log, so "am I up to date?" has a one-glance
     /// answer on both sides.
     /// </summary>
-    public const string GameVersion = "0.38.1";
+    public const string GameVersion = "0.39.0";
 }

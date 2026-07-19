@@ -276,6 +276,32 @@ public static class EquipmentTests
         Assert.Equal((byte)1, p.Inventory.Stacks[6].ItemId); // parked exactly where dropped
     }
 
+    [Test("Merchant: buying costs full value near the NPC; selling pays back a quarter.")]
+    public static void Vendor_BuysAndSells()
+    {
+        var world = new World();
+        world.SpawnNpc("Mira la Marchande", new Vec2(2f, 2f), npcType: 4);
+        ServerEntity p = world.SpawnPlayer(new PeerId(12), "Client", raceId: 1, classId: 1);
+        world.Teleport(p, new Vec2(2.5f, 2f));
+        p.Inventory.AddGold(100);
+        int gold = p.Inventory.Gold;
+
+        // Buy a Minor Healing Potion (id 20, value 5).
+        Assert.True(world.TryVendorAction(p.Id, sell: false, itemId: 20, quantity: 1));
+        Assert.Equal(gold - 5, p.Inventory.Gold);
+        Assert.Equal(1, p.Inventory.CountOf(20));
+
+        // Sell it back: a quarter of its value (5/4 → 1).
+        Assert.True(world.TryVendorAction(p.Id, sell: true, itemId: 20, quantity: 1));
+        Assert.Equal(gold - 5 + 1, p.Inventory.Gold);
+        Assert.Equal(0, p.Inventory.CountOf(20));
+
+        // Not in stock / too far / too poor: refused.
+        Assert.False(world.TryVendorAction(p.Id, sell: false, itemId: 14, quantity: 1), "Iron Helm not stocked");
+        world.Teleport(p, new Vec2(50f, 50f));
+        Assert.False(world.TryVendorAction(p.Id, sell: false, itemId: 20, quantity: 1), "too far away");
+    }
+
     [Test("Log back in where you logged out: position and bag layout survive save/restore.")]
     public static void PositionAndLayout_SurviveRestore()
     {

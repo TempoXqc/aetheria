@@ -59,22 +59,45 @@ namespace Aetheria.UnityClient
             // whole world seems to moonwalk.
             root.transform.localRotation = Quaternion.Euler(0f, 180f, 0f);
 
-            // MASTER piece: the body (chest slot decides Peasant cloth vs Ranger armor).
-            GameObject master = Spawn(root.transform,
-                g + (snapshot.EquippedIn(EquipSlot.Chest) != 0 ? "Ranger_Body" : "Peasant_Body"));
+            // What you WEAR is what you see: an empty slot shows SKIN (the base piece tinted to
+            // the character's skin tone) — naked but decent: underwear is added further down.
+            bool bareChest = snapshot.EquippedIn(EquipSlot.Chest) == 0;
+            bool bareHands = snapshot.EquippedIn(EquipSlot.Hands) == 0;
+            bool bareLegs = snapshot.EquippedIn(EquipSlot.Legs) == 0;
+            bool bareFeet = snapshot.EquippedIn(EquipSlot.Feet) == 0;
+            Color skin = CharacterModelBuilder.SkinColor(snapshot.RaceId, snapshot.Appearance.SkinTone);
+
+            // MASTER piece: the body (chest slot decides bare skin vs Ranger armor).
+            GameObject master = Spawn(root.transform, g + (bareChest ? "Peasant_Body" : "Ranger_Body"));
             if (master == null)
             {
                 Object.Destroy(root);
                 return null;
             }
 
+            if (bareChest) { MakeSkin(master, skin); }
+
             Dictionary<string, Transform> bones = CollectBones(master.transform);
 
             // The other modular pieces, re-bound onto the master skeleton.
-            Attach(root.transform, bones, g + (snapshot.EquippedIn(EquipSlot.Hands) != 0 ? "Ranger_Arms" : "Peasant_Arms"));
-            Attach(root.transform, bones, g + (snapshot.EquippedIn(EquipSlot.Legs) != 0 ? "Ranger_Legs" : "Peasant_Legs"));
-            Attach(root.transform, bones, g + (snapshot.EquippedIn(EquipSlot.Feet) != 0
-                ? (female ? "Ranger_Feet" : "Ranger_Feet_Boots") : "Peasant_Feet"));
+            GameObject arms = Attach(root.transform, bones, g + (bareHands ? "Peasant_Arms" : "Ranger_Arms"));
+            if (bareHands && arms != null) { MakeSkin(arms, skin); }
+            GameObject legs = Attach(root.transform, bones, g + (bareLegs ? "Peasant_Legs" : "Ranger_Legs"));
+            if (bareLegs && legs != null) { MakeSkin(legs, skin); }
+            GameObject feet = Attach(root.transform, bones, g + (bareFeet
+                ? "Peasant_Feet" : (female ? "Ranger_Feet" : "Ranger_Feet_Boots")));
+            if (bareFeet && feet != null) { MakeSkin(feet, skin); }
+
+            // Modesty layer: plain underwear over bare hips — and a band over a bare female chest.
+            if (bareLegs)
+            {
+                AttachBand(bones, "pelvis", new Vector3(0.34f, 0.16f, 0.26f), new Vector3(0f, 0.02f, 0f));
+            }
+
+            if (female && bareChest)
+            {
+                AttachBand(bones, "spine_03", new Vector3(0.32f, 0.10f, 0.24f), new Vector3(0f, 0.04f, 0.01f));
+            }
 
             if (snapshot.EquippedIn(EquipSlot.Head) != 0)
             {
@@ -299,6 +322,42 @@ namespace Aetheria.UnityClient
             }
 
             return cached;
+        }
+
+        /// <summary>Strip a clothing piece down to flat SKIN colour (textures off).</summary>
+        private static void MakeSkin(GameObject piece, Color skin)
+        {
+            foreach (Renderer r in piece.GetComponentsInChildren<Renderer>(true))
+            {
+                foreach (Material m in r.materials)
+                {
+                    if (m == null) { continue; }
+                    m.mainTexture = null;
+                    m.color = skin;
+                }
+            }
+        }
+
+        /// <summary>A plain dark band (underwear) glued to a bone, scale-compensated.</summary>
+        private static void AttachBand(Dictionary<string, Transform> bones, string boneName,
+            Vector3 worldSize, Vector3 offset)
+        {
+            Transform bone = FindBone(bones, boneName, "pelvis", "spine_02", "spine_01");
+            if (bone == null) { return; }
+
+            GameObject band = GameObject.CreatePrimitive(PrimitiveType.Cube);
+            band.name = "Underwear";
+            Object.Destroy(band.GetComponent<Collider>());
+            band.transform.SetParent(bone, false);
+            band.transform.localPosition = offset;
+
+            // The pack skeleton carries import scaling: compensate so the band's WORLD size holds.
+            Vector3 ls = bone.lossyScale;
+            band.transform.localScale = new Vector3(
+                worldSize.x / Mathf.Max(0.0001f, Mathf.Abs(ls.x)),
+                worldSize.y / Mathf.Max(0.0001f, Mathf.Abs(ls.y)),
+                worldSize.z / Mathf.Max(0.0001f, Mathf.Abs(ls.z)));
+            band.GetComponent<Renderer>().material.color = new Color(0.28f, 0.28f, 0.32f);
         }
 
         private static GameObject Spawn(Transform parent, string name)
