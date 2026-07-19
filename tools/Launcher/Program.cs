@@ -26,8 +26,9 @@ string configPath = Path.Combine(BaseDataDir(), "launcher.json");
 
 // Players NEVER type an address: the official patch address ships in launcher.txt (committed
 // with the game). The launcher prefers a LOCAL patch server when one answers (the host's PC),
-// and falls back to the official address everywhere else.
-string patchHost = ResolvePatchHost();
+// and falls back to the official address everywhere else. Re-probed continuously: starting the
+// launcher BEFORE the patch server must not lock it onto the public route (hairpin trap).
+string? confirmedLocalHost = null;
 string htmlPath = FindAsset("launcher.html");
 var http = new HttpClient { Timeout = TimeSpan.FromSeconds(8) };
 var jsonOptions = new JsonSerializerOptions { WriteIndented = true, PropertyNameCaseInsensitive = true };
@@ -45,6 +46,7 @@ app.MapGet("/", () => Results.Content(
 // Everything the page needs: config + the up-to-date status of both channels.
 app.MapGet("/api/state", async () =>
 {
+    string patchHost = await PatchHostAsync();
     JsonNode config = LoadConfig();
     var channels = new JsonObject();
     channels["prod"] = await ChannelState(config, "prod");
@@ -63,7 +65,7 @@ app.MapGet("/api/state", async () =>
 // Patch notes relayed from the patch server.
 app.MapGet("/api/news", async () =>
 {
-    JsonNode config = LoadConfig();
+    string patchHost = await PatchHostAsync();
     try
     {
         string news = await http.GetStringAsync($"http://{patchHost}/news");
@@ -94,7 +96,7 @@ app.MapPost("/api/update", async (HttpRequest request) =>
 {
     string channel = SafeChannel(request.Query["channel"].ToString());
     JsonNode config = LoadConfig();
-    string host = patchHost;
+    string host = await PatchHostAsync();
 
     JsonNode? remote;
     try
@@ -238,6 +240,7 @@ app.Run();
 
 async Task<JsonNode> ChannelState(JsonNode config, string channel)
 {
+    string patchHost = await PatchHostAsync();
     string installDir = Path.Combine(BaseDataDir(), "game", channel);
     string localManifestPath = Path.Combine(installDir, ".manifest.json");
     string localVersion = "—";
@@ -323,14 +326,22 @@ void SaveConfig(JsonNode config)
     File.WriteAllText(configPath, config.ToJsonString(jsonOptions), new UTF8Encoding(false));
 }
 
-string ResolvePatchHost()
+async Task<string> PatchHostAsync()
 {
-    // 1) A patch server on THIS machine wins (the host plays on localhost, no hairpin).
+    // 1) A patch server on THIS machine always wins (the host plays on localhost, no hairpin).
+    //    Once seen locally, stick to it; until then, keep re-probing at every call — the patch
+    //    server may simply not be up yet.
+    if (confirmedLocalHost != null)
+    {
+        return confirmedLocalHost;
+    }
+
     try
     {
-        using var probe = new HttpClient { Timeout = TimeSpan.FromSeconds(1.5) };
-        probe.GetAsync("http://127.0.0.1:27080/news").GetAwaiter().GetResult();
-        return "127.0.0.1:27080";
+        using var probe = new HttpClient { Timeout = TimeSpan.FromSeconds(1) };
+        using HttpResponseMessage answer = await probe.GetAsync("http://127.0.0.1:27080/news");
+        confirmedLocalHost = "127.0.0.1:27080";
+        return confirmedLocalHost;
     }
     catch (Exception) { /* not the host's PC (or servers not started yet) */ }
 
