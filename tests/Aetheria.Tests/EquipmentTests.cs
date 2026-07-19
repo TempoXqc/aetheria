@@ -296,6 +296,18 @@ public static class EquipmentTests
         Assert.Equal(gold - 5 + 1, p.Inventory.Gold);
         Assert.Equal(0, p.Inventory.CountOf(20));
 
+        // Sell a WHOLE STACK in one action (the client's right-click at a merchant).
+        p.Inventory.TryAdd(20, 6, stackable: true, maxStack: 20);
+        int before = p.Inventory.Gold;
+        Assert.True(world.TryVendorAction(p.Id, sell: true, itemId: 20, quantity: 6));
+        Assert.Equal(before + 6, p.Inventory.Gold);   // 6 × (5/4 → 1)
+        Assert.Equal(0, p.Inventory.CountOf(20));
+
+        // Selling MORE than owned is refused outright.
+        p.Inventory.TryAdd(20, 2, stackable: true, maxStack: 20);
+        Assert.False(world.TryVendorAction(p.Id, sell: true, itemId: 20, quantity: 3), "only 2 owned");
+        Assert.Equal(2, p.Inventory.CountOf(20));
+
         // Not in stock / too far / too poor: refused.
         Assert.False(world.TryVendorAction(p.Id, sell: false, itemId: 14, quantity: 1), "Iron Helm not stocked");
         world.Teleport(p, new Vec2(50f, 50f));

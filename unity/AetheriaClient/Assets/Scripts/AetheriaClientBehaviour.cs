@@ -2943,6 +2943,14 @@ namespace Aetheria.UnityClient
             {
                 sb.Append("\nPrix de vente : ")
                   .Append(FormatMoney(SimulationConstants.VendorSellPrice(def.GoldValue)));
+
+                // At a merchant, a stack shows what the WHOLE pile brings (right-click sells it).
+                if (_shopOpen && quantity > 1)
+                {
+                    sb.Append("  <color=#a0a0a0>· la pile : ")
+                      .Append(FormatMoney(SimulationConstants.VendorSellPrice(def.GoldValue) * quantity))
+                      .Append("</color>");
+                }
             }
 
             return sb.ToString();
@@ -3658,7 +3666,10 @@ namespace Aetheria.UnityClient
                     }
                     else if (e.button == 1 && _shopOpen)
                     {
-                        _client.SendVendor(sell: true, stack.ItemId, 1); // shop open: RIGHT = sell
+                        // Shop open: RIGHT sells the WHOLE stack (WoW behaviour) — hold Shift
+                        // to sell a single unit instead.
+                        byte qty = e.shift ? (byte)1 : (byte)Mathf.Clamp(stack.Quantity, 1, 255);
+                        _client.SendVendor(sell: true, stack.ItemId, qty);
                         e.Use();
                     }
                     else if (e.button == 1 && def.Slot != EquipSlot.None)
