@@ -1193,6 +1193,7 @@ namespace Aetheria.UnityClient
             GUI.matrix = Matrix4x4.Scale(new Vector3(_cfg.UiScale, _cfg.UiScale, 1f));
             _tooltip = null; // rebuilt each frame by whatever the mouse is over
             _tooltipCompare = null;
+            _tooltipAnchor = null;
 
             if (!_connected || _client == null || !_client.EntityId.HasValue)
             {
@@ -2040,7 +2041,8 @@ namespace Aetheria.UnityClient
 
             if (rect.Contains(Event.current.mousePosition))
             {
-                _tooltip = ItemTooltip(def, quantity); // shown WoW-style at the screen edge
+                _tooltip = ItemTooltip(def, quantity);
+                _tooltipAnchor = rect; // the panel opens right beside this cell, WoW-style
             }
         }
 
@@ -2051,6 +2053,10 @@ namespace Aetheria.UnityClient
 
         /// <summary>The "Équipé actuellement" panel shown beside the tooltip, or null.</summary>
         private string _tooltipCompare;
+
+        /// <summary>The hovered item's cell: when set, the tooltip opens NEXT TO it (WoW-style)
+        /// instead of at the screen edge — bags, loot and character sheet alike.</summary>
+        private Rect? _tooltipAnchor;
 
         private string ItemTooltip(ItemDefinition def, int quantity)
         {
@@ -2215,14 +2221,42 @@ namespace Aetheria.UnityClient
 
             const float W = 240f;
             float h = TooltipHeight(_tooltip);
-            Rect win = new Rect(VirtW - W - 12, VirtH - h - 12, W, h);
+
+            Rect win;
+            bool openLeft = false;
+            if (_tooltipAnchor.HasValue)
+            {
+                // NEXT TO the hovered cell (WoW): to its right, or to its left near the edge.
+                Rect a = _tooltipAnchor.Value;
+                float x = a.xMax + 10f;
+                if (x + W > VirtW - 8f)
+                {
+                    x = a.x - W - 10f;
+                    openLeft = true;
+                }
+
+                float y = Mathf.Clamp(a.y, 8f, VirtH - h - 8f);
+                win = new Rect(x, y, W, h);
+            }
+            else
+            {
+                // No anchor (spells, world hover): the classic bottom-right corner.
+                win = new Rect(VirtW - W - 12, VirtH - h - 12, W, h);
+                openLeft = true;
+            }
+
             Dim(win, 0.82f);
             GUI.Label(new Rect(win.x + 9, win.y + 7, win.width - 18, win.height - 12), _tooltip, Rich());
 
             if (!string.IsNullOrEmpty(_tooltipCompare))
             {
+                // The "Équipé actuellement" panel continues in the same direction.
                 float h2 = TooltipHeight(_tooltipCompare);
-                Rect win2 = new Rect(win.x - W - 8, VirtH - h2 - 12, W, h2);
+                float x2 = openLeft ? win.x - W - 8f : win.xMax + 8f;
+                if (x2 < 8f) { x2 = win.xMax + 8f; }
+                if (x2 + W > VirtW - 8f) { x2 = win.x - W - 8f; }
+                float y2 = Mathf.Clamp(win.y, 8f, VirtH - h2 - 8f);
+                Rect win2 = new Rect(x2, y2, W, h2);
                 Dim(win2, 0.82f);
                 GUI.Label(new Rect(win2.x + 9, win2.y + 7, win2.width - 18, win2.height - 12),
                     _tooltipCompare, Rich());
