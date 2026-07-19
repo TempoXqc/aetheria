@@ -68,6 +68,20 @@ public sealed class GameData
     public QuestDefinition? GetQuest(byte id)
         => _quests.TryGetValue(id, out QuestDefinition? q) ? q : null;
 
+    /// <summary>
+    /// Swap in the server's quest catalogue (received at login). The client ships built-in
+    /// defaults only; the SERVER owns the real quest data — including quests written in the
+    /// Studio — and this keeps every player's texts in sync without a client rebuild.
+    /// </summary>
+    public void ReplaceQuests(IEnumerable<QuestDefinition> quests)
+    {
+        _quests.Clear();
+        foreach (QuestDefinition q in quests)
+        {
+            _quests[q.Id] = q;
+        }
+    }
+
     public bool TryGetInstance(byte id, out InstanceDefinition definition)
     {
         if (_instances.TryGetValue(id, out InstanceDefinition? found))

@@ -166,6 +166,12 @@ public sealed class GameClient
     public int QuestKills { get; private set; }
     public byte QuestCompletedUpTo { get; private set; }
 
+    /// <summary>The server's quest catalogue (sent at login); null until received.</summary>
+    public Aetheria.Shared.Data.QuestDefinition[]? QuestCatalog { get; private set; }
+
+    /// <summary>Bumped each time a catalogue arrives, so the UI can re-apply it once.</summary>
+    public int QuestCatalogVersion { get; private set; }
+
     public void SendPartyInvite(int targetEntityId) => Send(new PartyInvite(targetEntityId));
 
     public void SendPartyRespond(bool accept) => Send(new PartyRespond(accept));
@@ -448,6 +454,12 @@ public sealed class GameClient
                     ActiveQuestId = quest.ActiveQuestId;
                     QuestKills = quest.Kills;
                     QuestCompletedUpTo = quest.CompletedUpTo;
+                    break;
+
+                case MessageType.QuestCatalog:
+                    QuestCatalogMessage catalog = QuestCatalogMessage.Read(ref reader);
+                    QuestCatalog = catalog.Quests;
+                    QuestCatalogVersion++;
                     break;
 
                 case MessageType.DuelNotice:

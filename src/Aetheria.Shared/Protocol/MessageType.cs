@@ -63,6 +63,7 @@ public enum MessageType : byte
     ServerInfo = 146,
     ChatMessage = 147,
     QuestState = 148,
+    QuestCatalog = 149,
 }
 
 /// <summary>Coarse kind of an entity, so the client knows how to represent it. Extended over time.</summary>

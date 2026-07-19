@@ -171,4 +171,45 @@ public static class ProtocolTests
             reader.ReadInt();
         });
     }
+
+    [Test("QuestCatalog carries full quest definitions to the client — texts included.")]
+    public static void QuestCatalog_RoundTrips()
+    {
+        var quests = new[]
+        {
+            new Aetheria.Shared.Data.QuestDefinition
+            {
+                Id = 7, Name = "Les loups d'abord", Description = "Chasse-les.",
+                TurnInText = "Bien.", TargetMonsterId = 2, RequiredKills = 6,
+                RewardXp = 120, RewardGold = 900, RewardItemId = 5, NextQuestId = 8,
+            },
+            new Aetheria.Shared.Data.QuestDefinition { Id = 8, Name = "Suite", TargetMonsterId = 1 },
+        };
+
+        var w = new PacketWriter();
+        new QuestCatalogMessage(quests).Write(w);
+        var r = new PacketReader(w.WrittenSpan);
+        Assert.Equal(MessageType.QuestCatalog, (MessageType)r.ReadByte());
+        QuestCatalogMessage read = QuestCatalogMessage.Read(ref r);
+
+        Assert.Equal(2, read.Quests.Length);
+        Assert.Equal((byte)7, read.Quests[0].Id);
+        Assert.Equal("Les loups d'abord", read.Quests[0].Name);
+        Assert.Equal("Chasse-les.", read.Quests[0].Description);
+        Assert.Equal("Bien.", read.Quests[0].TurnInText);
+        Assert.Equal((byte)2, read.Quests[0].TargetMonsterId);
+        Assert.Equal(6, read.Quests[0].RequiredKills);
+        Assert.Equal(120, read.Quests[0].RewardXp);
+        Assert.Equal(900, read.Quests[0].RewardGold);
+        Assert.Equal((byte)5, read.Quests[0].RewardItemId);
+        Assert.Equal((byte)8, read.Quests[0].NextQuestId);
+        Assert.Equal("Suite", read.Quests[1].Name);
+
+        // And the client can swap its defaults for the received catalogue.
+        var data = Aetheria.Shared.Data.GameData.CreateDefault();
+        data.ReplaceQuests(read.Quests);
+        Assert.Equal(2, data.Quests.Count);
+        Assert.Equal("Les loups d'abord", data.GetQuest(7)!.Name);
+        Assert.True(data.GetQuest(1) == null, "the default quests are gone");
+    }
 }

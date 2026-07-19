@@ -640,6 +640,7 @@ public sealed class GameServer
 
         Send(peer, new ConnectAccepted(entity.Id, (byte)SimulationConstants.TickRate));
         SendBankState(peer, session.AccountId);
+        Send(peer, new QuestCatalogMessage(System.Linq.Enumerable.ToArray(data.Quests)));
         SendQuestState(peer, session);
 
         _log($"'{session.Name}' entered as {entity.Faction} {data.GetRace(entity.RaceId).Name} " +
@@ -1381,6 +1382,8 @@ public sealed class GameServer
 
     private void Send(PeerId peer, ConnectAccepted msg) => SendWith(peer, msg.Write);
     private void Send(PeerId peer, QuestStateMessage msg) => SendWith(peer, msg.Write);
+
+    private void Send(PeerId peer, QuestCatalogMessage msg) => SendWith(peer, msg.Write);
     private void Send(PeerId peer, ConnectRejected msg) => SendWith(peer, msg.Write);
     private void Send(PeerId peer, Pong msg) => SendWith(peer, msg.Write);
     private void Send(PeerId peer, SnapshotMessage msg) => SendWith(peer, msg.Write);

@@ -20,6 +20,7 @@ namespace Aetheria.UnityClient
     public sealed class AetheriaClientBehaviour : MonoBehaviour
     {
         private static readonly GameData Data = GameData.CreateDefault();
+        private int _appliedQuestCatalog;
 
         // --- Login form state ---
         private string _host = "127.0.0.1";
@@ -294,7 +295,16 @@ namespace Aetheria.UnityClient
                 _uiPress = false;
             }
 
-            if (_cameraRig != null) { _cameraRig.SuppressDrag = _uiPress; }
+            // Layout-edit mode: EVERY drag belongs to the frames — the camera must hold still.
+            if (_cameraRig != null) { _cameraRig.SuppressDrag = _uiPress || _layoutEditMode; }
+
+            // The server's quest catalogue overrides the built-in defaults: quests written in
+            // the Studio go live for every player without touching the client.
+            if (_client.QuestCatalogVersion != _appliedQuestCatalog && _client.QuestCatalog != null)
+            {
+                Data.ReplaceQuests(_client.QuestCatalog);
+                _appliedQuestCatalog = _client.QuestCatalogVersion;
+            }
 
             SyncViews();
             PlayCombatAnimations();
@@ -327,8 +337,12 @@ namespace Aetheria.UnityClient
                     }
                 }
 
-                HandleKeys();
-                HandleMouse();
+                if (!_layoutEditMode) // frame-dragging: no world clicks, no ability keys
+                {
+                    HandleKeys();
+                    HandleMouse();
+                }
+
                 SendMovement();
             }
 

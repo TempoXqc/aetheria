@@ -274,6 +274,12 @@ namespace Aetheria.UnityClient
             _root = new GameObject("WorldDecor");
             Transform r = _root.transform;
 
+            // Hand-built world in the scene: the artist's placement wins — no auto-decor at all.
+            if (GameObject.Find("HandmadeWorld") != null || Object.FindObjectOfType<Terrain>() != null)
+            {
+                return;
+            }
+
             // --- SANCTUARY (radius 18 around the origin) ---
             // Paved plaza and a ring of standing stones marking the safe border.
             Tex.Apply(Block(r, "Plaza", new Vector3(0f, 0.02f, 0f), new Vector3(9f, 0.04f, 9f),
@@ -459,15 +465,36 @@ namespace Aetheria.UnityClient
             }
 
             // DENSE grass pass, Northshire-style: the fields should read as meadow, not lawn.
-            for (int i = 0; i < 360; i++)
+            for (int i = 0; i < 1400; i++)
             {
-                float x = ((float)rng.NextDouble() * 160f) - 80f;
-                float z = ((float)rng.NextDouble() * 160f) - 80f;
+                float x = ((float)rng.NextDouble() * 190f) - 95f;
+                float z = ((float)rng.NextDouble() * 190f) - 95f;
                 if (Mathf.Sqrt((x * x) + (z * z)) < 17f) { continue; }
                 if (x > 70f && z > 70f) { continue; }
                 string tuft = (i % 3) == 0 ? "Grass_Wispy_Tall" : "Grass_Common_Tall";
                 NatureModels.Spawn(r, tuft, new Vector3(x, 0f, z),
                     0.28f + ((float)rng.NextDouble() * 0.35f), rng.Next(360));
+            }
+
+            // CLUMPS: real meadows grow in patches, not white noise — 70 clusters of 6-10 tufts
+            // (with the odd flower) so the ground reads as living grass everywhere you look.
+            for (int c = 0; c < 70; c++)
+            {
+                float cx = ((float)rng.NextDouble() * 180f) - 90f;
+                float cz = ((float)rng.NextDouble() * 180f) - 90f;
+                if (Mathf.Sqrt((cx * cx) + (cz * cz)) < 18f) { continue; }
+                if (cx > 68f && cz > 68f) { continue; }
+                int n = 6 + rng.Next(5);
+                for (int i = 0; i < n; i++)
+                {
+                    float a = (float)rng.NextDouble() * Mathf.PI * 2f;
+                    float d = (float)rng.NextDouble() * 2.4f;
+                    string plant = (i == 0 && (c % 4) == 0) ? "Flower_3_Group"
+                        : (i % 3) == 0 ? "Grass_Wispy_Tall" : "Grass_Common_Tall";
+                    NatureModels.Spawn(r, plant,
+                        new Vector3(cx + (Mathf.Cos(a) * d), 0f, cz + (Mathf.Sin(a) * d)),
+                        0.30f + ((float)rng.NextDouble() * 0.4f), rng.Next(360));
+                }
             }
 
             // Goblin camp: gnarled trees and mushrooms — it should feel WRONG there.

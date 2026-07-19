@@ -577,6 +577,64 @@ public readonly struct QuestStateMessage
         => new(r.ReadByte(), r.ReadInt(), r.ReadByte());
 }
 
+/// <summary>
+/// The server's full quest catalogue, sent once at login. The CLIENT renders quests from this —
+/// so quests written in the Studio (data/quests.json) go live with a server restart alone:
+/// no client rebuild, every player sees the new texts on their next connection.
+/// </summary>
+public readonly struct QuestCatalogMessage
+{
+    public readonly Aetheria.Shared.Data.QuestDefinition[] Quests;
+
+    public QuestCatalogMessage(Aetheria.Shared.Data.QuestDefinition[] quests) => Quests = quests;
+
+    public void Write(PacketWriter w)
+    {
+        w.WriteByte((byte)MessageType.QuestCatalog);
+        w.WriteByte((byte)Quests.Length);
+        foreach (Aetheria.Shared.Data.QuestDefinition q in Quests)
+        {
+            w.WriteByte(q.Id);
+            w.WriteByte(q.TargetMonsterId);
+            w.WriteByte(q.RewardItemId);
+            w.WriteByte(q.NextQuestId);
+            w.WriteInt(q.RequiredKills);
+            w.WriteInt(q.RewardXp);
+            w.WriteInt(q.RewardGold);
+            w.WriteString(q.Name);
+            w.WriteString(q.Description);
+            w.WriteString(q.TurnInText);
+        }
+    }
+
+    public static QuestCatalogMessage Read(ref PacketReader r)
+    {
+        int count = r.ReadByte();
+        var quests = new Aetheria.Shared.Data.QuestDefinition[count];
+        for (int i = 0; i < count; i++)
+        {
+            byte id = r.ReadByte();
+            byte target = r.ReadByte();
+            byte rewardItem = r.ReadByte();
+            byte next = r.ReadByte();
+            int kills = r.ReadInt();
+            int xp = r.ReadInt();
+            int gold = r.ReadInt();
+            string name = r.ReadString();
+            string description = r.ReadString();
+            string turnIn = r.ReadString();
+            quests[i] = new Aetheria.Shared.Data.QuestDefinition
+            {
+                Id = id, TargetMonsterId = target, RewardItemId = rewardItem, NextQuestId = next,
+                RequiredKills = kills, RewardXp = xp, RewardGold = gold,
+                Name = name, Description = description, TurnInText = turnIn,
+            };
+        }
+
+        return new QuestCatalogMessage(quests);
+    }
+}
+
 /// <summary>Someone invited this client into a party (display name shown to the user).</summary>
 public readonly struct PartyInviteNotice
 {

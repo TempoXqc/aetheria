@@ -24,12 +24,21 @@ namespace Aetheria.UnityClient
                 return; // A hand-placed client already exists; respect it.
             }
 
-            // Ground plane (the server simulates on a flat plane; X/Z here maps to server X/Y).
-            GameObject ground = GameObject.CreatePrimitive(PrimitiveType.Plane);
-            ground.name = "Ground";
-            ground.transform.localScale = new Vector3(40f, 1f, 40f); // 400x400 units
-            ground.GetComponent<Renderer>().material.color = new Color(0.30f, 0.34f, 0.18f); // Northshire green-gold
-            Tex.Apply(ground, "grass", tileX: 90f, tileY: 90f); // real dirt-and-blades surface
+            // HAND-BUILT WORLD: put an object named "HandmadeWorld" in the scene (or a Unity
+            // Terrain) and the game will NOT generate its ground or decor — your sculpted
+            // terrain, trees and buildings stay exactly as you placed them in the editor.
+            bool handmade = GameObject.Find("HandmadeWorld") != null
+                || Object.FindObjectOfType<Terrain>() != null;
+
+            if (!handmade)
+            {
+                // Ground plane (the server simulates on a flat plane; X/Z maps to server X/Y).
+                GameObject ground = GameObject.CreatePrimitive(PrimitiveType.Plane);
+                ground.name = "Ground";
+                ground.transform.localScale = new Vector3(40f, 1f, 40f); // 400x400 units
+                ground.GetComponent<Renderer>().material.color = new Color(0.30f, 0.34f, 0.18f); // Northshire green-gold
+                Tex.Apply(ground, "grass", tileX: 90f, tileY: 90f); // real dirt-and-blades surface
+            }
 
             // Light: a LOW golden sun with soft shadows and a warm ambient — the late-afternoon
             // Elwynn feel, instead of a flat noon.
