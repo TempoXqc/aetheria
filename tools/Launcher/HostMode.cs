@@ -49,6 +49,74 @@ public static class HostMode
         }
     }
 
+    /// <summary>
+    /// AUTOPILOT — runs once when the Launcher-Serveur opens: starts the three servers, then
+    /// builds & publishes automatically when the staging channel is missing, stale (version
+    /// differs from the code), or the repo has new commits. Zero clicks for the usual day.
+    /// </summary>
+    public static void AutoPilot()
+    {
+        if (!IsHost)
+        {
+            return;
+        }
+
+        Log("── Pilote automatique : démarrage des serveurs…");
+        ServerAction("patch", "start");
+        ServerAction("prod", "start");
+        ServerAction("tts", "start");
+
+        _ = Task.Run(async () =>
+        {
+            try
+            {
+                await Git("fetch", "--quiet");
+                _lastFetch = DateTime.UtcNow;
+                _behind = int.TryParse((await Git("rev-list", "HEAD..origin/master", "--count")).output.Trim(),
+                    out int n) ? n : 0;
+
+                bool needBuild = _behind > 0;
+                string reason = _behind > 0 ? _behind + " nouveau(x) commit(s)" : "";
+
+                string manifestPath = Path.Combine(RepoRoot!, "builds", "staging", "manifest.json");
+                string current = await GameVersion();
+                if (!File.Exists(manifestPath))
+                {
+                    needBuild = true;
+                    reason = "aucun build publié";
+                }
+                else
+                {
+                    try
+                    {
+                        string? published = System.Text.Json.Nodes.JsonNode
+                            .Parse(await File.ReadAllTextAsync(manifestPath))?["version"]?.GetValue<string>();
+                        if (published != current)
+                        {
+                            needBuild = true;
+                            reason = $"build publié ({published}) ≠ code ({current})";
+                        }
+                    }
+                    catch (Exception) { needBuild = true; reason = "manifeste illisible"; }
+                }
+
+                if (needBuild)
+                {
+                    Log($"── Pilote automatique : construction nécessaire ({reason}).");
+                    StartUpdateJob(new[] { "staging" });
+                }
+                else
+                {
+                    Log("── Pilote automatique : build à jour, rien à construire.");
+                }
+            }
+            catch (Exception e)
+            {
+                Log("Pilote automatique : " + e.Message);
+            }
+        });
+    }
+
     // ------------------------------------------------------------------ state
 
     public static async Task<JsonObject> State()

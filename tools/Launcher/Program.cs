@@ -183,6 +183,11 @@ if (hostMode)
     {
         Console.WriteLine("  Launcher-Serveur : à lancer depuis le dépôt du jeu (dossier avec .git).");
     }
+    else
+    {
+        // One double-click does the whole hosting day: servers up + build/publish when needed.
+        Aetheria.Launcher.HostMode.AutoPilot();
+    }
 }
 
 app.MapGet("/api/host", async () =>
