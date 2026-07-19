@@ -49,3 +49,4 @@ secrets.json
 # Launcher/patch pipeline (local artifacts, never committed)
 builds/
 aetheria-launcher-data/
+derniere-publication.txt
