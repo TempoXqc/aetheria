@@ -286,6 +286,12 @@ public static class HostMode
             if (Directory.Exists(stage)) { Directory.Delete(stage, recursive: true); }
             CopyDirectory(source, stage);
 
+            // NEVER ship the host's personal data: aetheria-launcher-data holds HIS saved
+            // account + password and his installed game — a friend must start CLEAN, with
+            // the launcher asking for his own credentials at first run.
+            string personal = Path.Combine(stage, "aetheria-launcher-data");
+            if (Directory.Exists(personal)) { Directory.Delete(personal, recursive: true); }
+
             File.Copy(Path.Combine(RepoRoot!, "tools", "Launcher", "launcher.html"),
                 Path.Combine(stage, "launcher.html"), overwrite: true);
             string officialAddress = Path.Combine(RepoRoot!, "launcher.txt");
@@ -316,8 +322,10 @@ public static class HostMode
                 "1) Installe .NET 10 (une fois) : https://dotnet.microsoft.com/download\r\n" +
                 "   (choisis « .NET Runtime » ou « SDK », version 10, Windows x64)\r\n" +
                 "2) Double-clique JOUER.BAT  ← c'est LUI qu'on lance, pas Launcher.dll\r\n" +
-                "3) Le launcher s'ouvre dans le navigateur : clique INSTALLER, puis JOUER.\r\n" +
-                "4) Compte + mot de passe : bouton roue dentée (⚙) à côté de JOUER.\r\n\r\n" +
+                "3) À la première ouverture, le launcher te demande TON compte et TON mot\r\n" +
+                "   de passe (ils sont créés à ta première connexion au jeu).\r\n" +
+                "4) Clique INSTALLER, puis JOUER. Pour changer de compte plus tard :\r\n" +
+                "   bouton roue dentée (⚙) à côté de JOUER.\r\n\r\n" +
                 "Les mises à jour sont automatiques : quand le bouton dit\r\n" +
                 "« Mettre à jour », un clic suffit.\r\n",
                 new UTF8Encoding(false));

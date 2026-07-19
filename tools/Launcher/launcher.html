@@ -239,6 +239,7 @@ const MODE = '__MODE__'; // 'player' ou 'host'
 let STATE = null;
 let channel = localStorage_getItem_safe('aeth.channel') || 'prod';
 let busy = false;
+let firstRunPrompted = false;
 
 function localStorage_getItem_safe(k) { try { return localStorage.getItem(k); } catch (e) { return null; } }
 function localStorage_setItem_safe(k, v) { try { localStorage.setItem(k, v); } catch (e) {} }
@@ -250,7 +251,19 @@ async function refresh() {
     setStatus('Backend du launcher injoignable.', true);
     return;
   }
-  if (document.activeElement?.id !== 'account') { document.getElementById('account').value = STATE.account || ''; }
+  // Mirror the SAVED account into the field only while the panel is CLOSED: while it is
+  // open, the player is typing HIS OWN account — the refresh must never overwrite it.
+  const settingsOpen = document.getElementById('settings').style.display === 'block';
+  if (!settingsOpen) { document.getElementById('account').value = STATE.account || ''; }
+
+  // FIRST RUN (a friend's fresh install): no account saved yet → ask for his, up front.
+  if (!firstRunPrompted) {
+    firstRunPrompted = true;
+    if (MODE === 'player' && !STATE.account && !STATE.hasSecret) {
+      document.getElementById('settings').style.display = 'block';
+      setStatus('Bienvenue ! Entre TON nom de compte et TON mot de passe — ils seront créés à ta première connexion.', false);
+    }
+  }
   render();
 }
 
