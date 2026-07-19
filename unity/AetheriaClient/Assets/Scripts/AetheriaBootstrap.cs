@@ -12,6 +12,10 @@ namespace Aetheria.UnityClient
         [RuntimeInitializeOnLoadMethod(RuntimeInitializeLoadType.AfterSceneLoad)]
         private static void Boot()
         {
+            // An MMO client must keep talking to the server even when its window loses focus —
+            // otherwise testing with two windows "kicks" whichever client isn't focused.
+            Application.runInBackground = true;
+
             if (Object.FindObjectOfType<AetheriaClientBehaviour>() != null)
             {
                 return; // A hand-placed client already exists; respect it.
