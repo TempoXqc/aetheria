@@ -228,6 +228,33 @@ namespace Aetheria.UnityClient
         {
             _cfg.Load(HudConfig.ActiveProfile());
             LoadBagFilterOrder();
+            ApplyLaunchArguments();
+        }
+
+        /// <summary>
+        /// LAUNCHER handoff: `Aetheria.exe --account X --secret Y --autologin` connects straight
+        /// to the first realm and lands on the character screen. Without these arguments the
+        /// login screen works exactly as before (needed to switch accounts or play sans launcher).
+        /// </summary>
+        private void ApplyLaunchArguments()
+        {
+            string[] args = System.Environment.GetCommandLineArgs();
+            bool auto = false;
+            for (int i = 0; i < args.Length; i++)
+            {
+                if (args[i] == "--account" && i + 1 < args.Length) { _account = args[i + 1]; }
+                else if (args[i] == "--secret" && i + 1 < args.Length) { _secret = args[i + 1]; }
+                else if (args[i] == "--autologin") { auto = true; }
+            }
+
+            if (auto && _account.Length > 0 && _secret.Length > 0)
+            {
+                LoadServerList();
+                if (_servers.Count > 0)
+                {
+                    Connect(_servers[0].Address, createAccount: false);
+                }
+            }
         }
 
         private void Update()
@@ -556,8 +583,8 @@ namespace Aetheria.UnityClient
         /// </summary>
         private static readonly (string Label, string Address)[] PredefinedServers =
         {
-            ("Zul'jin", "127.0.0.1:27015"),
-            ("Elunaria", "127.0.0.1:27016"),
+            ("Zul'jin", "127.0.0.1:27015"),      // prod: the playable realm
+            ("Zul'jin TTS", "127.0.0.1:27016"),  // staging: the shared TEST realm (dev included)
         };
 
         private void LoadServerList()

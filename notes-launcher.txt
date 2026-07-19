@@ -1,0 +1,4 @@
+Bienvenue sur Aetheria !
+
+- Royaume Zul'jin (jouable) et Zul'jin TTS (test) disponibles.
+- Écris ici les nouveautés : ce texte s'affiche dans le launcher.

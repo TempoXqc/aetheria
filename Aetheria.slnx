@@ -9,5 +9,7 @@
   </Folder>
   <Folder Name="/tools/">
     <Project Path="tools/QuestStudio/QuestStudio.csproj" />
+    <Project Path="tools/PatchServer/PatchServer.csproj" />
+    <Project Path="tools/Launcher/Launcher.csproj" />
   </Folder>
 </Solution>

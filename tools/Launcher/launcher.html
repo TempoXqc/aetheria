@@ -1,0 +1,273 @@
+<!DOCTYPE html>
+<html lang="fr">
+<head>
+<meta charset="utf-8">
+<title>Aetheria — Launcher</title>
+<style>
+  :root {
+    --bg: #0a0d13; --panel: #131824; --panel2: #1a2130; --border: #2c3547;
+    --gold: #f0c85a; --gold-dim: #b59a54; --text: #dfe4ee; --muted: #8a93a6;
+    --green: #58c05a; --orange: #e8a33d; --red: #d05548;
+  }
+  * { box-sizing: border-box; }
+  body {
+    margin: 0; min-height: 100vh; color: var(--text);
+    font: 14px/1.5 'Segoe UI', system-ui, sans-serif;
+    background:
+      radial-gradient(900px 480px at 80% -10%, #232c44 0%, transparent 60%),
+      radial-gradient(700px 400px at 0% 110%, #1a2233 0%, transparent 55%),
+      var(--bg);
+    display: flex; flex-direction: column;
+  }
+  header {
+    padding: 26px 36px 10px; text-align: center;
+  }
+  header h1 {
+    margin: 0; font-family: Georgia, serif; font-size: 40px; letter-spacing: 10px;
+    color: var(--gold); text-transform: uppercase;
+    text-shadow: 0 0 24px rgba(240,200,90,.35);
+  }
+  header .sub { color: var(--muted); font-size: 12px; letter-spacing: 3px; text-transform: uppercase; }
+
+  main { flex: 1; display: flex; gap: 18px; padding: 18px 36px; max-width: 1100px; margin: 0 auto; width: 100%; }
+  .col-left { flex: 1.4; display: flex; flex-direction: column; gap: 14px; }
+  .col-right { flex: 1; display: flex; flex-direction: column; gap: 14px; }
+
+  .panel {
+    background: linear-gradient(180deg, var(--panel), #10141d);
+    border: 1px solid var(--border); border-radius: 10px; padding: 16px 18px;
+    box-shadow: 0 10px 30px rgba(0,0,0,.5);
+  }
+  .panel h2 { margin: 0 0 10px; font-size: 12px; letter-spacing: 2px; text-transform: uppercase; color: var(--gold); }
+
+  /* Channel tabs */
+  .channels { display: flex; gap: 8px; }
+  .chan {
+    flex: 1; text-align: center; padding: 10px 6px; cursor: pointer;
+    border: 1px solid var(--border); border-radius: 8px; background: var(--panel2);
+    transition: border-color .15s;
+  }
+  .chan:hover { border-color: #45536e; }
+  .chan.active { border-color: var(--gold-dim); box-shadow: 0 0 0 1px var(--gold-dim); }
+  .chan .cname { font-weight: 700; }
+  .chan .cdesc { color: var(--muted); font-size: 11px; }
+
+  .verline { display: flex; justify-content: space-between; color: var(--muted); font-size: 12.5px; margin-top: 10px; }
+  .verline b { color: var(--text); }
+  .status-ok { color: var(--green); }
+  .status-warn { color: var(--orange); }
+  .status-err { color: var(--red); }
+
+  #news {
+    white-space: pre-wrap; color: var(--muted); font-size: 13px;
+    max-height: 260px; overflow-y: auto;
+  }
+
+  label { display: block; margin: 8px 0 3px; color: var(--muted); font-size: 11px; letter-spacing: 1px; text-transform: uppercase; }
+  input {
+    width: 100%; padding: 9px 11px; background: #0d1118; color: var(--text);
+    border: 1px solid var(--border); border-radius: 7px; font: 14px 'Segoe UI', sans-serif;
+  }
+  input:focus { outline: none; border-color: var(--gold-dim); }
+  .hint { color: #616a7d; font-size: 11.5px; margin-top: 6px; }
+
+  footer {
+    display: flex; align-items: center; gap: 18px;
+    padding: 16px 36px 26px; max-width: 1100px; margin: 0 auto; width: 100%;
+  }
+  #bigbtn {
+    min-width: 260px; padding: 16px 34px; font: 700 20px Georgia, serif; letter-spacing: 2px;
+    text-transform: uppercase; cursor: pointer; border-radius: 10px; color: #fff8e0;
+    background: linear-gradient(180deg, #8a6a1e, #6b500f); border: 1px solid #a8843a;
+    box-shadow: 0 6px 24px rgba(240,200,90,.25);
+  }
+  #bigbtn:hover { border-color: var(--gold); }
+  #bigbtn:disabled { opacity: .55; cursor: default; }
+  #bigbtn.update { background: linear-gradient(180deg, #2e6b33, #1d4a22); border-color: #3f8a46; box-shadow: 0 6px 24px rgba(88,192,90,.25); }
+  #status { color: var(--muted); font-size: 13px; flex: 1; }
+  #status.err { color: var(--red); }
+  .spin {
+    display: inline-block; width: 14px; height: 14px; border-radius: 50%;
+    border: 2px solid var(--gold-dim); border-top-color: transparent;
+    animation: spin 0.9s linear infinite; vertical-align: -2px; margin-right: 8px;
+  }
+  @keyframes spin { to { transform: rotate(360deg); } }
+</style>
+</head>
+<body>
+<header>
+  <h1>Aetheria</h1>
+  <div class="sub">Launcher officiel</div>
+</header>
+
+<main>
+  <div class="col-left">
+    <div class="panel">
+      <h2>Canal</h2>
+      <div class="channels">
+        <div class="chan active" id="chan-prod" onclick="pickChannel('prod')">
+          <div class="cname">Zul'jin</div>
+          <div class="cdesc">Jouable — version stable</div>
+        </div>
+        <div class="chan" id="chan-staging" onclick="pickChannel('staging')">
+          <div class="cname">Zul'jin TTS</div>
+          <div class="cdesc">Test — les nouveautés d'abord</div>
+        </div>
+      </div>
+      <div class="verline"><span>Installée : <b id="v-local">—</b></span>
+        <span>Disponible : <b id="v-remote">—</b></span>
+        <span id="v-status">…</span></div>
+    </div>
+
+    <div class="panel" style="flex:1">
+      <h2>Nouvelles du royaume</h2>
+      <div id="news">Chargement…</div>
+    </div>
+  </div>
+
+  <div class="col-right">
+    <div class="panel">
+      <h2>Connexion</h2>
+      <label>Nom de compte</label>
+      <input id="account" placeholder="ton compte">
+      <label>Mot de passe</label>
+      <input id="secret" type="password" placeholder="••••••••">
+      <div class="hint">Sauvegardés sur CE PC : le jeu se connecte tout seul jusqu'à l'écran
+      de personnage. Laisse vide pour te connecter dans le jeu comme avant.</div>
+    </div>
+    <div class="panel">
+      <h2>Serveur de mises à jour</h2>
+      <input id="host" placeholder="ip:27080">
+      <div class="hint">L'adresse du PC qui héberge le jeu (remplie automatiquement si un
+      launcher.txt accompagne le launcher).</div>
+    </div>
+  </div>
+</main>
+
+<footer>
+  <div id="status"></div>
+  <button id="bigbtn" onclick="mainAction()" disabled>…</button>
+</footer>
+
+<script>
+let STATE = null;
+let channel = localStorage_getItem_safe('aeth.channel') || 'prod';
+let busy = false;
+
+function localStorage_getItem_safe(k) { try { return localStorage.getItem(k); } catch (e) { return null; } }
+function localStorage_setItem_safe(k, v) { try { localStorage.setItem(k, v); } catch (e) {} }
+
+async function refresh() {
+  try {
+    STATE = await (await fetch('/api/state')).json();
+  } catch (e) {
+    setStatus('Backend du launcher injoignable.', true);
+    return;
+  }
+  if (document.activeElement?.id !== 'account') { document.getElementById('account').value = STATE.account || ''; }
+  if (document.activeElement?.id !== 'host') { document.getElementById('host').value = STATE.host || ''; }
+  render();
+}
+
+function pickChannel(c) {
+  channel = c;
+  localStorage_setItem_safe('aeth.channel', c);
+  render();
+}
+
+function render() {
+  document.getElementById('chan-prod').classList.toggle('active', channel === 'prod');
+  document.getElementById('chan-staging').classList.toggle('active', channel === 'staging');
+  if (!STATE) { return; }
+  const ch = STATE.channels[channel];
+  document.getElementById('v-local').textContent = ch.localVersion;
+  document.getElementById('v-remote').textContent = ch.reachable ? ch.remoteVersion : '?';
+
+  const st = document.getElementById('v-status');
+  const btn = document.getElementById('bigbtn');
+  btn.disabled = busy;
+  btn.classList.remove('update');
+
+  if (!ch.reachable) {
+    st.innerHTML = '<span class="status-err">Serveur injoignable</span>';
+    btn.textContent = ch.installed ? 'Jouer (hors ligne ?)' : 'Serveur requis';
+    btn.disabled = busy || !ch.installed;
+  } else if (!ch.installed) {
+    st.innerHTML = '<span class="status-warn">Non installé</span>';
+    btn.textContent = 'Installer';
+    btn.classList.add('update');
+  } else if (!ch.upToDate) {
+    st.innerHTML = '<span class="status-warn">Mise à jour disponible</span>';
+    btn.textContent = 'Mettre à jour';
+    btn.classList.add('update');
+  } else {
+    st.innerHTML = '<span class="status-ok">À jour</span>';
+    btn.textContent = 'Jouer';
+  }
+}
+
+async function saveConfig() {
+  const secret = document.getElementById('secret').value;
+  await fetch('/api/config', {
+    method: 'POST', headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({
+      host: document.getElementById('host').value,
+      account: document.getElementById('account').value,
+      secret: secret, // empty = keep the stored one
+    }),
+  });
+  if (secret) { document.getElementById('secret').value = ''; }
+}
+
+async function mainAction() {
+  if (busy || !STATE) { return; }
+  busy = true;
+  await saveConfig();
+  const ch = STATE.channels[channel];
+  try {
+    if (!ch.reachable && ch.installed) {
+      await play();
+    } else if (!ch.installed || !ch.upToDate) {
+      setStatus('<span class="spin"></span>Téléchargement de la mise à jour… (seuls les fichiers modifiés sont téléchargés)');
+      render();
+      const res = await fetch('/api/update?channel=' + channel, { method: 'POST' });
+      const out = await res.json();
+      if (!res.ok) { throw new Error(out.error || 'échec de la mise à jour'); }
+      setStatus('✔ À jour — version ' + out.version + ' (' + out.updated + ' fichier(s), ' + out.megabytes + ' Mo).');
+    } else {
+      await play();
+    }
+  } catch (e) {
+    setStatus('Erreur : ' + e.message, true);
+  }
+  busy = false;
+  await refresh();
+}
+
+async function play() {
+  setStatus('<span class="spin"></span>Lancement du jeu…');
+  const res = await fetch('/api/play?channel=' + channel, { method: 'POST' });
+  const out = await res.json();
+  if (!res.ok) { throw new Error(out.error || 'lancement impossible'); }
+  setStatus('Bon jeu ! Tu peux fermer cette fenêtre.');
+}
+
+function setStatus(html, err) {
+  const el = document.getElementById('status');
+  el.innerHTML = html;
+  el.className = err ? 'err' : '';
+}
+
+async function loadNews() {
+  try {
+    document.getElementById('news').textContent = await (await fetch('/api/news')).text();
+  } catch (e) { /* keep the placeholder */ }
+}
+
+document.getElementById('host').addEventListener('change', async () => { await saveConfig(); await refresh(); await loadNews(); });
+refresh();
+loadNews();
+setInterval(refresh, 15000); // the PLAY button flips to METTRE À JOUR by itself
+</script>
+</body>
+</html>

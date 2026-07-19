@@ -16,41 +16,41 @@ public static class UpnpPortOpener
 {
     private static readonly HttpClient Http = new() { Timeout = TimeSpan.FromSeconds(4) };
 
-    /// <summary>Try to map <paramref name="port"/> (UDP) and report through <paramref name="log"/>.</summary>
-    public static async Task TryOpenAsync(int port, Action<string> log)
+    /// <summary>Try to map <paramref name="port"/> and report through <paramref name="log"/>.
+    /// Protocol is "UDP" (game traffic) or "TCP" (the patch/launcher HTTP server).</summary>
+    public static async Task TryOpenAsync(int port, Action<string> log, string protocol = "UDP")
     {
         try
         {
             (string controlUrl, string serviceType)? gateway = await DiscoverGatewayAsync();
             if (gateway is null)
             {
-                log("UPnP : routeur introuvable — si tes amis ne peuvent pas rejoindre, " +
-                    $"redirige le port UDP {port} manuellement sur ta box.");
+                log($"UPnP : routeur introuvable — si tes amis ne peuvent pas rejoindre, " +
+                    $"redirige le port {protocol} {port} manuellement sur ta box.");
                 return;
             }
 
             string localIp = LocalIpAddress();
             bool mapped = await AddPortMappingAsync(gateway.Value.controlUrl, gateway.Value.serviceType,
-                port, localIp);
+                port, localIp, protocol);
             string publicIp = await GetExternalIpAsync(gateway.Value.controlUrl, gateway.Value.serviceType);
 
             if (mapped)
             {
-                log($"UPnP : port UDP {port} OUVERT automatiquement vers cette machine ({localIp}).");
+                log($"UPnP : port {protocol} {port} OUVERT automatiquement vers cette machine ({localIp}).");
                 log(string.IsNullOrEmpty(publicIp)
                     ? "UPnP : IP publique inconnue — vois ifconfig.me pour la donner à tes amis."
-                    : $"IP PUBLIQUE : {publicIp} — tes amis rejoignent via {publicIp}:{port} " +
-                      "(mets-la dans le servers.txt du build).");
+                    : $"IP PUBLIQUE : {publicIp} — tes amis passent par {publicIp}:{port}.");
             }
             else
             {
-                log($"UPnP : le routeur a refusé le mappage — redirige le port UDP {port} " +
+                log($"UPnP : le routeur a refusé le mappage — redirige le port {protocol} {port} " +
                     "manuellement sur ta box.");
             }
         }
         catch (Exception e)
         {
-            log($"UPnP : indisponible ({e.Message}) — redirection manuelle du port UDP {port} requise.");
+            log($"UPnP : indisponible ({e.Message}) — redirection manuelle du port {protocol} {port} requise.");
         }
     }
 
@@ -159,13 +159,13 @@ public static class UpnpPortOpener
     // ------------------------------------------------------------------ SOAP
 
     private static async Task<bool> AddPortMappingAsync(string controlUrl, string serviceType,
-        int port, string localIp)
+        int port, string localIp, string protocol)
     {
         string body =
             $"<u:AddPortMapping xmlns:u=\"{serviceType}\">" +
             "<NewRemoteHost></NewRemoteHost>" +
             $"<NewExternalPort>{port}</NewExternalPort>" +
-            "<NewProtocol>UDP</NewProtocol>" +
+            $"<NewProtocol>{protocol}</NewProtocol>" +
             $"<NewInternalPort>{port}</NewInternalPort>" +
             $"<NewInternalClient>{localIp}</NewInternalClient>" +
             "<NewEnabled>1</NewEnabled>" +
