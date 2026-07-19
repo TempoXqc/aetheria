@@ -807,6 +807,11 @@ public sealed class World
                 continue;
             }
 
+            if (caster.CastAbilityId >= 200)
+            {
+                continue; // server-level channel (hearthstone): the GameServer resolves it
+            }
+
             if (Tick < caster.CastEndTick)
             {
                 continue; // still incanting
@@ -1175,6 +1180,12 @@ public sealed class World
 
     private void DealDamage(ServerEntity attacker, ServerEntity target, AbilityDefinition ability)
     {
+        // A HIT breaks a utility channel (hearthstone): no teleporting out mid-fight.
+        if (target.CastAbilityId >= 200)
+        {
+            target.CancelCast();
+        }
+
         // Weapon/spell proficiency: a player's skill in this ability's line scales its damage up.
         bool trainsSkill = attacker.Kind == EntityKind.Player && ability.SkillLineId != 0;
         float skillMult = trainsSkill

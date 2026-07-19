@@ -2781,10 +2781,17 @@ namespace Aetheria.UnityClient
                 WowUi.Slot(new Rect(hr.x - 2, hr.y - 2, hr.width + 4, hr.height + 4));
                 float hearthCd = _hearthReadyTime - Time.time;
 
-                if (GUI.Button(hr, "") && hearthCd <= 0f)
+                EntitySnapshot hearthSelf;
+                bool channelling = _client.TryGetSelf(out hearthSelf) &&
+                                   hearthSelf.CastAbilityId == SimulationConstants.HearthstoneCastId;
+                if (channelling && hearthSelf.CastProgress >= 245)
                 {
-                    _client.SendHearthstone();
-                    _hearthReadyTime = Time.time + (15f * 60f);
+                    _hearthReadyTime = Time.time + (15f * 60f); // the channel is completing: cooldown starts
+                }
+
+                if (GUI.Button(hr, "") && hearthCd <= 0f && !channelling)
+                {
+                    _client.SendHearthstone(); // starts the 5-second channel (cast bar shows)
                 }
 
                 GUI.Label(new Rect(hr.x + 3, hr.y + 2, hr.width - 6, 16), "<size=10>Foyer</size>", Rich());
@@ -2800,7 +2807,8 @@ namespace Aetheria.UnityClient
                 if (hr.Contains(Event.current.mousePosition))
                 {
                     _tooltip = "<b><color=#ffffff>Pierre de foyer</color></b>\n<color=#a0a0a0>" +
-                        "Te ramène à ton auberge (demande à un aubergiste pour en changer)." +
+                        "Canalisation de 5 s — bouger ou être touché l'interrompt." +
+                        "\nTe ramène à ton auberge (demande à un aubergiste pour en changer)." +
                         "\nRecharge : 15 minutes.</color>";
                 }
             }
@@ -4869,7 +4877,9 @@ namespace Aetheria.UnityClient
 
             const float W = 260f;
             var rect = new Rect((VirtW - W) / 2f, VirtH - 150f, W, 22f);
-            string name = Data.GetAbility(self.CastAbilityId).Name;
+            string name = self.CastAbilityId == SimulationConstants.HearthstoneCastId
+                ? "Pierre de foyer"
+                : Data.GetAbility(self.CastAbilityId).Name;
             DrawBar(rect, self.CastProgress / 255f, new Color(0.95f, 0.78f, 0.20f), "");
             GUI.Label(new Rect(rect.x, rect.y + 1, rect.width, 20),
                 "<size=11><b>" + name + "</b></size>", RichCentered());

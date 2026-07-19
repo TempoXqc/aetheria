@@ -137,6 +137,8 @@ public sealed class GameServer
             world.Step(dt);
         }
 
+        TickHearthstones(); // finished 5-second channels teleport home
+
         BroadcastSnapshots();
 
         bool playerDied = false;
@@ -1008,20 +1010,48 @@ public sealed class GameServer
             return;
         }
 
-        // From an instance, the stone walks you OUT first, then carries you home.
-        if (!ReferenceEquals(session.CurrentWorld, _worlds.OpenWorld))
+        if (self.IsCasting)
         {
-            HandleLeaveInstance(peer, session, notify: false);
+            return; // already channelling something (maybe the stone itself)
         }
 
-        if (!TryGetEntity(session, out ServerEntity? home) || home is null)
-        {
-            return;
-        }
+        // A 5-second CHANNEL, WoW-style: the cast bar shows, moving or getting hit cancels.
+        // The GameServer resolves it in Tick (the combat pipeline skips ids ≥ 200).
+        self.BeginCast(SimulationConstants.HearthstoneCastId, self.Id,
+            session.CurrentWorld.Tick, SimulationConstants.HearthstoneCastTicks);
+    }
 
-        _worlds.OpenWorld.Teleport(home, new Vec2(home.HomeX, home.HomeY));
-        home.HearthReadyTick = now + SimulationConstants.HearthstoneCooldownTicks;
-        Send(peer, new InstanceResult(true, 0, "La pierre de foyer te ramène chez toi."));
+    /// <summary>Resolve finished hearthstone channels: teleport home, start the cooldown.</summary>
+    private void TickHearthstones()
+    {
+        foreach (KeyValuePair<PeerId, PlayerSession> pair in _sessions)
+        {
+            PlayerSession session = pair.Value;
+            if (!session.HandshakeComplete ||
+                !TryGetEntity(session, out ServerEntity? self) || self is null ||
+                self.CastAbilityId != SimulationConstants.HearthstoneCastId ||
+                session.CurrentWorld.Tick < self.CastEndTick)
+            {
+                continue;
+            }
+
+            self.CancelCast();
+
+            // From an instance, the stone walks you OUT first, then carries you home.
+            if (!ReferenceEquals(session.CurrentWorld, _worlds.OpenWorld))
+            {
+                HandleLeaveInstance(pair.Key, session, notify: false);
+            }
+
+            if (!TryGetEntity(session, out ServerEntity? home) || home is null)
+            {
+                continue;
+            }
+
+            _worlds.OpenWorld.Teleport(home, new Vec2(home.HomeX, home.HomeY));
+            home.HearthReadyTick = _worlds.OpenWorld.Tick + SimulationConstants.HearthstoneCooldownTicks;
+            Send(pair.Key, new InstanceResult(true, 0, "La pierre de foyer te ramène chez toi."));
+        }
     }
 
     /// <summary>

@@ -111,6 +111,15 @@ public static class SimulationConstants
     /// <summary>Hearthstone cooldown, in ticks (15 minutes).</summary>
     public const int HearthstoneCooldownTicks = 15 * 60 * TickRate;
 
+    /// <summary>Hearthstone channel time, in ticks (5 seconds) — moving or being hit cancels.</summary>
+    public const int HearthstoneCastTicks = 5 * TickRate;
+
+    /// <summary>
+    /// Pseudo-ability id band ≥ 200: SERVER-LEVEL channels (hearthstone…) that ride the entity
+    /// cast fields for cast bars, but are resolved by the GameServer, not the combat pipeline.
+    /// </summary>
+    public const byte HearthstoneCastId = 250;
+
     /// <summary>How close a player must stand to an innkeeper to bind their hearthstone.</summary>
     public const float InnkeeperRange = 5f;
 
@@ -137,5 +146,5 @@ public static class SimulationConstants
     /// in the in-game HUD, and in the server startup log, so "am I up to date?" has a one-glance
     /// answer on both sides.
     /// </summary>
-    public const string GameVersion = "0.48.0";
+    public const string GameVersion = "0.48.1";
 }
