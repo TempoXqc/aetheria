@@ -187,6 +187,8 @@ async function refresh() {
     return;
   }
   if (document.activeElement?.id !== 'account') { document.getElementById('account').value = STATE.account || ''; }
+  const cfg = document.getElementById('hostCfgPanel');
+  if (cfg) { cfg.style.display = STATE.hostAuto ? 'none' : 'block'; } // auto = invisible
   if (document.activeElement?.id !== 'host') { document.getElementById('host').value = STATE.host || ''; }
   render();
 }

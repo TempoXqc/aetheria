@@ -54,3 +54,4 @@ builds-auto/
 builds-auto-log.txt
 unity/AetheriaClient/Assets/Scenes/Auto.unity
 unity/AetheriaClient/Assets/Scenes/Auto.unity.meta
+state/

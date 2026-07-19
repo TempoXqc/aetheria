@@ -23,6 +23,11 @@ int uiPort = hostMode ? 5181 : 5180;
 
 string baseDir = AppContext.BaseDirectory;
 string configPath = Path.Combine(BaseDataDir(), "launcher.json");
+
+// On the HOST's PC (repo present) the patch server is always local: the address configures
+// itself and the field disappears. A shipped launcher.txt does the same for friends.
+bool repoNearby = DetectRepoNearby();
+bool hostIsAutomatic = repoNearby || File.Exists(Path.Combine(baseDir, "launcher.txt"));
 string htmlPath = FindAsset("launcher.html");
 var http = new HttpClient { Timeout = TimeSpan.FromSeconds(8) };
 var jsonOptions = new JsonSerializerOptions { WriteIndented = true, PropertyNameCaseInsensitive = true };
@@ -48,6 +53,7 @@ app.MapGet("/api/state", async () =>
     var result = new JsonObject
     {
         ["host"] = config["host"]!.GetValue<string>(),
+        ["hostAuto"] = hostIsAutomatic, // the page hides the address field entirely
         ["account"] = config["account"]!.GetValue<string>(),
         ["hasSecret"] = !string.IsNullOrEmpty(config["secret"]!.GetValue<string>()),
         ["channels"] = channels,
@@ -293,6 +299,7 @@ JsonNode LoadConfig()
             if (node is not null)
             {
                 node["host"] ??= "127.0.0.1:27080";
+                if (repoNearby) { node["host"] = "127.0.0.1:27080"; }
                 node["account"] ??= "";
                 node["secret"] ??= "";
                 return node;
@@ -317,6 +324,26 @@ void SaveConfig(JsonNode config)
 {
     Directory.CreateDirectory(Path.GetDirectoryName(configPath)!);
     File.WriteAllText(configPath, config.ToJsonString(jsonOptions), new UTF8Encoding(false));
+}
+
+static bool DetectRepoNearby()
+{
+    var dir = new DirectoryInfo(AppContext.BaseDirectory);
+    while (dir != null && !Directory.Exists(Path.Combine(dir.FullName, ".git")))
+    {
+        dir = dir.Parent;
+    }
+
+    if (dir == null)
+    {
+        dir = new DirectoryInfo(Directory.GetCurrentDirectory());
+        while (dir != null && !Directory.Exists(Path.Combine(dir.FullName, ".git")))
+        {
+            dir = dir.Parent;
+        }
+    }
+
+    return dir != null && Directory.Exists(Path.Combine(dir.FullName, "unity", "AetheriaClient"));
 }
 
 string BaseDataDir()

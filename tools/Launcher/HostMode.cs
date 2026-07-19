@@ -179,7 +179,7 @@ public static class HostMode
             try
             {
                 Log("── Récupération des derniers changements (git pull)…");
-                (int code, string output) = await Git("pull", "--rebase", "origin", "master");
+                (int code, string output) = await Git("pull", "--rebase", "--autostash", "origin", "master");
                 Log(output);
                 if (code != 0) { Fail("git pull a échoué."); return; }
 
