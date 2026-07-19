@@ -1844,6 +1844,7 @@ namespace Aetheria.UnityClient
             "Le Guerrier vit au corps à corps : la rage nourrit ses coups, l'acier fait le reste.",
             "Le Mage incante feu et givre à distance — fragile, mais dévastateur.",
             "Le Chasseur harcèle à l'arc et ne laisse aucune proie s'échapper.",
+            "Le Druide épouse la nature : ours pour encaisser, hibou pour foudroyer à distance, tigre pour lacérer.",
         };
 
         /// <summary>A rect-based "◀ valeur ▶" appearance row (WoW's arrow pickers).</summary>
