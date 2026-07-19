@@ -207,6 +207,22 @@ namespace Aetheria.UnityClient
         /// </summary>
         private static void PruneToHead(SkinnedMeshRenderer smr, Transform headBone)
         {
+            try
+            {
+                PruneToHeadUnsafe(smr, headBone);
+            }
+            catch (System.Exception e)
+            {
+                // Typically "isReadable is false" before the editor import fixer has run:
+                // drop the body mesh rather than spamming errors every spawn.
+                Debug.LogWarning("[Aetheria] Découpe de tête impossible (" + e.Message +
+                                 ") — réimporte Assets/Resources/Quaternius (Read/Write).");
+                Object.Destroy(smr.gameObject);
+            }
+        }
+
+        private static void PruneToHeadUnsafe(SkinnedMeshRenderer smr, Transform headBone)
+        {
             Mesh src = smr.sharedMesh;
             if (src == null || headBone == null)
             {
