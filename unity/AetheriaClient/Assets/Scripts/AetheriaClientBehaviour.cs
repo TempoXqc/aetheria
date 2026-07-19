@@ -621,7 +621,7 @@ namespace Aetheria.UnityClient
         private static readonly (string Label, string Address)[] PredefinedServers =
         {
             ("Zul'jin", "127.0.0.1:27015"),      // prod: the playable realm
-            ("Zul'jin TTS", "127.0.0.1:27016"),  // staging: the shared TEST realm (dev included)
+            ("Zul'jin PTR", "127.0.0.1:27016"),  // staging: the shared TEST realm (dev included)
         };
 
         private void LoadServerList()

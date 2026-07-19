@@ -209,9 +209,10 @@ namespace Aetheria.UnityClient
             string n = materialName.Replace(" (Instance)", "").Replace("(Instance)", "").Trim();
             Texture2D tex = LoadTexture(n);
             if (tex == null) { tex = LoadTexture(n + "_Diffuse"); }
+            if (tex == null && n.Contains("Pine")) { tex = LoadTexture("Leaf_Pine"); } // "Leaves_Pine" → Leaf_Pine.png
             if (tex == null && n.Contains("Rock")) { tex = LoadTexture("Rocks_Diffuse"); }
             if (tex == null && n.Contains("Pebble")) { tex = LoadTexture("PathRocks_Diffuse"); }
-            if (tex == null && n.Contains("Leaf")) { tex = LoadTexture("Leaves"); }
+            if (tex == null && (n.Contains("Leaf") || n.Contains("Leaves"))) { tex = LoadTexture("Leaves"); }
             return tex;
         }
 

@@ -9,7 +9,7 @@ using System.Text.Json.Nodes;
 //
 //   Launcher.bat  →  this backend + a WoW-style page in the browser.
 //
-// It checks the patch server for the selected CHANNEL (prod = jouable, staging = TTS/test),
+// It checks the patch server for the selected CHANNEL (prod = Zul'jin, staging = PTR),
 // turns the PLAY button into METTRE À JOUR when the manifest differs, downloads ONLY the files
 // whose hash changed, then launches the game — passing the saved account so the game logs in
 // straight to the character screen. Login in-game still works without the launcher.
@@ -221,9 +221,25 @@ app.MapPost("/api/host/update", async (HttpRequest request) =>
 app.MapPost("/api/host/sharezip", () =>
 {
     string? zip = Aetheria.Launcher.HostMode.CreateShareZip();
-    return zip is null
-        ? Results.BadRequest(new { error = "Création du ZIP impossible (voir le journal)." })
-        : Results.Ok(new { path = zip });
+    if (zip is null)
+    {
+        return Results.BadRequest(new { error = "Création du ZIP impossible (voir le journal)." });
+    }
+
+    // Open the folder with the ZIP selected, so "send it to a friend" is one drag away.
+    if (OperatingSystem.IsWindows())
+    {
+        try
+        {
+            System.Diagnostics.Process.Start("explorer.exe", $"/select,\"{zip}\"");
+        }
+        catch (Exception)
+        {
+            // Purely a convenience — the path is shown in the UI either way.
+        }
+    }
+
+    return Results.Ok(new { path = zip });
 });
 
 app.MapPost("/api/host/server", (HttpRequest request) =>

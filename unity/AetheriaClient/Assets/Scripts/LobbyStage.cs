@@ -27,6 +27,8 @@ namespace Aetheria.UnityClient
         private Light _fireLight;
         private readonly System.Collections.Generic.List<Transform> _flames =
             new System.Collections.Generic.List<Transform>();
+        private readonly System.Collections.Generic.List<Vector3> _flameBase =
+            new System.Collections.Generic.List<Vector3>();
 
         private IsoCameraRig _rig;
         private float _t;
@@ -45,9 +47,10 @@ namespace Aetheria.UnityClient
             _root.transform.position = Origin;
             Transform r = _root.transform;
 
-            // Night ground: real grass texture, dark-tinted for the night.
+            // Night ground: real grass texture, tiled tight so the blades actually READ,
+            // lightly dimmed for the night.
             Tex.Apply(Block(r, "Ground", new Vector3(0f, -0.1f, 0f), new Vector3(40f, 0.2f, 40f),
-                new Color(0.14f, 0.19f, 0.14f)), "grass", 12f, 12f, new Color(0.45f, 0.52f, 0.45f));
+                new Color(0.14f, 0.19f, 0.14f)), "grass", 26f, 26f, new Color(0.62f, 0.68f, 0.60f));
 
             // Stone dais where the preview character stands.
             Tex.Apply(Block(r, "Dais", new Vector3(0f, 0.08f, 0f), new Vector3(2.6f, 0.16f, 2.6f),
@@ -75,20 +78,30 @@ namespace Aetheria.UnityClient
                 }
             }
 
-            GameObject log1 = Block(r, "Log", fire + new Vector3(0f, 0.10f, 0f), new Vector3(0.12f, 0.10f, 0.7f),
-                new Color(0.30f, 0.19f, 0.10f));
-            Tex.Apply(log1, "bark", 1f, 2f);
-            log1.transform.localRotation = Quaternion.Euler(0f, 35f, 0f);
-            GameObject log2 = Block(r, "Log", fire + new Vector3(0f, 0.10f, 0f), new Vector3(0.12f, 0.10f, 0.7f),
-                new Color(0.28f, 0.17f, 0.09f));
-            Tex.Apply(log2, "bark", 1f, 2f);
-            log2.transform.localRotation = Quaternion.Euler(0f, -40f, 0f);
+            // Logs: real cylinders with bark, leaning into the fire like a proper camp pyre.
+            for (int i = 0; i < 4; i++)
+            {
+                float a = (i * 90f) + 25f;
+                GameObject log = GameObject.CreatePrimitive(PrimitiveType.Cylinder);
+                log.name = "Log";
+                Object.Destroy(log.GetComponent<Collider>());
+                log.transform.SetParent(r, false);
+                log.transform.localPosition = fire + new Vector3(
+                    Mathf.Cos(a * Mathf.Deg2Rad) * 0.16f, 0.16f, Mathf.Sin(a * Mathf.Deg2Rad) * 0.16f);
+                log.transform.localScale = new Vector3(0.09f, 0.34f, 0.09f);
+                log.transform.localRotation = Quaternion.Euler(52f, a, 0f);
+                Tint(log, new Color(0.30f, 0.19f, 0.10f));
+                Tex.Apply(log, "bark", 1f, 2f, new Color(0.85f, 0.75f, 0.65f));
+            }
 
+            // Flames: layered teardrop spheres (no more orange cube) that flicker in Tick.
             _flames.Clear();
-            _flames.Add(Block(r, "Flame", fire + new Vector3(0f, 0.35f, 0f), new Vector3(0.28f, 0.5f, 0.28f),
-                new Color(1f, 0.55f, 0.10f)).transform);
-            _flames.Add(Block(r, "FlameIn", fire + new Vector3(0f, 0.45f, 0f), new Vector3(0.14f, 0.34f, 0.14f),
-                new Color(1f, 0.85f, 0.25f)).transform);
+            _flames.Add(FlameOrb(r, fire + new Vector3(0f, 0.42f, 0f), new Vector3(0.42f, 0.60f, 0.42f),
+                new Color(0.95f, 0.35f, 0.05f)));
+            _flames.Add(FlameOrb(r, fire + new Vector3(0.04f, 0.52f, -0.02f), new Vector3(0.28f, 0.46f, 0.28f),
+                new Color(1f, 0.62f, 0.10f)));
+            _flames.Add(FlameOrb(r, fire + new Vector3(-0.02f, 0.58f, 0.02f), new Vector3(0.16f, 0.32f, 0.16f),
+                new Color(1f, 0.88f, 0.35f)));
 
             var lightGo = new GameObject("FireLight");
             lightGo.transform.SetParent(r, false);
@@ -189,6 +202,24 @@ namespace Aetheria.UnityClient
             _previewModel = new GameObject("Preview");
             _previewModel.transform.SetParent(_previewSlot, false);
             _previewRig = CharacterModelBuilder.Build(_previewModel.transform, snap);
+            _torsoBaseY = -1f;
+
+            // Center the model on the dais whatever the pack's pivot is: measure the renderers
+            // and shift so the FEET stand exactly on the middle of the stone.
+            var bounds = new Bounds(_previewSlot.position, Vector3.zero);
+            bool measured = false;
+            foreach (Renderer rend in _previewModel.GetComponentsInChildren<Renderer>(true))
+            {
+                if (!measured) { bounds = rend.bounds; measured = true; }
+                else { bounds.Encapsulate(rend.bounds); }
+            }
+
+            if (measured)
+            {
+                Vector3 slotPos = _previewSlot.position;
+                _previewModel.transform.position += new Vector3(
+                    slotPos.x - bounds.center.x, slotPos.y - bounds.min.y, slotPos.z - bounds.center.z);
+            }
 
             // Tint the tunic with the faction colour so the camp choice reads instantly.
             if (_previewRig.TintTargets.Length > 0)
@@ -216,6 +247,8 @@ namespace Aetheria.UnityClient
         /// <summary>Preview yaw in degrees — driven by the player's right-button drag, never automatic.</summary>
         public float PreviewYaw;
 
+        private float _torsoBaseY = -1f;
+
         /// <summary>Animate flames and apply the player-driven preview yaw; keep the camera in place.</summary>
         public void Tick(float dt)
         {
@@ -226,11 +259,12 @@ namespace Aetheria.UnityClient
 
             _t += dt;
 
-            for (int i = 0; i < _flames.Count; i++)
+            for (int i = 0; i < _flames.Count && i < _flameBase.Count; i++)
             {
-                float k = 1f + (Mathf.Sin((_t * 13f) + (i * 2.1f)) * 0.18f);
-                Vector3 s = _flames[i].localScale;
-                _flames[i].localScale = new Vector3(s.x, 0.5f * k * (i == 0 ? 1f : 0.68f), s.z);
+                float k = 1f + (Mathf.Sin((_t * 13f) + (i * 2.1f)) * 0.16f);
+                float w = 1f + (Mathf.Sin((_t * 9f) + (i * 1.3f)) * 0.08f);
+                Vector3 b = _flameBase[i];
+                _flames[i].localScale = new Vector3(b.x * w, b.y * k, b.z * w);
             }
 
             if (_fireLight != null)
@@ -241,6 +275,28 @@ namespace Aetheria.UnityClient
             if (_previewSlot != null)
             {
                 _previewSlot.localRotation = Quaternion.Euler(0f, PreviewYaw, 0f);
+            }
+
+            // The character LIVES: a slow breath (torso pulse when the rig has one, otherwise a
+            // whisper of whole-body scale) and the arms swaying gently at his sides.
+            if (_previewRig != null)
+            {
+                float sway = Mathf.Sin(_t * 1.7f) * 2.4f;
+                _previewRig.SwingX(_previewRig.ArmL, -sway);
+                _previewRig.SwingX(_previewRig.ArmR, sway);
+
+                if (_previewRig.Torso != null)
+                {
+                    if (_torsoBaseY <= 0f) { _torsoBaseY = _previewRig.Torso.localScale.y; }
+                    float breathe = 1f + (Mathf.Sin(_t * 2f) * 0.015f);
+                    Vector3 s = _previewRig.Torso.localScale;
+                    _previewRig.Torso.localScale = new Vector3(s.x, _torsoBaseY * breathe, s.z);
+                }
+                else if (_previewModel != null)
+                {
+                    float breathe = 1f + (Mathf.Sin(_t * 2f) * 0.008f);
+                    _previewModel.transform.localScale = new Vector3(1f, breathe, 1f);
+                }
             }
 
             Camera cam = Camera.main;
@@ -302,13 +358,29 @@ namespace Aetheria.UnityClient
 
             if (NatureModels.Available)
             {
-                // Grass everywhere the eye lands, denser near the treeline.
-                for (int i = 0; i < 170; i++)
+                // Grass EVERYWHERE — the clearing should read as meadow, not lawn.
+                for (int i = 0; i < 420; i++)
                 {
-                    Vector3 pos = ScatterSpot(rng, fire, 2.0f, 15f);
+                    Vector3 pos = ScatterSpot(rng, fire, 1.8f, 16f);
                     string tuft = (i % 3) == 0 ? "Grass_Wispy_Tall" : "Grass_Common_Tall";
                     NatureModels.Spawn(r, tuft, pos, 0.28f + ((float)rng.NextDouble() * 0.35f),
                         rng.Next(360));
+                }
+
+                // Clumps: real grass grows in patches — 26 clusters of 5-9 tufts.
+                for (int c = 0; c < 26; c++)
+                {
+                    Vector3 center = ScatterSpot(rng, fire, 2.4f, 14f);
+                    int n = 5 + rng.Next(5);
+                    for (int i = 0; i < n; i++)
+                    {
+                        float a = (float)rng.NextDouble() * Mathf.PI * 2f;
+                        float d = (float)rng.NextDouble() * 1.4f;
+                        string plant = (i % 3) == 0 ? "Grass_Wispy_Tall" : "Grass_Common_Tall";
+                        NatureModels.Spawn(r, plant,
+                            center + new Vector3(Mathf.Cos(a) * d, 0f, Mathf.Sin(a) * d),
+                            0.30f + ((float)rng.NextDouble() * 0.4f), rng.Next(360));
+                    }
                 }
 
                 // Ferns, flowers and clover in loose patches.
@@ -337,9 +409,9 @@ namespace Aetheria.UnityClient
             // Nature Starter Kit 2 undergrowth on top, when the user imported it.
             if (NatureKit.Available)
             {
-                for (int i = 0; i < 60; i++)
+                for (int i = 0; i < 140; i++)
                 {
-                    Vector3 pos = ScatterSpot(rng, fire, 2.2f, 15f);
+                    Vector3 pos = ScatterSpot(rng, fire, 2.0f, 16f);
                     NatureKit.SpawnGrass(r, rng, pos, 0.4f + ((float)rng.NextDouble() * 0.4f));
                 }
 
@@ -448,6 +520,19 @@ namespace Aetheria.UnityClient
                 new Vector3(s, s * 0.9f, s), new Color(0.16f, 0.17f, 0.22f));
             Tex.Apply(m, "stone", 4f, 4f, new Color(0.30f, 0.32f, 0.40f));
             m.transform.localRotation = Quaternion.Euler(0f, 45f, 0f);
+        }
+
+        private Transform FlameOrb(Transform r, Vector3 pos, Vector3 scale, Color color)
+        {
+            GameObject orb = GameObject.CreatePrimitive(PrimitiveType.Sphere);
+            orb.name = "Flame";
+            Object.Destroy(orb.GetComponent<Collider>());
+            orb.transform.SetParent(r, false);
+            orb.transform.localPosition = pos;
+            orb.transform.localScale = scale;
+            Tint(orb, color);
+            _flameBase.Add(scale);
+            return orb.transform;
         }
 
         private static GameObject Block(Transform parent, string name, Vector3 pos, Vector3 scale, Color color)

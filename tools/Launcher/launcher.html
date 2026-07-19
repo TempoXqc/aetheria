@@ -163,16 +163,14 @@
 <div id="sidebar">
   <div id="logo">
     <div class="title">Aetheria</div>
-    <div class="subtitle">Hardcore</div>
-    <div class="emblem">⚔</div>
   </div>
 
   <div class="spacer"></div>
 
   <div class="sect-label">Version du jeu &amp; compte</div>
   <select id="channelSel" onchange="pickChannel(this.value)">
-    <option value="prod">Aetheria — Zul'jin (jouable)</option>
-    <option value="staging">Aetheria TTS — test des nouveautés</option>
+    <option value="prod">Aetheria — Zul'jin</option>
+    <option value="staging">Aetheria — PTR</option>
   </select>
   <div id="verline">Installée : <b id="v-local">—</b> · Disponible : <b id="v-remote">—</b> · <span id="v-status">…</span></div>
 
@@ -206,14 +204,15 @@
       <input type="checkbox" id="pubProd" style="width:auto"> publier aussi en prod</label>
     <div style="display:flex; gap:6px; margin-top:10px;">
       <button class="srv" id="srv-prod" onclick="toggleServer('prod')">Zul'jin</button>
-      <button class="srv" id="srv-tts" onclick="toggleServer('tts')">TTS</button>
+      <button class="srv" id="srv-tts" onclick="toggleServer('tts')">PTR</button>
       <button class="srv" id="srv-patch" onclick="toggleServer('patch')">Patchs</button>
     </div>
     <div style="color:var(--dim); font-size:11.5px; margin-top:6px;">Un clic démarre/arrête chaque serveur. Ils vivent tant que le launcher est ouvert.</div>
-    <button onclick="shareZip()" style="width:100%; margin-top:8px; padding:8px; border-radius:7px; cursor:pointer;
+    <button id="zipBtn" onclick="shareZip()" style="width:100%; margin-top:8px; padding:8px; border-radius:7px; cursor:pointer;
       background:var(--panel2); border:1px solid var(--border); color:var(--text); font-weight:600;">
       📦 Créer le ZIP à envoyer aux amis
     </button>
+    <div id="zipStatus" style="font-size:12px; margin-top:5px; color:var(--muted);"></div>
     <pre id="hostLog" style="max-height:220px; overflow-y:auto; font-size:10.5px; color:#8a93a6; white-space:pre-wrap; margin:8px 0 0;"></pre>
   </div>
 
@@ -232,9 +231,7 @@
 <!-- ============================================= RIGHT: friends -->
 <div id="friends">
   <h2>Amis</h2>
-  <div class="friend"><div class="dot">?</div><div class="who"><div class="n">…</div><div class="s">Hors ligne</div></div></div>
-  <div class="friend"><div class="dot">?</div><div class="who"><div class="n">…</div><div class="s">Hors ligne</div></div></div>
-  <div class="soon">La liste d'amis arrive bientôt — tu verras ici qui est en ligne sur Zul'jin.</div>
+  <div class="soon">La liste d'amis arrive bientôt.</div>
 </div>
 
 <script>
@@ -432,12 +429,21 @@ async function hostUpdate() {
 }
 
 async function shareZip() {
-  const res = await fetch('/api/host/sharezip', { method: 'POST' });
-  const out = await res.json();
-  const git = document.getElementById('gitState');
-  git.innerHTML = res.ok
-    ? '<span class="status-ok">📦 ZIP prêt : ' + esc(out.path) + '</span>'
-    : '<span class="status-err">' + esc(out.error || 'échec') + '</span>';
+  const btn = document.getElementById('zipBtn');
+  const line = document.getElementById('zipStatus');
+  btn.disabled = true;
+  line.innerHTML = '<span class="spin"></span>Création du ZIP…';
+  try {
+    const res = await fetch('/api/host/sharezip', { method: 'POST' });
+    const out = await res.json();
+    line.innerHTML = res.ok
+      ? '<span class="status-ok">📦 ZIP prêt (le dossier s\'ouvre) : ' + esc(out.path) + '</span>'
+      : '<span class="status-err">' + esc(out.error || 'échec — voir le journal ci-dessous') + '</span>';
+  } catch (e) {
+    line.innerHTML = '<span class="status-err">Échec : ' + esc(String(e)) + '</span>';
+  } finally {
+    btn.disabled = false;
+  }
 }
 
 async function toggleServer(name) {

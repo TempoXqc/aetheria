@@ -384,7 +384,7 @@ public static class HostMode
         }
 
         string content = $"Zul'jin|{Routes(publicIp, lanIp, 27015)}\n" +
-                         $"Zul'jin TTS|{Routes(publicIp, lanIp, 27016)}\n";
+                         $"Zul'jin PTR|{Routes(publicIp, lanIp, 27016)}\n";
         await File.WriteAllTextAsync(Path.Combine(buildDir, "servers.txt"), content);
         Log("── servers.txt généré (" + (publicIp.Length > 0 ? "IP publique " + publicIp : "sans IP publique") + ").");
     }
@@ -448,7 +448,7 @@ public static class HostMode
             "prod" => (Path.Combine("artifacts", "bin", "Aetheria.Server", "release"), "Aetheria.Server.dll",
                 $"--name \"Zul'jin\" --port 27015 --state \"{Path.Combine(stateDir, "aetheria-prod.json")}\""),
             "tts" => (Path.Combine("artifacts", "bin", "Aetheria.Server", "release"), "Aetheria.Server.dll",
-                $"--name \"Zul'jin TTS\" --port 27016 --state \"{Path.Combine(stateDir, "aetheria-tts.json")}\""),
+                $"--name \"Zul'jin PTR\" --port 27016 --state \"{Path.Combine(stateDir, "aetheria-tts.json")}\""),
             "patch" => (Path.Combine("artifacts", "bin", "PatchServer", "release"), "PatchServer.dll", ""),
             _ => (string.Empty, string.Empty, string.Empty),
         };
