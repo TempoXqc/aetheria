@@ -42,6 +42,7 @@ public enum MessageType : byte
     QuestAction = 32,
     MoveItem = 33,
     VendorAction = 34,
+    PartyKick = 35,
 
     // --- Server -> Client ---
     ConnectAccepted = 128,

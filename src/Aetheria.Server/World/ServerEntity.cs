@@ -305,6 +305,9 @@ public sealed class ServerEntity
     public void AddEffect(EffectType type, float magnitude, uint expiresAtTick)
         => _effects.Add(new ActiveEffect(type, magnitude, expiresAtTick));
 
+    /// <summary>The timed effects currently running (party frames read these).</summary>
+    public IReadOnlyList<ActiveEffect> ActiveEffects => _effects;
+
     public bool HasEffect(EffectType type)
     {
         foreach (ActiveEffect e in _effects)

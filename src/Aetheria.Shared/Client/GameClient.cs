@@ -87,6 +87,12 @@ public sealed class GameClient
     public string PartyLeader { get; private set; } = string.Empty;
     public int PartySize { get; private set; }
     public string? PendingInviteFrom { get; private set; }
+
+    /// <summary>The party roster with LIVE vitals and buffs (party frames feed on this).</summary>
+    public IReadOnlyList<PartyMemberInfo> PartyMembers { get; private set; } = [];
+
+    /// <summary>Forget the pending invite (the player answered the dialog).</summary>
+    public void ClearPendingInvite() => PendingInviteFrom = null;
     public string LastInstanceMessage { get; private set; } = string.Empty;
     public bool InInstance { get; private set; }
 
@@ -184,6 +190,8 @@ public sealed class GameClient
     public void SendPartyRespond(bool accept) => Send(new PartyRespond(accept));
 
     public void SendPartyLeave() => Send(new PartyLeave());
+
+    public void SendPartyKick(int targetEntityId) => Send(new PartyKick(targetEntityId));
 
     public void SendEnterInstance(byte instanceDefId) => Send(new EnterInstance(instanceDefId));
 
@@ -405,7 +413,8 @@ public sealed class GameClient
                 case MessageType.PartyState:
                     PartyState partyState = PartyState.Read(ref reader);
                     PartyLeader = partyState.LeaderName;
-                    PartySize = partyState.MemberNames.Count;
+                    PartyMembers = partyState.Members;
+                    PartySize = partyState.Members.Count;
                     break;
 
                 case MessageType.PartyInviteNotice:
@@ -610,6 +619,8 @@ public sealed class GameClient
     private void Send(PartyInvite msg) => SendWith(msg.Write);
     private void Send(PartyRespond msg) => SendWith(msg.Write);
     private void Send(PartyLeave msg) => SendWith(msg.Write);
+
+    private void Send(PartyKick msg) => SendWith(msg.Write);
     private void Send(EnterInstance msg) => SendWith(msg.Write);
     private void Send(LeaveInstance msg) => SendWith(msg.Write);
     private void Send(Ping msg) => SendWith(msg.Write);

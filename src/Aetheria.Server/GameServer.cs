@@ -164,6 +164,7 @@ public sealed class GameServer
         if (_worlds.OpenWorld.Tick % 10 == 0)
         {
             BroadcastPlayerState();
+            BroadcastPartyVitals(); // live HP/mana for the party frames
         }
 
         // Periodic durability flush: capture every online character + bank and save.
@@ -340,6 +341,10 @@ public sealed class GameServer
                         SendSelfState(peer, session); // gold and bags changed
                     }
 
+                    break;
+
+                case MessageType.PartyKick:
+                    HandlePartyKick(peer, PartyKick.Read(ref reader));
                     break;
 
                 case MessageType.ChatSend:
@@ -794,16 +799,85 @@ public sealed class GameServer
 
         string leaderName = _sessions.TryGetValue(new PeerId(party.Leader), out PlayerSession? ls)
             ? ls.Name : "?";
-        var names = new List<string>(party.Count);
+        uint tick = _worlds.OpenWorld.Tick;
+        var members = new List<PartyMemberInfo>(party.Count);
         foreach (int member in party.Members)
         {
-            if (_sessions.TryGetValue(new PeerId(member), out PlayerSession? ms))
+            if (!_sessions.TryGetValue(new PeerId(member), out PlayerSession? ms) ||
+                !TryGetEntity(ms, out ServerEntity? body))
             {
-                names.Add(ms.Name);
+                continue;
             }
+
+            var info = new PartyMemberInfo
+            {
+                Name = ms.Name,
+                EntityId = body!.Id,
+                ClassId = body.ClassId,
+                Level = (byte)System.Math.Clamp(body.Level, 1, 255),
+                Health = body.Health,
+                MaxHealth = body.EffectiveMaxHealth,
+                Resource = (int)body.CurrentResource,
+                MaxResource = body.EffectiveMaxResource,
+            };
+
+            // Timed buffs, with their remaining seconds — the frames draw them as icons.
+            var effects = new List<(byte, float)>();
+            foreach (ActiveEffect e in body.ActiveEffects)
+            {
+                if (e.ExpiresAtTick > tick)
+                {
+                    effects.Add(((byte)e.Type, (e.ExpiresAtTick - tick) * SimulationConstants.TickDelta));
+                }
+            }
+
+            info.Effects = effects.ToArray();
+            members.Add(info);
         }
 
-        Send(peer, new PartyState(leaderName, names));
+        Send(peer, new PartyState(leaderName, members));
+    }
+
+    /// <summary>Live vitals for the party frames: re-send the roster a few times per second.</summary>
+    private void BroadcastPartyVitals()
+    {
+        foreach (PeerId peer in _sessions.Keys)
+        {
+            if (_parties.GetParty(peer.Value) is not null)
+            {
+                SendPartyStateTo(peer);
+            }
+        }
+    }
+
+    private void HandlePartyKick(PeerId peer, PartyKick kick)
+    {
+        Party? party = _parties.GetParty(peer.Value);
+        if (party is null || party.Leader != peer.Value)
+        {
+            return; // only the leader throws people out
+        }
+
+        // Find the member session owning that entity.
+        foreach (int member in party.Members)
+        {
+            var memberPeer = new PeerId(member);
+            if (member != peer.Value &&
+                _sessions.TryGetValue(memberPeer, out PlayerSession? ms) && ms.EntityId == kick.TargetEntityId)
+            {
+                Party? left = _parties.Leave(member);
+                Send(memberPeer, new PartyState(string.Empty, []));
+                if (left != null)
+                {
+                    foreach (int rest in left.Members)
+                    {
+                        SendPartyStateTo(new PeerId(rest));
+                    }
+                }
+
+                return;
+            }
+        }
     }
 
     // -------------------------------------------------------------- Instances

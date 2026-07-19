@@ -120,6 +120,7 @@ namespace Aetheria.UnityClient
         private readonly HashSet<int> _seenThisFrame = new HashSet<int>();
         private IsoCameraRig _cameraRig;
         private int _targetId = -1;
+        private bool _targetHostile; // stance & auto-attack only apply to hostile targets
         private float _inputTimer;
         private float _lastFacing;
         private int _nearbyCorpseId = -1;
@@ -387,7 +388,7 @@ namespace Aetheria.UnityClient
             if (_client.EntityId.HasValue &&
                 _views.TryGetValue(_client.EntityId.Value, out stanceView) && stanceView != null)
             {
-                stanceView.CombatStance = _targetId >= 0;
+                stanceView.CombatStance = _targetId >= 0 && _targetHostile;
             }
             FindNearbyCorpse();
             FindNearbyBank();
@@ -1013,7 +1014,8 @@ namespace Aetheria.UnityClient
             }
         }
 
-        /// <summary>Left-click: select the hostile under the cursor and start fighting it.</summary>
+        /// <summary>Left-click: SELECT whatever is under the cursor — a hostile becomes the
+        /// attack target; a friendly player or an NPC is just targeted (no aggression).</summary>
         private void HandleLeftClick()
         {
             if (_client.OpenCorpseId >= 0) { return; }
@@ -1022,11 +1024,33 @@ namespace Aetheria.UnityClient
             if (!_client.TryGetSelf(out self)) { return; }
 
             EntitySnapshot? picked = PickEntityUnderMouse(e =>
-                (e.Kind == EntityKind.Monster ||
-                 (e.Kind == EntityKind.Player && e.Faction != self.Faction) ||
-                 e.Id == _client.DuelOpponentId) && e.Id != self.Id);
+                e.Id != self.Id &&
+                (e.Kind == EntityKind.Monster || e.Kind == EntityKind.Player || e.Kind == EntityKind.Npc));
 
-            SetAttackIntent(picked?.Id ?? -1); // tap on the ground clears the target, WoW-style
+            if (picked == null)
+            {
+                _targetHostile = false;
+                SetAttackIntent(-1); // tap on the ground clears the target, WoW-style
+                return;
+            }
+
+            EntitySnapshot target = picked.Value;
+            bool hostile = target.Kind == EntityKind.Monster ||
+                           (target.Kind == EntityKind.Player && target.Faction != self.Faction) ||
+                           target.Id == _client.DuelOpponentId;
+
+            if (hostile)
+            {
+                _targetHostile = true;
+                SetAttackIntent(target.Id);
+            }
+            else
+            {
+                // Friendly selection: target frame + ring, but no attack order.
+                _targetHostile = false;
+                _targetId = target.Id;
+                _client.SendAttackTarget(0);
+            }
         }
 
         /// <summary>
@@ -1036,6 +1060,7 @@ namespace Aetheria.UnityClient
         private void SetAttackIntent(int targetId)
         {
             _targetId = targetId;
+            if (targetId >= 0) { _targetHostile = true; } // every attack intent is hostile by definition
             _client.SendAttackTarget(targetId < 0 ? 0 : targetId);
         }
 
@@ -1281,6 +1306,7 @@ namespace Aetheria.UnityClient
                 case HudConfig.Frame.Messages: return new Rect(12 + o.x, VirtH - 200 + o.y, 480, 160);
                 case HudConfig.Frame.Minimap: return new Rect(VirtW - 196 + o.x, 8 + o.y, 188, 226);
                 case HudConfig.Frame.QuestTracker: return new Rect(VirtW - 236 + o.x, 232 + o.y, 228, 66);
+                case HudConfig.Frame.PartyFrames: return new Rect(12 + o.x, 116 + o.y, 180, 4 * 64);
                 case HudConfig.Frame.CharSheet: return new Rect(16 + o.x, 128 + o.y, 342, 396);
                 case HudConfig.Frame.Bags:
                 {
@@ -1317,7 +1343,9 @@ namespace Aetheria.UnityClient
             DrawBankPrompt();
             DrawMerchantPrompt();
             DrawPlayerFrame();
+            DrawPartyFrames();
             DrawTargetFrame();
+            DrawInviteDialog();
             DrawXpBar();
             DrawActionBar();
             DrawMessages();
@@ -1915,11 +1943,195 @@ namespace Aetheria.UnityClient
 
         private Color ResourceColor()
         {
-            switch (_classId)
+            return ResourceColorFor(_classId);
+        }
+
+        private static Color ResourceColorFor(byte classId)
+        {
+            switch (classId)
             {
-                case 1: return new Color(0.85f, 0.20f, 0.20f);
-                case 2: return new Color(0.25f, 0.45f, 0.95f);
-                default: return new Color(0.95f, 0.85f, 0.25f);
+                case 1: return new Color(0.85f, 0.20f, 0.20f);  // rage
+                case 2: return new Color(0.25f, 0.45f, 0.95f);  // mana
+                default: return new Color(0.95f, 0.85f, 0.25f); // energy
+            }
+        }
+
+        // ------------------------------------------------------- Party frames
+
+        private int _partyMenuFor = -1; // entity id whose frame menu is open
+        private Vector2 _partyMenuPos;
+
+        /// <summary>French label for a timed effect type (party frame buff icons).</summary>
+        private static string EffectLabel(byte type)
+        {
+            switch (type)
+            {
+                case 3: return "Attaque augmentée";
+                case 4: return "Défense augmentée";
+                case 5: return "Vitesse augmentée";
+                case 6: return "Régénération";
+                default: return "Effet";
+            }
+        }
+
+        private static string EffectLetter(byte type)
+        {
+            switch (type)
+            {
+                case 3: return "A";
+                case 4: return "D";
+                case 5: return "V";
+                case 6: return "R";
+                default: return "?";
+            }
+        }
+
+        /// <summary>WoW party frames: one rectangle per member (never yourself) — live HP and
+        /// resource, buffs with their time left, right-click for actions. Movable in layout mode.</summary>
+        private void DrawPartyFrames()
+        {
+            IReadOnlyList<PartyMemberInfo> members = _client.PartyMembers;
+            if (members == null || members.Count <= 1) { return; }
+
+            Rect area = FrameRect(HudConfig.Frame.PartyFrames);
+            int selfId = _client.EntityId ?? -1;
+            float y = area.y;
+            foreach (PartyMemberInfo m in members)
+            {
+                if (m.EntityId == selfId) { continue; } // your own frame covers you
+
+                var frame = new Rect(area.x, y, area.width, 58);
+                WowUi.Panel(frame);
+
+                bool isLeader = m.Name == _client.PartyLeader;
+                WowUi.Gold(new Rect(frame.x + 8, frame.y + 3, frame.width - 16, 16),
+                    "<size=11>" + (isLeader ? "★ " : "") + m.Name +
+                    "  <color=#909090><size=9>niv." + m.Level + "</size></color></size>");
+
+                float hpFill = m.MaxHealth > 0 ? m.Health / (float)m.MaxHealth : 0f;
+                DrawBar(new Rect(frame.x + 8, frame.y + 21, frame.width - 16, 12), hpFill,
+                    new Color(0.20f, 0.75f, 0.25f), m.Health + " / " + m.MaxHealth);
+                float resFill = m.MaxResource > 0 ? m.Resource / (float)m.MaxResource : 0f;
+                DrawBar(new Rect(frame.x + 8, frame.y + 35, frame.width - 16, 8), resFill,
+                    ResourceColorFor(m.ClassId), "");
+
+                // Buff icons with remaining time on hover.
+                for (int b = 0; b < m.Effects.Length && b < 8; b++)
+                {
+                    var cell = new Rect(frame.x + 8 + (b * 15f), frame.y + 45, 13, 13);
+                    WowUi.Slot(cell);
+                    GUI.Label(cell, "<size=8><color=#80d0ff>" + EffectLetter(m.Effects[b].Type) + "</color></size>",
+                        RichCentered());
+                    if (cell.Contains(Event.current.mousePosition))
+                    {
+                        _tooltip = "<b>" + EffectLabel(m.Effects[b].Type) + "</b>\n<color=#a0a0a0>" +
+                            Mathf.CeilToInt(m.Effects[b].Seconds) + " s restantes</color>";
+                    }
+                }
+
+                // Clicks on the frame: LEFT = target them, RIGHT = the actions menu.
+                Event e = Event.current;
+                if (e.type == EventType.MouseDown && frame.Contains(e.mousePosition))
+                {
+                    if (e.button == 0)
+                    {
+                        _targetId = m.EntityId; // friendly selection: no attack intent
+                        _targetHostile = false;
+                        _client.SendAttackTarget(0);
+                    }
+                    else if (e.button == 1)
+                    {
+                        _partyMenuFor = m.EntityId;
+                        _partyMenuPos = new Vector2(frame.xMax + 4, frame.y);
+                    }
+
+                    e.Use();
+                }
+
+                y += 64f;
+            }
+
+            DrawPartyFrameMenu();
+        }
+
+        private void DrawPartyFrameMenu()
+        {
+            if (_partyMenuFor < 0) { return; }
+
+            PartyMemberInfo member = null;
+            foreach (PartyMemberInfo m in _client.PartyMembers)
+            {
+                if (m.EntityId == _partyMenuFor) { member = m; }
+            }
+
+            if (member == null) { _partyMenuFor = -1; return; }
+
+            bool iAmLeader = _client.PartyLeader == _name;
+            float h = 12 + 26 + 26 + (iAmLeader ? 26 : 0) + 26;
+            var win = new Rect(_partyMenuPos.x, _partyMenuPos.y, 170, h);
+            WowUi.Panel(win);
+            float y = win.y + 6;
+
+            if (GUI.Button(new Rect(win.x + 8, y, win.width - 16, 22), "Cibler"))
+            {
+                _targetId = member.EntityId;
+                _targetHostile = false;
+                _client.SendAttackTarget(0);
+                _partyMenuFor = -1;
+            }
+
+            y += 26;
+            if (GUI.Button(new Rect(win.x + 8, y, win.width - 16, 22), "Inspecter"))
+            {
+                _client.SendInspect(member.EntityId);
+                _partyMenuFor = -1;
+            }
+
+            y += 26;
+            if (iAmLeader)
+            {
+                if (GUI.Button(new Rect(win.x + 8, y, win.width - 16, 22), "Expulser du groupe"))
+                {
+                    _client.SendPartyKick(member.EntityId);
+                    _partyMenuFor = -1;
+                }
+
+                y += 26;
+            }
+
+            if (GUI.Button(new Rect(win.x + 8, y, win.width - 16, 22), "Fermer"))
+            {
+                _partyMenuFor = -1;
+            }
+
+            // Click anywhere else: the menu folds.
+            Event e = Event.current;
+            if (e.type == EventType.MouseDown && !win.Contains(e.mousePosition))
+            {
+                _partyMenuFor = -1;
+            }
+        }
+
+        /// <summary>WoW-style invite dialog: Accepter / Refuser, front and centre.</summary>
+        private void DrawInviteDialog()
+        {
+            if (string.IsNullOrEmpty(_client.PendingInviteFrom)) { return; }
+
+            var win = new Rect((VirtW / 2f) - 150, VirtH * 0.24f, 300, 100);
+            WowUi.Panel(win);
+            WowUi.GoldCentered(new Rect(win.x, win.y + 12, win.width, 20),
+                "<b>" + _client.PendingInviteFrom + "</b> t'invite dans un groupe");
+
+            if (WowUi.Button(new Rect(win.x + 18, win.y + 52, 126, 32), "Accepter"))
+            {
+                _client.SendPartyRespond(true);
+                _client.ClearPendingInvite();
+            }
+
+            if (WowUi.Button(new Rect(win.x + win.width - 144, win.y + 52, 126, 32), "Refuser"))
+            {
+                _client.SendPartyRespond(false);
+                _client.ClearPendingInvite();
             }
         }
 
@@ -3255,32 +3467,42 @@ namespace Aetheria.UnityClient
                 }
             }
 
-            // Money line: mine is editable (copper amount), theirs is display-only.
+            // Money line: mine is THREE WoW fields (gold / silver / copper); theirs shows coins.
             float my = area.y + 26 + (TradeSlots * 33f) + 4f;
             if (mine)
             {
-                GUI.Label(new Rect(area.x + 8, my + 3, 48, 18), "<size=10>Argent :</size>", Rich());
-                string typed = GUI.TextField(new Rect(area.x + 58, my, 66, 20), _myOfferGold.ToString());
-                int parsed;
-                if (int.TryParse(typed, out parsed) && parsed != _myOfferGold)
-                {
-                    _myOfferGold = Mathf.Clamp(parsed, 0, _client.Gold);
-                    PushOffer();
-                }
-                else if (typed.Length == 0 && _myOfferGold != 0)
-                {
-                    _myOfferGold = 0;
-                    PushOffer();
-                }
+                int gold = _myOfferGold / 10000;
+                int silver = _myOfferGold % 10000 / 100;
+                int copper = _myOfferGold % 100;
 
-                GUI.Label(new Rect(area.x + 130, my + 3, area.width - 138, 18),
-                    "<size=10>= " + FormatMoney(_myOfferGold) + "</size>", Rich());
+                float x = area.x + 8;
+                int newGold = MoneyField(ref x, my, gold, "<color=#ffd700>●</color>");
+                int newSilver = MoneyField(ref x, my, silver, "<color=#c8c8d0>●</color>");
+                int newCopper = MoneyField(ref x, my, copper, "<color=#c07940>●</color>");
+
+                int total = (newGold * 10000) + (newSilver * 100) + newCopper;
+                if (total != _myOfferGold)
+                {
+                    _myOfferGold = Mathf.Clamp(total, 0, _client.Gold);
+                    PushOffer();
+                }
             }
             else
             {
                 GUI.Label(new Rect(area.x + 8, my + 3, area.width - 16, 18),
                     "<size=10>Argent : " + FormatMoney(_client.TradeTheirGold) + "</size>", Rich());
             }
+        }
+
+        /// <summary>One denomination field (number + coin dot); advances the x cursor.</summary>
+        private int MoneyField(ref float x, float y, int value, string coin)
+        {
+            string typed = GUI.TextField(new Rect(x, y, 38, 20), value.ToString());
+            x += 40f;
+            GUI.Label(new Rect(x, y + 2, 16, 18), coin, Rich());
+            x += 18f;
+            int parsed;
+            return int.TryParse(typed, out parsed) ? Mathf.Max(0, parsed) : 0;
         }
 
         private void DrawInspectWindow()

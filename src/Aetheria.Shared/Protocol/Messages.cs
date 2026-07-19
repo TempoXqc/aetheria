@@ -699,43 +699,111 @@ public readonly struct PartyInviteNotice
     public static PartyInviteNotice Read(ref PacketReader r) => new(r.ReadString());
 }
 
+/// <summary>Leader-only: throw a member out of the party (by entity id).</summary>
+public readonly struct PartyKick
+{
+    public readonly int TargetEntityId;
+
+    public PartyKick(int targetEntityId) => TargetEntityId = targetEntityId;
+
+    public void Write(PacketWriter w)
+    {
+        w.WriteByte((byte)MessageType.PartyKick);
+        w.WriteInt(TargetEntityId);
+    }
+
+    public static PartyKick Read(ref PacketReader r) => new(r.ReadInt());
+}
+
+/// <summary>One party member as the party frames need it: identity, LIVE vitals, active buffs.</summary>
+public sealed class PartyMemberInfo
+{
+    public string Name = string.Empty;
+    public int EntityId;
+    public byte ClassId;
+    public byte Level;
+    public int Health;
+    public int MaxHealth;
+    public int Resource;
+    public int MaxResource;
+
+    /// <summary>Active timed effects: (effect type, seconds remaining).</summary>
+    public (byte Type, float Seconds)[] Effects = System.Array.Empty<(byte, float)>();
+}
+
 /// <summary>
-/// The client's current party roster (names, leader first). An empty roster means "not in a party".
-/// Sent to every member whenever the roster changes.
+/// The client's current party: roster + LIVE vitals and buffs (leader first). An empty roster
+/// means "not in a party". Sent on every roster change AND a few times per second while grouped,
+/// so the party frames track health/mana in real time even across the map.
 /// </summary>
 public readonly struct PartyState
 {
     public readonly string LeaderName;
-    public readonly IReadOnlyList<string> MemberNames;
+    public readonly IReadOnlyList<PartyMemberInfo> Members;
 
-    public PartyState(string leaderName, IReadOnlyList<string> memberNames)
+    public PartyState(string leaderName, IReadOnlyList<PartyMemberInfo> members)
     {
         LeaderName = leaderName;
-        MemberNames = memberNames;
+        Members = members;
     }
 
     public void Write(PacketWriter w)
     {
         w.WriteByte((byte)MessageType.PartyState);
         w.WriteString(LeaderName);
-        w.WriteUInt((uint)MemberNames.Count);
-        for (int i = 0; i < MemberNames.Count; i++)
+        w.WriteByte((byte)Members.Count);
+        for (int i = 0; i < Members.Count; i++)
         {
-            w.WriteString(MemberNames[i]);
+            PartyMemberInfo m = Members[i];
+            w.WriteString(m.Name);
+            w.WriteInt(m.EntityId);
+            w.WriteByte(m.ClassId);
+            w.WriteByte(m.Level);
+            w.WriteInt(m.Health);
+            w.WriteInt(m.MaxHealth);
+            w.WriteInt(m.Resource);
+            w.WriteInt(m.MaxResource);
+            w.WriteByte((byte)m.Effects.Length);
+            for (int e = 0; e < m.Effects.Length; e++)
+            {
+                w.WriteByte(m.Effects[e].Type);
+                w.WriteFloat(m.Effects[e].Seconds);
+            }
         }
     }
 
     public static PartyState Read(ref PacketReader r)
     {
         string leader = r.ReadString();
-        uint count = r.ReadUInt();
-        var names = new string[count];
-        for (uint i = 0; i < count; i++)
+        int count = r.ReadByte();
+        var members = new PartyMemberInfo[count];
+        for (int i = 0; i < count; i++)
         {
-            names[i] = r.ReadString();
+            var m = new PartyMemberInfo
+            {
+                Name = r.ReadString(),
+                EntityId = r.ReadInt(),
+                ClassId = r.ReadByte(),
+                Level = r.ReadByte(),
+                Health = r.ReadInt(),
+                MaxHealth = r.ReadInt(),
+                Resource = r.ReadInt(),
+                MaxResource = r.ReadInt(),
+            };
+
+            int effects = r.ReadByte();
+            m.Effects = new (byte, float)[effects];
+            for (int e = 0; e < effects; e++)
+            {
+                byte type = r.ReadByte();
+                float seconds = r.ReadFloat();
+                m.Effects[e] = (type, seconds);
+            }
+
+            members[i] = m;
         }
 
-        return new PartyState(leader, names);
+        return new PartyState(leader, members);
     }
 }
 
