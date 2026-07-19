@@ -294,13 +294,30 @@ public static class HostMode
                 File.Copy(officialAddress, Path.Combine(stage, "launcher.txt"), overwrite: true);
             }
 
+            // The DOUBLE-CLICKABLE entry: there is no .exe on purpose (the game launches
+            // through Microsoft's signed dotnet host) — the .bat is what friends click.
+            File.WriteAllText(Path.Combine(stage, "Jouer.bat"),
+                "@echo off\r\n" +
+                "title Aetheria\r\n" +
+                "cd /d \"%~dp0\"\r\n" +
+                "rem Deja lance ? On rouvre juste la page.\r\n" +
+                "powershell -NoProfile -Command \"try { $null = Invoke-WebRequest http://localhost:5180 -UseBasicParsing -TimeoutSec 1; exit 0 } catch { exit 1 }\" >nul 2>&1\r\n" +
+                "if not errorlevel 1 (\r\n" +
+                "    start msedge --app=http://localhost:5180 2>nul || start http://localhost:5180\r\n" +
+                "    exit /b 0\r\n" +
+                ")\r\n" +
+                "dotnet Launcher.dll\r\n" +
+                "if errorlevel 1 pause\r\n",
+                new UTF8Encoding(false));
+
             File.WriteAllText(Path.Combine(stage, "LISEZMOI.txt"),
                 "AETHERIA — Launcher\r\n" +
                 "===================\r\n\r\n" +
                 "1) Installe .NET 10 (une fois) : https://dotnet.microsoft.com/download\r\n" +
-                "2) Double-clique Launcher.exe\r\n" +
-                "3) Entre ton compte + mot de passe (créés au premier INSTALLER > JOUER)\r\n" +
-                "4) Clique INSTALLER : le jeu se télécharge tout seul, puis JOUER.\r\n\r\n" +
+                "   (choisis « .NET Runtime » ou « SDK », version 10, Windows x64)\r\n" +
+                "2) Double-clique JOUER.BAT  ← c'est LUI qu'on lance, pas Launcher.dll\r\n" +
+                "3) Le launcher s'ouvre dans le navigateur : clique INSTALLER, puis JOUER.\r\n" +
+                "4) Compte + mot de passe : bouton roue dentée (⚙) à côté de JOUER.\r\n\r\n" +
                 "Les mises à jour sont automatiques : quand le bouton dit\r\n" +
                 "« Mettre à jour », un clic suffit.\r\n",
                 new UTF8Encoding(false));
