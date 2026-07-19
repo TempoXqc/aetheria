@@ -3424,7 +3424,7 @@ namespace Aetheria.UnityClient
         {
             if (_tooltip != null || _menuOpen || _chatInputActive) { return; }
 
-            EntitySnapshot? hovered = PickEntityUnderMouse(e => e.Kind != EntityKind.Npc);
+            EntitySnapshot? hovered = PickEntityUnderMouse(_ => true);
             if (hovered == null) { return; }
 
             EntitySnapshot e = hovered.Value;
@@ -3459,6 +3459,21 @@ namespace Aetheria.UnityClient
                     sb.Append("<b><color=#c0c0c0>").Append(string.IsNullOrEmpty(e.Name) ? "Dépouille" : e.Name)
                       .Append("</color></b>");
                     sb.Append("\n<color=#a0a0a0>Clic droit : fouiller</color>");
+                    break;
+
+                case EntityKind.Npc:
+                    sb.Append("<b><color=#f0d060>").Append(e.Name).Append("</color></b>");
+                    string role = e.RaceId switch
+                    {
+                        1 => "Banque — approche-toi pour ouvrir ton coffre",
+                        2 => "Donneur de quêtes — clic droit pour lui parler",
+                        4 => "Marchande — " + KeyLabel(HudConfig.Bind.Interact) + " pour commercer",
+                        5 => "Portail d'instance — avance dedans (groupe de 2 minimum)",
+                        6 => "Pierre de téléportation — à 2 près d'elle, le groupe est invoqué",
+                        7 => "Aubergiste — " + KeyLabel(HudConfig.Bind.Interact) + " pour en faire ton foyer",
+                        _ => "Villageois",
+                    };
+                    sb.Append("\n<color=#a0a0a0>").Append(role).Append("</color>");
                     break;
 
                 default:
@@ -3515,8 +3530,8 @@ namespace Aetheria.UnityClient
             }
             else
             {
-                // No anchor (spells, world hover): the classic bottom-right corner.
-                win = new Rect(VirtW - W - 12, VirtH - h - 12, W, h);
+                // No anchor (spells, world hover): bottom-right, ABOVE the micro-bar.
+                win = new Rect(VirtW - W - 12, VirtH - h - 72, W, h);
                 openLeft = true;
             }
 
