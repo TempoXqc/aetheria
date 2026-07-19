@@ -2091,6 +2091,26 @@ namespace Aetheria.UnityClient
             DrawErrorsAt(new Rect((VirtW / 2f) - 240, VirtH - 188, 480, 30));
         }
 
+        private static string RaceNameOf(byte raceId)
+        {
+            for (int i = 0; i < Races.Length; i++)
+            {
+                if (Races[i].id == raceId) { return StripParen(Races[i].label); }
+            }
+
+            return "";
+        }
+
+        private static string ClassNameOf(byte classId)
+        {
+            for (int i = 0; i < Classes.Length; i++)
+            {
+                if (Classes[i].id == classId) { return StripParen(Classes[i].label); }
+            }
+
+            return "";
+        }
+
         /// <summary>"Warrior (Rage)" → "Warrior" — labels without their parenthetical detail.</summary>
         private static string StripParen(string label)
         {
@@ -3428,52 +3448,62 @@ namespace Aetheria.UnityClient
             if (hovered == null) { return; }
 
             EntitySnapshot e = hovered.Value;
+            EntitySnapshot selfSnap;
+            Faction myFaction = _client.TryGetSelf(out selfSnap) ? selfSnap.Faction : Faction.Neutral;
+
+            // WoW's hover card: NAME, title, level, allegiance — facts only, never instructions.
             var sb = new System.Text.StringBuilder();
             switch (e.Kind)
             {
                 case EntityKind.Monster:
                     sb.Append("<b><color=#ffd0a0>").Append(e.Name).Append("</color></b>");
-                    sb.Append("\n<color=#a0a0a0>Niveau ").Append(e.Level).Append("</color>");
+                    sb.Append("\n<color=#ffffff>Niveau ").Append(e.Level).Append("</color>");
                     sb.Append("\nPV ").Append(e.Health).Append('/').Append(e.MaxHealth);
 
-                    // QUEST HINT: this monster is the active quest's target — say it plainly.
                     Aetheria.Shared.Data.QuestDefinition? hunted = ActiveQuestFor(e.RaceId);
                     if (hunted != null)
                     {
-                        sb.Append("\n<color=#ffd100>Objectif de quête : ").Append(hunted.Name)
-                          .Append(" (").Append(Mathf.Min(_client.QuestKills, hunted.RequiredKills))
-                          .Append('/').Append(hunted.RequiredKills).Append(")</color>");
+                        sb.Append("\n<color=#ffd100>").Append(hunted.Name)
+                          .Append(" : ").Append(Mathf.Min(_client.QuestKills, hunted.RequiredKills))
+                          .Append('/').Append(hunted.RequiredKills).Append("</color>");
                     }
 
                     break;
 
                 case EntityKind.Player when e.Id != (_client.EntityId ?? -1):
-                    sb.Append("<b><color=#a0c8ff>").Append(e.Name).Append("</color></b>");
-                    sb.Append("\n<color=#a0a0a0>Niveau ").Append(e.Level)
-                      .Append(" · ").Append(e.Faction == Faction.Horde ? "Horde" : "Alliance").Append("</color>");
-                    sb.Append("\nPV ").Append(e.Health).Append('/').Append(e.MaxHealth);
+                    string pColor = e.Faction == myFaction ? "#a0c8ff" : "#ff6060";
+                    sb.Append("<b><color=").Append(pColor).Append('>').Append(e.Name).Append("</color></b>");
+                    sb.Append("\n<color=#ffffff>Niveau ").Append(e.Level).Append(' ')
+                      .Append(RaceNameOf(e.RaceId)).Append(' ').Append(ClassNameOf(e.ClassId)).Append("</color>");
+                    sb.Append('\n').Append(e.Faction == Faction.Horde
+                        ? "<color=#ff6a5e>Horde</color>" : "<color=#4a7bd0>Alliance</color>");
                     break;
 
                 case EntityKind.Corpse:
                 case EntityKind.MonsterCorpse:
                     sb.Append("<b><color=#c0c0c0>").Append(string.IsNullOrEmpty(e.Name) ? "Dépouille" : e.Name)
                       .Append("</color></b>");
-                    sb.Append("\n<color=#a0a0a0>Clic droit : fouiller</color>");
                     break;
 
                 case EntityKind.Npc:
-                    sb.Append("<b><color=#f0d060>").Append(e.Name).Append("</color></b>");
-                    string role = e.RaceId switch
+                    sb.Append("<b><color=#40d040>").Append(e.Name).Append("</color></b>");
+                    string title = e.RaceId switch
                     {
-                        1 => "Banque — approche-toi pour ouvrir ton coffre",
-                        2 => "Donneur de quêtes — clic droit pour lui parler",
-                        4 => "Marchande — " + KeyLabel(HudConfig.Bind.Interact) + " pour commercer",
-                        5 => "Portail d'instance — avance dedans (groupe de 2 minimum)",
-                        6 => "Pierre de téléportation — à 2 près d'elle, le groupe est invoqué",
-                        7 => "Aubergiste — " + KeyLabel(HudConfig.Bind.Interact) + " pour en faire ton foyer",
-                        _ => "Villageois",
+                        1 => "Banque",
+                        4 => "Marchande de fournitures",
+                        5 => "Portail d'instance",
+                        6 => "Pierre de rencontre",
+                        7 => "Aubergiste",
+                        3 => "Artisan",
+                        _ => "",
                     };
-                    sb.Append("\n<color=#a0a0a0>").Append(role).Append("</color>");
+                    if (title.Length > 0) { sb.Append("\n<color=#ffffff>").Append(title).Append("</color>"); }
+                    if (e.RaceId is 2 or 3 or 4 or 7)
+                    {
+                        sb.Append("\n<color=#ffffff>Niveau ").Append(e.Level).Append("</color>");
+                    }
+
+                    sb.Append('\n').Append("<color=#a0a0a0>").Append(ZoneName(e)).Append("</color>");
                     break;
 
                 default:
