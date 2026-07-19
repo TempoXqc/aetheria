@@ -149,6 +149,110 @@ namespace Aetheria.UnityClient
     }
 
     /// <summary>
+    /// Loader for the Quaternius "Fantasy Props MegaKit" (CC0, Assets/Resources/Props): market
+    /// stalls, barrels, torches, anvils… spawned by name, height-normalised, textures wired by
+    /// their trim-atlas material names (MI_Trim_Metal → T_Trim_Metal_BaseColor…).
+    /// </summary>
+    public static class PropModels
+    {
+        private const string Root = "Props/";
+
+        private static readonly System.Collections.Generic.Dictionary<string, GameObject> Cache =
+            new System.Collections.Generic.Dictionary<string, GameObject>();
+        private static readonly System.Collections.Generic.Dictionary<string, Texture2D> TexCache =
+            new System.Collections.Generic.Dictionary<string, Texture2D>();
+        private static bool _checked;
+        private static bool _available;
+
+        public static bool Available
+        {
+            get
+            {
+                if (!_checked)
+                {
+                    _checked = true;
+                    _available = Load("Barrel") != null;
+                }
+
+                return _available;
+            }
+        }
+
+        private static GameObject Load(string name)
+        {
+            GameObject cached;
+            if (!Cache.TryGetValue(name, out cached))
+            {
+                cached = Resources.Load<GameObject>(Root + name);
+                Cache[name] = cached;
+            }
+
+            return cached;
+        }
+
+        public static GameObject Spawn(Transform parent, string name, Vector3 pos, float targetHeight, float yawDegrees)
+        {
+            GameObject prefab = Load(name);
+            if (prefab == null)
+            {
+                return null;
+            }
+
+            GameObject go = Object.Instantiate(prefab, parent, false);
+            go.name = name;
+            go.transform.localPosition = pos;
+            go.transform.localRotation = Quaternion.Euler(0f, yawDegrees, 0f);
+
+            float height = 0f;
+            foreach (Renderer r in go.GetComponentsInChildren<Renderer>(true))
+            {
+                float y = r.bounds.max.y - pos.y;
+                if (y > height) { height = y; }
+            }
+
+            if (height > 0.02f)
+            {
+                float k = targetHeight / height;
+                go.transform.localScale = new Vector3(k, k, k);
+            }
+
+            foreach (Renderer r in go.GetComponentsInChildren<Renderer>(true))
+            {
+                foreach (Material m in r.materials)
+                {
+                    if (m == null) { continue; }
+
+                    string n = m.name;
+                    Texture2D tex =
+                        n.Contains("Cloth") ? LoadTexture("T_Trim_Cloth_BaseColor") :
+                        n.Contains("Furniture") ? LoadTexture("T_Trim_Furniture_BaseColor") :
+                        n.Contains("Metal") ? LoadTexture("T_Trim_Metal_BaseColor") :
+                        LoadTexture("T_Trim_Props_BaseColor");
+                    if (tex != null)
+                    {
+                        m.mainTexture = tex;
+                        m.color = Color.white;
+                    }
+                }
+            }
+
+            return go;
+        }
+
+        private static Texture2D LoadTexture(string name)
+        {
+            Texture2D cached;
+            if (!TexCache.TryGetValue(name, out cached))
+            {
+                cached = Resources.Load<Texture2D>(Root + name);
+                TexCache[name] = cached;
+            }
+
+            return cached;
+        }
+    }
+
+    /// <summary>
     /// Static scenery for the open world, built from primitives to match the server's layout:
     /// the paved SANCTUARY with its standing stones and bank corner, a dirt path east to the
     /// goblin starter camp, and the WOLF FIELD to the west — golden wheat, fences and haystacks.
@@ -269,6 +373,58 @@ namespace Aetheria.UnityClient
                 new Color(0.20f, 0.12f, 0.10f));
 
             DressWithNature(r);
+            DressWithProps(r);
+        }
+
+        /// <summary>
+        /// PURE-VISUAL props (Fantasy Props MegaKit): a little market on the sanctuary plaza,
+        /// torches on the menhir ring, a smith's corner, a training dummy — and set dressing for
+        /// the goblin camp and the wolf farm. No-op when the kit isn't imported.
+        /// </summary>
+        private static void DressWithProps(Transform r)
+        {
+            if (!PropModels.Available)
+            {
+                return;
+            }
+
+            // Market row on the plaza's north edge, Northshire-style stalls with banners.
+            PropModels.Spawn(r, "Stall_Empty", new Vector3(-4.5f, 0f, 6.5f), 2.6f, 175f);
+            PropModels.Spawn(r, "Stall_Cart_Empty", new Vector3(-0.5f, 0f, 7.2f), 2.4f, 185f);
+            PropModels.Spawn(r, "Banner_1", new Vector3(-6.8f, 0f, 6.2f), 3.0f, 180f);
+            PropModels.Spawn(r, "Banner_2", new Vector3(1.8f, 0f, 7.0f), 3.0f, 180f);
+            PropModels.Spawn(r, "Barrel_Apples", new Vector3(-3.0f, 0f, 5.4f), 0.9f, 30f);
+            PropModels.Spawn(r, "FarmCrate_Apple", new Vector3(-2.1f, 0f, 5.8f), 0.5f, 70f);
+            PropModels.Spawn(r, "FarmCrate_Carrot", new Vector3(-1.4f, 0f, 5.3f), 0.5f, 120f);
+
+            // A smith's corner near the bank canopy.
+            PropModels.Spawn(r, "Anvil", new Vector3(-6.5f, 0f, -4.5f), 0.9f, 40f);
+            PropModels.Spawn(r, "Workbench", new Vector3(-7.6f, 0f, -3.2f), 1.0f, 100f);
+            PropModels.Spawn(r, "WeaponStand", new Vector3(-5.2f, 0f, -5.6f), 1.7f, 320f);
+            PropModels.Spawn(r, "Bucket_Wooden_1", new Vector3(-6.0f, 0f, -3.6f), 0.45f, 0f);
+
+            // Somewhere to sit, something to hit.
+            PropModels.Spawn(r, "Bench", new Vector3(4.8f, 0f, -5.6f), 0.85f, 205f);
+            PropModels.Spawn(r, "Dummy", new Vector3(7.2f, 0f, -3.8f), 2.0f, 250f);
+            PropModels.Spawn(r, "Barrel", new Vector3(5.9f, 0f, -6.4f), 0.9f, 90f);
+            PropModels.Spawn(r, "Crate_Wooden", new Vector3(6.6f, 0f, -6.0f), 0.7f, 15f);
+
+            // Torches on four of the menhirs' shoulders — the ring glows at the border.
+            PropModels.Spawn(r, "Torch_Metal", new Vector3(10f, 0f, 10f), 1.8f, 45f);
+            PropModels.Spawn(r, "Torch_Metal", new Vector3(-10f, 0f, 10f), 1.8f, 135f);
+            PropModels.Spawn(r, "Torch_Metal", new Vector3(-10f, 0f, -10f), 1.8f, 225f);
+            PropModels.Spawn(r, "Torch_Metal", new Vector3(10f, 0f, -10f), 1.8f, 315f);
+
+            // Goblin camp: a stew cauldron, a prisoner cage, plunder.
+            PropModels.Spawn(r, "Cauldron", new Vector3(25.4f, 0f, 10.2f), 1.0f, 0f);
+            PropModels.Spawn(r, "Cage_Small", new Vector3(28.6f, 0f, 11.6f), 1.4f, 200f);
+            PropModels.Spawn(r, "Chest_Wood", new Vector3(24.2f, 0f, 12.8f), 0.8f, 145f);
+
+            // Wolf farm: crates and a table by the haystacks.
+            PropModels.Spawn(r, "Crate_Wooden", new Vector3(-43.5f, 0f, 9f), 0.6f, 60f);
+            PropModels.Spawn(r, "Table_Large", new Vector3(-53f, 0f, -5.2f), 0.95f, 20f);
+            PropModels.Spawn(r, "Stool", new Vector3(-52.2f, 0f, -4.4f), 0.55f, 300f);
+            PropModels.Spawn(r, "Bucket_Wooden_1", new Vector3(-46.4f, 0f, -6.4f), 0.45f, 0f);
         }
 
         /// <summary>
