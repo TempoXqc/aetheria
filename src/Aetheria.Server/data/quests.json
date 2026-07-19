@@ -1,10 +1,37 @@
 [
-  { "id": 1, "name": "La menace gobeline",
+  {
+    "id": 1,
+    "name": "La menace gobeline",
     "description": "Les gobelins pillent nos champs et nos caravanes. Abats 10 Gobelins du camp à l'est, puis reviens me voir.",
     "turnInText": "Dix de moins ! Mais tant que leur roi respire, ils reviendront…",
-    "targetMonsterId": 1, "requiredKills": 10, "rewardXp": 150, "rewardGold": 5000, "nextQuestId": 2 },
-  { "id": 2, "name": "Le Roi des gobelins",
+    "targetMonsterId": 1,
+    "requiredKills": 10,
+    "rewardXp": 150,
+    "rewardGold": 5000,
+    "nextQuestId": 2
+  },
+  {
+    "id": 2,
+    "name": "Le Roi des gobelins",
     "description": "Leur roi se terre au fond du camp, gras de nos récoltes volées. Tranche la tête de cette vermine couronnée !",
     "turnInText": "Le roi est mort ! Le sanctuaire te doit une fière chandelle, héros.",
-    "targetMonsterId": 3, "requiredKills": 1, "rewardXp": 500, "rewardGold": 20000, "rewardItemId": 14, "nextQuestId": 0 }
+    "targetMonsterId": 3,
+    "requiredKills": 1,
+    "rewardXp": 500,
+    "rewardGold": 20000,
+    "rewardItemId": 14,
+    "nextQuestId": 0
+  },
+  {
+    "id": 3,
+    "name": "Nouvelle quête",
+    "description": "",
+    "turnInText": "",
+    "targetMonsterId": 1,
+    "requiredKills": 5,
+    "rewardXp": 100,
+    "rewardGold": 1000,
+    "rewardItemId": 0,
+    "nextQuestId": 0
+  }
 ]
