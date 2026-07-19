@@ -4,6 +4,9 @@ using Aetheria.Shared;
 using Aetheria.Shared.Data;
 using Aetheria.Shared.Net;
 
+// Accents in the launcher's log window: emit UTF-8 whatever the console codepage is.
+try { System.Console.OutputEncoding = System.Text.Encoding.UTF8; } catch (System.IO.IOException) { }
+
 int port = ParsePort(args);
 
 // Load content from the data/ folder next to the binary, falling back to built-in defaults.

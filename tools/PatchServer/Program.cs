@@ -15,6 +15,9 @@ using System.Text.Json;
 // installed and downloads ONLY the files that changed — no more re-sending whole builds.
 // ---------------------------------------------------------------------------------------------
 
+// Accents in the launcher's log window: emit UTF-8 whatever the console codepage is.
+try { Console.OutputEncoding = System.Text.Encoding.UTF8; } catch (IOException) { }
+
 const int Port = 27080;
 string root = FindRepoRootOrBase();
 string buildsDir = Path.Combine(root, "builds");

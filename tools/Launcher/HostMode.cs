@@ -557,6 +557,8 @@ public static class HostMode
                 CreateNoWindow = true,
                 RedirectStandardOutput = true,
                 RedirectStandardError = true,
+                StandardOutputEncoding = Encoding.UTF8,
+                StandardErrorEncoding = Encoding.UTF8,
             };
 
             Process process = Process.Start(psi)!;
