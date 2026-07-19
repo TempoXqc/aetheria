@@ -243,14 +243,14 @@ public static class HostMode
                 if (!await BuildHostBinaries()) { Fail("Compilation des serveurs échouée."); return; }
                 foreach (string channel in channels)
                 {
+                    // ALWAYS (re)start the published channel's realm: the freshly published
+                    // client and its server MUST speak the same protocol. If the realm wasn't
+                    // running (crashed, orphaned, never started), this brings it up too.
                     string realm = channel == "prod" ? "prod" : "tts";
-                    if (IsServerRunning(realm))
-                    {
-                        Log($"── Redémarrage du serveur « {realm} » (nouvelle version)…");
-                        ServerAction(realm, "stop");
-                        await Task.Delay(1500);
-                        ServerAction(realm, "start");
-                    }
+                    Log($"── Redémarrage du serveur « {realm} » (nouvelle version)…");
+                    ServerAction(realm, "stop");
+                    await Task.Delay(1500);
+                    Log($"[{realm}] {ServerAction(realm, "start")}");
                 }
 
                 _behind = 0;
