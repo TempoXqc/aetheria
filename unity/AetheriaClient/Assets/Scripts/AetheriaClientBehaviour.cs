@@ -149,6 +149,7 @@ namespace Aetheria.UnityClient
 
         // Drag & drop from the character-sheet bag.
         private ItemStack? _draggingItem;
+        private int _dragFromIndex = -1; // bag cell the dragged stack came from
         private string _lastDuelMessage = "";
         private string _lastTradeMessage = "";
 
@@ -287,7 +288,10 @@ namespace Aetheria.UnityClient
             // slot clicks) — the camera must not steer with it, and taps must not hit the world.
             if (Input.GetMouseButtonDown(0) || Input.GetMouseButtonDown(1))
             {
-                _uiPress = _sheetOpen && SheetWindowRect().Contains(GuiMouse());
+                Vector2 gm = GuiMouse();
+                _uiPress = (_sheetOpen && SheetWindowRect().Contains(gm)) ||
+                           (_bagsOpen && FrameRect(HudConfig.Frame.Bags).Contains(gm)) ||
+                           (_client.OpenCorpseId >= 0 && LootWindowRect().Contains(gm));
             }
             else if (!Input.GetMouseButton(0) && !Input.GetMouseButton(1) &&
                      !Input.GetMouseButtonUp(0) && !Input.GetMouseButtonUp(1))
@@ -295,8 +299,11 @@ namespace Aetheria.UnityClient
                 _uiPress = false;
             }
 
-            // Layout-edit mode: EVERY drag belongs to the frames — the camera must hold still.
-            if (_cameraRig != null) { _cameraRig.SuppressDrag = _uiPress || _layoutEditMode; }
+            // Layout-edit mode or an item drag: the camera must hold still.
+            if (_cameraRig != null)
+            {
+                _cameraRig.SuppressDrag = _uiPress || _layoutEditMode || _draggingItem != null;
+            }
 
             // The server's quest catalogue overrides the built-in defaults: quests written in
             // the Studio go live for every player without touching the client.
@@ -2085,9 +2092,10 @@ namespace Aetheria.UnityClient
         {
             string text = ItemTooltipCore(def, quantity);
 
-            // WoW comparison: an equippable hovered while ANOTHER piece sits in that slot shows
-            // the equipped piece beside it, plus the stat changes a swap would cause.
-            if (def.IsEquippable && _client != null)
+            // WoW comparison — HOLD SHIFT: the equipped piece appears beside the hovered one,
+            // plus the stat changes a swap would cause (green = gain, red = loss).
+            bool shift = Input.GetKey(KeyCode.LeftShift) || Input.GetKey(KeyCode.RightShift);
+            if (shift && def.IsEquippable && _client != null)
             {
                 IReadOnlyList<byte> gear = _client.EquipmentSlots;
                 byte equippedId = gear != null && (int)def.Slot < gear.Count ? gear[(int)def.Slot] : (byte)0;
@@ -2105,6 +2113,15 @@ namespace Aetheria.UnityClient
                     any |= AppendStatDelta(sb, def.HealthBonus - worn.HealthBonus, "PV");
                     if (!any) { sb.Append("\n<color=#a0a0a0>Aucun changement de stats</color>"); }
                     text = sb.ToString();
+                }
+            }
+            else if (!shift && def.IsEquippable && _client != null)
+            {
+                IReadOnlyList<byte> gear = _client.EquipmentSlots;
+                byte worn = gear != null && (int)def.Slot < gear.Count ? gear[(int)def.Slot] : (byte)0;
+                if (worn != 0 && worn != def.Id)
+                {
+                    text += "\n<size=9><color=#808080>Maj : comparer avec l'objet équipé</color></size>";
                 }
             }
 
@@ -2513,13 +2530,19 @@ namespace Aetheria.UnityClient
                 : "Tués : " + _client.QuestKills + " / " + q.RequiredKills);
         }
 
+        /// <summary>The loot window's rect (also used to keep clicks there off the camera).</summary>
+        private Rect LootWindowRect()
+        {
+            int rows = _client.OpenCorpseItems.Count + (_client.OpenCorpseGold > 0 ? 1 : 0);
+            float height = 74f + (rows * 26f) + 34f;
+            return new Rect((VirtW / 2f) - 140, (VirtH / 2f) - (height / 2f), 280, height);
+        }
+
         private void DrawLootWindow()
         {
             if (_client.OpenCorpseId < 0) { return; }
 
-            int rows = _client.OpenCorpseItems.Count + (_client.OpenCorpseGold > 0 ? 1 : 0);
-            float height = 74f + (rows * 26f) + 34f;
-            Rect win = new Rect((VirtW / 2f) - 140, (VirtH / 2f) - (height / 2f), 280, height);
+            Rect win = LootWindowRect();
             WowUi.Panel(win); // opaque, framed
             WowUi.GoldCentered(new Rect(win.x, win.y + 7, win.width, 18), "<b>Butin</b>");
 
@@ -2726,21 +2749,24 @@ namespace Aetheria.UnityClient
                 if (e.type == EventType.MouseDown && cell.Contains(e.mousePosition))
                 {
                     ItemDefinition def = Data.GetItem(stack.ItemId);
-                    if (e.button == 0 && def.Slot != EquipSlot.None && !_client.TradeActive)
+                    if (e.button == 0 && _draggingItem == null && !_client.TradeActive)
                     {
-                        _client.SendEquipItem(stack.ItemId, (byte)def.Slot); // wear it
+                        // LEFT hold = pick the item up: drop it on another cell to reorder,
+                        // on an ally to trade, or on the ground to let it go.
+                        _draggingItem = stack;
+                        _dragFromIndex = i;
                         e.Use();
                     }
-                    else if (e.button == 1 && _draggingItem == null && !_client.TradeActive)
+                    else if (e.button == 1 && def.Slot != EquipSlot.None && !_client.TradeActive)
                     {
-                        _draggingItem = stack; // right-button grab: drag to an ally or the ground
+                        _client.SendEquipItem(stack.ItemId, (byte)def.Slot); // RIGHT = wear it
                         e.Use();
                     }
                 }
             }
 
             GUI.Label(new Rect(win.x + 12, win.yMax - 24, w - 24, 18),
-                "<size=9><color=#909090>Clic : équiper · Clic droit : glisser</color></size>", Rich());
+                "<size=9><color=#909090>Clic droit : équiper · Glisser : ranger / échanger / poser</color></size>", Rich());
 
             // WoW backpack money bar: your coins, bottom-right of the bag.
             GUI.Label(new Rect(win.x + 12, win.yMax - 24, w - 27, 18),
@@ -3027,15 +3053,32 @@ namespace Aetheria.UnityClient
             ItemStack s = _draggingItem.Value;
             Vector2 m = new Vector2(Input.mousePosition.x / _cfg.UiScale,
                 (Screen.height - Input.mousePosition.y) / _cfg.UiScale);
-            GUI.Box(new Rect(m.x - 60, m.y - 30, 140, 24),
-                Data.GetItem(s.ItemId).Name + (s.Quantity > 1 ? " ×" + s.Quantity : ""));
-            GUI.Label(new Rect(m.x - 100, m.y - 6, 220, 18),
-                "<size=10>→ joueur allié : échanger · sol : poser</size>", RichCentered());
+            DrawItemIcon(new Rect(m.x - 17, m.y - 40, 34, 34), s.ItemId, s.Quantity);
+            GUI.Label(new Rect(m.x - 120, m.y - 4, 240, 18),
+                "<size=10>→ case du sac : ranger · allié : échanger · sol : poser</size>", RichCentered());
 
-            // Release (the drag is held on the RIGHT button): over an ally → propose a trade with
-            // this item pre-offered; elsewhere → drop it on the ground.
-            if (Input.GetMouseButtonUp(1))
+            // Release (the drag is held on the LEFT button):
+            //   over another bag cell → reorder; over an ally → trade; elsewhere → drop.
+            if (Input.GetMouseButtonUp(0))
             {
+                int from = _dragFromIndex;
+                _draggingItem = null;
+                _dragFromIndex = -1;
+
+                if (_bagsOpen && from >= 0)
+                {
+                    int target = BagCellAt(m);
+                    if (target >= 0)
+                    {
+                        if (target != from)
+                        {
+                            _client.SendMoveItem((byte)from, (byte)target);
+                        }
+
+                        return; // dropped inside the bag: never on the ground
+                    }
+                }
+
                 EntitySnapshot self;
                 bool haveSelf = _client.TryGetSelf(out self);
                 EntitySnapshot? ally = !haveSelf ? null : PickEntityUnderMouse(e =>
@@ -3050,9 +3093,29 @@ namespace Aetheria.UnityClient
                 {
                     _client.SendDropItem(s.ItemId, s.Quantity);
                 }
-
-                _draggingItem = null;
             }
+        }
+
+        /// <summary>The bag cell index under a GUI point, or -1 (mirrors DrawBagsWindow's grid).</summary>
+        private int BagCellAt(Vector2 guiPoint)
+        {
+            const float Icon = 34f;
+            const int Cols = 8;
+            Rect win = FrameRect(HudConfig.Frame.Bags);
+            if (!win.Contains(guiPoint))
+            {
+                return -1;
+            }
+
+            int col = Mathf.FloorToInt((guiPoint.x - (win.x + 12)) / (Icon + 4f));
+            int row = Mathf.FloorToInt((guiPoint.y - (win.y + 28)) / (Icon + 4f));
+            if (col < 0 || col >= Cols || row < 0)
+            {
+                return -1;
+            }
+
+            int index = (row * Cols) + col;
+            return index < SimulationConstants.PlayerInventoryCapacity ? index : -1;
         }
 
         // --- Escape menu & options ---

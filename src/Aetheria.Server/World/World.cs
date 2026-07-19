@@ -149,6 +149,15 @@ public sealed class World
     /// bags — or unequip a slot (itemId 0) if the bags have room. Server-validated: the item must
     /// really be in the bags and really be equippable.
     /// </summary>
+    /// <summary>Reorder the player's bag: move/swap the stack at <paramref name="from"/> to
+    /// <paramref name="to"/> (pure presentation — no items created or destroyed).</summary>
+    public bool TryMoveItem(int playerId, int from, int to)
+    {
+        return _entities.TryGetValue(playerId, out ServerEntity? player) &&
+               !player.IsDead && player.Kind == EntityKind.Player &&
+               player.Inventory.MoveSlot(from, to);
+    }
+
     public bool TryEquipItem(int playerId, byte itemId, EquipSlot slot)
     {
         if (!_entities.TryGetValue(playerId, out ServerEntity? player) ||
@@ -196,13 +205,18 @@ public sealed class World
         // The item's OWN slot decides where it goes (a helm can only sit on the head).
         EquipSlot target = def.Slot;
 
-        // Take the new piece out first — that frees the bag slot the old piece falls back into.
+        // Take the new piece out first — and remember WHERE it sat, so the replaced piece
+        // lands in that exact bag slot (WoW behaviour: the swap happens in place).
+        int fromIndex = player.Inventory.IndexOfItem(itemId);
         player.Inventory.RemoveQuantity(itemId, 1);
         byte old = player.GetEquipped(target);
         if (old != 0)
         {
             ItemDefinition oldDef = _gameData.GetItem(old);
-            player.Inventory.TryAdd(old, 1, oldDef.Stackable, oldDef.MaxStack);
+            if (!player.Inventory.TryInsertAt(fromIndex, old, 1))
+            {
+                player.Inventory.TryAdd(old, 1, oldDef.Stackable, oldDef.MaxStack);
+            }
         }
 
         player.SetEquipped(target, itemId);

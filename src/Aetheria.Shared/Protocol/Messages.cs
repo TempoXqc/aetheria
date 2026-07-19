@@ -551,6 +551,28 @@ public readonly struct QuestAction
     public static QuestAction Read(ref PacketReader r) => new(r.ReadByte(), r.ReadByte() != 0);
 }
 
+/// <summary>Drag-reorder in the bags: move the stack at FromIndex onto ToIndex (swap/append).</summary>
+public readonly struct MoveItem
+{
+    public readonly byte FromIndex;
+    public readonly byte ToIndex;
+
+    public MoveItem(byte fromIndex, byte toIndex)
+    {
+        FromIndex = fromIndex;
+        ToIndex = toIndex;
+    }
+
+    public void Write(PacketWriter w)
+    {
+        w.WriteByte((byte)MessageType.MoveItem);
+        w.WriteByte(FromIndex);
+        w.WriteByte(ToIndex);
+    }
+
+    public static MoveItem Read(ref PacketReader r) => new(r.ReadByte(), r.ReadByte());
+}
+
 /// <summary>This client's quest progress: active quest, kill count, and chain position.</summary>
 public readonly struct QuestStateMessage
 {

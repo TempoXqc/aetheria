@@ -114,6 +114,57 @@ public sealed class Inventory
         return removed;
     }
 
+    /// <summary>Index of the first stack holding this item, or -1.</summary>
+    public int IndexOfItem(byte itemId)
+    {
+        for (int i = 0; i < _stacks.Count; i++)
+        {
+            if (_stacks[i].ItemId == itemId)
+            {
+                return i;
+            }
+        }
+
+        return -1;
+    }
+
+    /// <summary>
+    /// Player-driven bag ordering: drag a stack onto another slot. Same-slot and out-of-range
+    /// sources are refused; a target on an occupied cell SWAPS, a target on an empty cell
+    /// (index at/after the end) moves the stack to the end of the bag.
+    /// </summary>
+    public bool MoveSlot(int from, int to)
+    {
+        if (from < 0 || from >= _stacks.Count || to < 0 || from == to)
+        {
+            return false;
+        }
+
+        if (to >= _stacks.Count)
+        {
+            ItemStack s = _stacks[from];
+            _stacks.RemoveAt(from);
+            _stacks.Add(s);
+            return true;
+        }
+
+        (_stacks[from], _stacks[to]) = (_stacks[to], _stacks[from]);
+        return true;
+    }
+
+    /// <summary>Insert one item at a precise slot (equip-swap drops the old piece where the
+    /// new one was taken). Falls back to false when the bag is full.</summary>
+    public bool TryInsertAt(int index, byte itemId, int quantity)
+    {
+        if (_stacks.Count >= Capacity || quantity <= 0)
+        {
+            return false;
+        }
+
+        _stacks.Insert(System.Math.Clamp(index, 0, _stacks.Count), new ItemStack(itemId, quantity));
+        return true;
+    }
+
     public int CountOf(byte itemId)
     {
         int total = 0;

@@ -152,6 +152,8 @@ public sealed class GameClient
     /// <summary>Equip a weapon/armor from the bags (or unequip a slot with itemId 0).</summary>
     public void SendEquipItem(byte itemId, byte slot) => Send(new EquipItem(itemId, slot));
 
+    public void SendMoveItem(byte fromIndex, byte toIndex) => Send(new MoveItem(fromIndex, toIndex));
+
     /// <summary>Say something in the world chat.</summary>
     public void SendChat(string text) => Send(new ChatSend(text ?? string.Empty));
 
@@ -594,6 +596,8 @@ public sealed class GameClient
     private void Send(DropItem msg) => SendWith(msg.Write);
     private void Send(BankTransaction msg) => SendWith(msg.Write);
     private void Send(EquipItem msg) => SendWith(msg.Write);
+
+    private void Send(MoveItem msg) => SendWith(msg.Write);
     private void Send(ChatSend msg) => SendWith(msg.Write);
     private void Send(AttackTarget msg) => SendWith(msg.Write);
     private void Send(PartyInvite msg) => SendWith(msg.Write);

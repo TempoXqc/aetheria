@@ -210,4 +210,49 @@ public static class EquipmentTests
         Assert.Equal((byte)1, old.GetEquipped(EquipSlot.Weapon));
         Assert.Equal((byte)3, old.GetEquipped(EquipSlot.Chest));
     }
+
+    [Test("Equip-swap happens IN PLACE: the replaced piece lands in the clicked bag slot.")]
+    public static void EquipSwap_ReplacedPieceKeepsTheBagSlot()
+    {
+        var world = new World();
+        ServerEntity p = world.SpawnPlayer(new PeerId(7), "Rangée", raceId: 1, classId: 1);
+
+        // Bags: [Rusty Sword, Wolf Pelt, Steel Sword]; wear the rusty one first.
+        world.AddItem(p, 1, 1);
+        world.AddItem(p, 10, 1);
+        world.AddItem(p, 4, 1);
+        Assert.True(world.TryEquipItem(p.Id, 1, EquipSlot.None));
+
+        // Now bags are [Pelt, Steel]; equipping the Steel Sword (index 1) must put the
+        // Rusty Sword back at INDEX 1 — not at the end… which is the same here, so use a
+        // richer bag: add two more pelts to make the tail obvious.
+        world.AddItem(p, 30, 1); // Goblin Head after the sword
+        Assert.True(world.TryEquipItem(p.Id, 4, EquipSlot.None));
+
+        Assert.Equal((byte)4, p.GetEquipped(EquipSlot.Weapon));
+        Assert.Equal((byte)10, p.Inventory.Stacks[0].ItemId); // pelt untouched
+        Assert.Equal((byte)1, p.Inventory.Stacks[1].ItemId);  // rusty sword took the steel sword's slot
+        Assert.Equal((byte)30, p.Inventory.Stacks[2].ItemId); // tail untouched
+    }
+
+    [Test("MoveSlot reorders the bag: swap two cells, move onto an empty cell = to the end.")]
+    public static void MoveSlot_ReordersTheBag()
+    {
+        var world = new World();
+        ServerEntity p = world.SpawnPlayer(new PeerId(8), "Tidy", raceId: 1, classId: 1);
+        world.AddItem(p, 1, 1);
+        world.AddItem(p, 10, 1);
+        world.AddItem(p, 20, 1);
+
+        Assert.True(world.TryMoveItem(p.Id, 0, 2), "swap first and third");
+        Assert.Equal((byte)20, p.Inventory.Stacks[0].ItemId);
+        Assert.Equal((byte)1, p.Inventory.Stacks[2].ItemId);
+
+        Assert.True(world.TryMoveItem(p.Id, 0, 7), "onto an empty cell: goes to the end");
+        Assert.Equal((byte)10, p.Inventory.Stacks[0].ItemId);
+        Assert.Equal((byte)20, p.Inventory.Stacks[2].ItemId);
+
+        Assert.False(world.TryMoveItem(p.Id, 5, 0), "out-of-range source refused");
+        Assert.False(world.TryMoveItem(p.Id, 1, 1), "same-cell move refused");
+    }
 }

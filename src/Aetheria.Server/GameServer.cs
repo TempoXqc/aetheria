@@ -323,6 +323,15 @@ public sealed class GameServer
 
                     break;
 
+                case MessageType.MoveItem:
+                    MoveItem move = MoveItem.Read(ref reader);
+                    if (world.TryMoveItem(session.EntityId, move.FromIndex, move.ToIndex))
+                    {
+                        SendSelfState(peer, session); // the bag order is part of self state
+                    }
+
+                    break;
+
                 case MessageType.ChatSend:
                     ChatSend say = ChatSend.Read(ref reader);
                     HandleChat(session, say.Text);

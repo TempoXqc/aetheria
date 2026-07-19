@@ -40,6 +40,7 @@ public enum MessageType : byte
     ChatSend = 30,
     AttackTarget = 31,
     QuestAction = 32,
+    MoveItem = 33,
 
     // --- Server -> Client ---
     ConnectAccepted = 128,
