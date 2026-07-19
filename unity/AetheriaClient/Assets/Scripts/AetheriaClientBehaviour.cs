@@ -65,6 +65,7 @@ namespace Aetheria.UnityClient
         private string _secret2 = "";
         private bool _wasRegistering;
         private bool _serverChosen; // the player picked this realm in the browser (creation allowed)
+        private bool _confirmDeleteChar; // the "delete character?" confirmation dialog is open
         private Vector3 _rightDownPos; // to tell a right-TAP (context click) from a camera drag
         private float _gcdReadyTime;   // local mirror of the 1.5s global cooldown (display + pre-check)
         private string _uiError = "";
@@ -372,6 +373,15 @@ namespace Aetheria.UnityClient
                     bool wasRegistering = _wasRegistering;
                     Disconnect();
                     _lobbyScreen = wasRegistering ? LobbyScreen.Register : LobbyScreen.Auth;
+                }
+                else if (_lobbyScreen == LobbyScreen.Character && _client.LoggedIn && !_client.HasCharacter)
+                {
+                    // The character was just DELETED: the server confirmed with an empty
+                    // summary — straight to creation on this same server.
+                    _confirmDeleteChar = false;
+                    _lobby.ClearPreview();
+                    _previewKey = -1;
+                    _lobbyScreen = LobbyScreen.Creation;
                 }
 
                 return;
@@ -1715,31 +1725,19 @@ namespace Aetheria.UnityClient
                 if (Classes[i].id == _client.CharacterClassId) { cls = Classes[i].label; }
             }
 
-            // RIGHT: the realm + character list panel, WoW-style.
-            Rect panel = new Rect(VirtW - 330, 24, 306, VirtH - 220);
-            WowUi.Panel(panel);
-            WowUi.GoldCentered(new Rect(panel.x, panel.y + 10, panel.width, 22),
-                "<size=14>" + _host + "</size>");
-            if (WowUi.Button(new Rect(panel.x + (panel.width / 2f) - 80, panel.y + 36, 160, 26), "Changer de serveur"))
-            {
-                Disconnect();
-                OpenServerBrowser();
-                return;
-            }
+            // NO server/character list here: one character per server — seeing your character
+            // MEANS you're on its server. Just the character, and the actions that matter.
 
-            Rect card = new Rect(panel.x + 12, panel.y + 76, panel.width - 24, 58);
-            WowUi.Highlight(card);
-            WowUi.Gold(new Rect(card.x + 10, card.y + 6, card.width - 20, 20),
-                "<size=13>" + _client.CharacterName + "</size>");
-            WowUi.Body(new Rect(card.x + 10, card.y + 28, card.width - 20, 24),
-                cls + " niveau " + _client.CharacterLevel + "\n<color=#a0a0a0>" + race + "</color>");
-
-            // BOTTOM CENTRE: the character's name over the big enter button.
-            WowUi.GoldCentered(new Rect((VirtW / 2f) - 220, VirtH - 134, 440, 26),
+            // BOTTOM CENTRE: name, class and level over the big enter button.
+            WowUi.GoldCentered(new Rect((VirtW / 2f) - 220, VirtH - 152, 440, 26),
                 "<size=17>" + _client.CharacterName + "</size>");
+            WowUi.GoldCentered(new Rect((VirtW / 2f) - 220, VirtH - 128, 440, 20),
+                "<size=12><color=#c8c8c8>" + cls + " niveau " + _client.CharacterLevel +
+                " — " + race + " · " + _host + "</color></size>");
             // Enter = enter the world, same as the big button.
-            if (WowUi.Button(new Rect((VirtW / 2f) - 150, VirtH - 100, 300, 42), "Entrer dans le monde") ||
-                EnterPressed())
+            if (!_confirmDeleteChar &&
+                (WowUi.Button(new Rect((VirtW / 2f) - 150, VirtH - 100, 300, 42), "Entrer dans le monde") ||
+                 EnterPressed()))
             {
                 EnterExisting();
             }
@@ -1755,7 +1753,48 @@ namespace Aetheria.UnityClient
 #endif
             }
 
-            DrawErrorsAt(new Rect((VirtW / 2f) - 240, VirtH - 170, 480, 30));
+            // BOTTOM RIGHT: switch to a server where you have no character yet, or free this one.
+            if (WowUi.Button(new Rect(VirtW - 174, VirtH - 64, 150, 30), "Changer de serveur"))
+            {
+                Disconnect();
+                OpenServerBrowser();
+                return;
+            }
+
+            if (WowUi.Button(new Rect(VirtW - 174, VirtH - 104, 150, 30), "Supprimer le perso"))
+            {
+                _confirmDeleteChar = true;
+            }
+
+            if (_confirmDeleteChar)
+            {
+                DrawDeleteCharacterDialog();
+            }
+
+            DrawErrorsAt(new Rect((VirtW / 2f) - 240, VirtH - 188, 480, 30));
+        }
+
+        /// <summary>HARDCORE-worthy confirmation: deletion is forever, say it plainly.</summary>
+        private void DrawDeleteCharacterDialog()
+        {
+            Rect box = new Rect((VirtW / 2f) - 190, (VirtH / 2f) - 90, 380, 180);
+            WowUi.Panel(box);
+            WowUi.GoldCentered(new Rect(box.x, box.y + 14, box.width, 24),
+                "<size=15>Supprimer " + _client.CharacterName + " ?</size>");
+            WowUi.Body(new Rect(box.x + 24, box.y + 48, box.width - 48, 64),
+                "Ce personnage, son équipement et sa progression seront effacés " +
+                "<color=#ff6a5e>DÉFINITIVEMENT</color> de ce serveur. Son nom redevient libre.");
+
+            if (WowUi.Button(new Rect(box.x + 28, box.y + box.height - 48, 150, 32), "Supprimer"))
+            {
+                _confirmDeleteChar = false;
+                _client.SendDeleteCharacter();
+            }
+
+            if (WowUi.Button(new Rect(box.x + box.width - 178, box.y + box.height - 48, 150, 32), "Annuler"))
+            {
+                _confirmDeleteChar = false;
+            }
         }
 
         /// <summary>ONE row per realm: among its routes, an ONLINE one wins (localhost for the

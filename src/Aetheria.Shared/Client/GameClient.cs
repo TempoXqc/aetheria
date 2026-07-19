@@ -156,6 +156,13 @@ public sealed class GameClient
         Send(new EnterWorld());
     }
 
+    /// <summary>Permanently delete this server's character (character screen only).</summary>
+    public void SendDeleteCharacter()
+    {
+        LoginError = string.Empty;
+        Send(new DeleteCharacter());
+    }
+
     public void SendBank(BankOp op, byte itemId, int amount) => Send(new BankTransaction(op, itemId, amount));
 
     /// <summary>Equip a weapon/armor from the bags (or unequip a slot with itemId 0).</summary>
@@ -600,6 +607,7 @@ public sealed class GameClient
     private void Send(QuestAction msg) => SendWith(msg.Write);
     private void Send(CreateCharacter msg) => SendWith(msg.Write);
     private void Send(EnterWorld msg) => SendWith(msg.Write);
+    private void Send(DeleteCharacter msg) => SendWith(msg.Write);
     private void Send(InputCommand msg) => SendWith(msg.Write);
     private void Send(UseAbility msg) => SendWith(msg.Write);
     private void Send(UseRacial msg) => SendWith(msg.Write);

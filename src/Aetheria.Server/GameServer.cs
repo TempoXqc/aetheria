@@ -255,6 +255,11 @@ public sealed class GameServer
                         HandleEnterWorld(peer, session);
                         break;
 
+                    case MessageType.DeleteCharacter:
+                        _ = DeleteCharacter.Read(ref reader);
+                        HandleDeleteCharacter(peer, session);
+                        break;
+
                     case MessageType.Ping:
                         Ping lobbyPing = Ping.Read(ref reader);
                         Send(peer, new Pong(lobbyPing.ClientTimeMs, Environment.TickCount64));
@@ -646,6 +651,29 @@ public sealed class GameServer
         account.Characters[name.ToLowerInvariant()] = CharacterMapper.Capture(entity);
 
         EnterWorldWith(peer, session, entity, isNew: true);
+    }
+
+    /// <summary>
+    /// Permanently delete the account's character on this server (character screen only — the
+    /// phase gate guarantees the player is NOT in the world). Frees the reserved name, then
+    /// resends a LoginResult with HasCharacter = false so the client flips to creation.
+    /// </summary>
+    private void HandleDeleteCharacter(PeerId peer, PlayerSession session)
+    {
+        AccountRecord account = GetOrCreateAccount(session.AccountId);
+        CharacterRecord? saved = account.Characters.Values.FirstOrDefault();
+        if (saved is null)
+        {
+            Send(peer, LoginResult.Failure("Aucun personnage à supprimer sur ce serveur."));
+            return;
+        }
+
+        string key = saved.Name.ToLowerInvariant();
+        account.Characters.Remove(key);
+        _state.Names.Remove(key);
+        _log($"Account '{session.AccountId}' DELETED character '{saved.Name}'.");
+
+        Send(peer, new LoginResult(true, "", false, string.Empty, 0, 0, Gender.Male, 1));
     }
 
     /// <summary>Enter the world with the account's existing character.</summary>

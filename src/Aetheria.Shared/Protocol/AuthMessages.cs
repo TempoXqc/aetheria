@@ -267,3 +267,15 @@ public readonly struct EnterWorld
 
     public static EnterWorld Read(ref PacketReader r) => default;
 }
+
+/// <summary>
+/// Permanently delete the account's ONE character on this server (sent from the character
+/// screen only — the server refuses it in-world). The server answers with a fresh
+/// <see cref="LoginResult"/> (HasCharacter = false), which flips the client to creation.
+/// </summary>
+public readonly struct DeleteCharacter
+{
+    public void Write(PacketWriter w) => w.WriteByte((byte)MessageType.DeleteCharacter);
+
+    public static DeleteCharacter Read(ref PacketReader r) => default;
+}
