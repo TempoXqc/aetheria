@@ -106,7 +106,9 @@ namespace Aetheria.UnityClient
             pivot.transform.SetParent(parent, false);
 
             GameObject root = Object.Instantiate(prefab, pivot.transform, false);
-            root.transform.localRotation = Quaternion.Euler(0f, 180f, 0f); // pack models face the camera
+            // This pack already exports facing forward (+Z): no flip. (The character packs
+            // need one; these don't — flipping them made every monster walk and attack backwards.)
+            root.transform.localRotation = Quaternion.identity;
 
             // Height-normalize by MEASURED bounds (immune to the pack's export scale), then
             // stand the feet exactly on the ground.
