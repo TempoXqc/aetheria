@@ -249,11 +249,47 @@ namespace Aetheria.UnityClient
 
             if (auto && _account.Length > 0 && _secret.Length > 0)
             {
+                // Don't connect blind: PROBE the realm's routes first and take the one that
+                // answers (public IP for friends, localhost for the host — never the hairpin).
                 LoadServerList();
                 if (_servers.Count > 0)
                 {
-                    Connect(_servers[0].Address, createAccount: false);
+                    RefreshServers();
+                    _autoLoginPending = true;
+                    _autoLoginDeadline = Time.realtimeSinceStartup + 6f;
                 }
+            }
+        }
+
+        private bool _autoLoginPending;
+        private float _autoLoginDeadline;
+
+        /// <summary>Ticked from Update while the launcher's auto-login waits for a probe.</summary>
+        private void TickAutoLogin()
+        {
+            if (!_autoLoginPending || _connected)
+            {
+                _autoLoginPending = false;
+                return;
+            }
+
+            List<ServerEntry> rows = RealmRows();
+            if (rows.Count == 0)
+            {
+                _autoLoginPending = false;
+                return;
+            }
+
+            ServerEntry realm = rows[0]; // the first realm (Zul'jin) is the auto-login target
+            if (realm.HasInfo)
+            {
+                _autoLoginPending = false;
+                Connect(realm.Address, createAccount: false);
+            }
+            else if (Time.realtimeSinceStartup > _autoLoginDeadline)
+            {
+                _autoLoginPending = false;
+                Connect(realm.Address, createAccount: false); // no probe answered: best effort
             }
         }
 
@@ -266,6 +302,7 @@ namespace Aetheria.UnityClient
             {
                 _lobby.EnsureBuilt();
                 UpdateLobbyPreview();
+                TickAutoLogin(); // launcher handoff: connect once a realm route answers
 
                 // The preview never spins on its own: hold the RIGHT button and drag to turn it.
                 if (Input.GetMouseButton(1))
