@@ -31,6 +31,17 @@ string configPath = Path.Combine(BaseDataDir(), "launcher.json");
 string? confirmedLocalHost = null;
 string htmlPath = FindAsset("launcher.html");
 var http = new HttpClient { Timeout = TimeSpan.FromSeconds(8) };
+
+// DOWNLOADS get their own client with NO timeout: game files fetched across the internet
+// (a friend's PC) can take minutes — the 8s status-probe timeout was killing installs
+// mid-file and the page only saw "Unexpected end of JSON input".
+var download = new HttpClient { Timeout = System.Threading.Timeout.InfiniteTimeSpan };
+
+// Live progress of the running update, polled by the page while it downloads.
+int progDone = 0, progTotal = 0;
+long progBytes = 0;
+string progFile = "";
+bool progActive = false;
 var jsonOptions = new JsonSerializerOptions { WriteIndented = true, PropertyNameCaseInsensitive = true };
 object updateLock = new();
 
@@ -116,9 +127,10 @@ app.MapPost("/api/update", async (HttpRequest request) =>
     string installDir = Path.Combine(BaseDataDir(), "game", channel);
     Directory.CreateDirectory(installDir);
 
-    int downloaded = 0;
-    long bytes = 0;
     lock (updateLock) { /* one update at a time */ }
+
+    // PASS 1 — the shopping list: hash every local file, keep only what really changed.
+    var needed = new List<(string rel, string local)>();
     foreach (JsonNode? entry in remote["files"]!.AsArray())
     {
         string rel = entry!["path"]!.GetValue<string>();
@@ -129,16 +141,63 @@ app.MapPost("/api/update", async (HttpRequest request) =>
             continue; // path traversal: refuse
         }
 
-        if (File.Exists(local) && HashOf(local) == expected)
+        if (!File.Exists(local) || HashOf(local) != expected)
         {
-            continue; // already up to date
+            needed.Add((rel, local));
         }
+    }
 
-        Directory.CreateDirectory(Path.GetDirectoryName(local)!);
-        byte[] data = await http.GetByteArrayAsync($"http://{host}/files/{channel}/{rel}");
-        await File.WriteAllBytesAsync(local, data);
-        downloaded++;
-        bytes += data.Length;
+    // PASS 2 — download each needed file, STREAMED to disk (no timeout, 3 tries each).
+    // An interrupted run resumes for free: finished files pass the hash check next time.
+    int downloaded = 0;
+    long bytes = 0;
+    progActive = true;
+    progDone = 0;
+    progTotal = needed.Count;
+    progBytes = 0;
+    try
+    {
+        foreach ((string rel, string local) in needed)
+        {
+            progFile = rel;
+            Directory.CreateDirectory(Path.GetDirectoryName(local)!);
+            for (int attempt = 1; ; attempt++)
+            {
+                try
+                {
+                    using HttpResponseMessage resp = await download.GetAsync(
+                        $"http://{host}/files/{channel}/{rel}",
+                        HttpCompletionOption.ResponseHeadersRead);
+                    resp.EnsureSuccessStatusCode();
+                    await using (FileStream fs = File.Create(local))
+                    {
+                        await resp.Content.CopyToAsync(fs);
+                    }
+
+                    break;
+                }
+                catch (Exception) when (attempt < 3)
+                {
+                    await Task.Delay(1200); // hiccup: breathe, retry the same file
+                }
+            }
+
+            downloaded++;
+            bytes += new FileInfo(local).Length;
+            progDone = downloaded;
+            progBytes = bytes;
+        }
+    }
+    catch (Exception e)
+    {
+        return Results.BadRequest(new
+        {
+            error = $"Téléchargement interrompu ({progFile}) : {e.Message} — reclique, il reprendra où il en était.",
+        });
+    }
+    finally
+    {
+        progActive = false;
     }
 
     // PRUNE: delete local files the manifest no longer lists (renamed/removed content — e.g.
@@ -168,6 +227,16 @@ app.MapPost("/api/update", async (HttpRequest request) =>
         version = remote["version"]!.GetValue<string>(),
     });
 });
+
+// Live download progress (polled by the page every second while an update runs).
+app.MapGet("/api/progress", () => Results.Json(new
+{
+    active = progActive,
+    done = progDone,
+    total = progTotal,
+    megabytes = Math.Round(progBytes / 1048576.0, 1),
+    file = progFile,
+}));
 
 // Launch the installed game, with auto-login when an account is saved.
 app.MapPost("/api/play", (HttpRequest request) =>

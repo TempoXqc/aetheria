@@ -336,9 +336,25 @@ async function mainAction() {
     } else if (!ch.installed || !ch.upToDate) {
       setStatus('<span class="spin"></span>Téléchargement… (fichiers modifiés uniquement)');
       render();
-      const res = await fetch('/api/update?channel=' + channel, { method: 'POST' });
-      const out = await res.json();
-      if (!res.ok) { throw new Error(out.error || 'échec de la mise à jour'); }
+      // Live progress while the backend downloads (can take minutes on a friend's PC).
+      const poll = setInterval(async () => {
+        try {
+          const p = await (await fetch('/api/progress')).json();
+          if (p.active && p.total > 0) {
+            setStatus('<span class="spin"></span>Téléchargement ' + p.done + '/' + p.total +
+              ' — ' + p.megabytes + ' Mo<br><span style="color:var(--dim); font-size:11px;">' +
+              p.file + '</span>');
+          }
+        } catch (e) { /* the update request itself will report the real error */ }
+      }, 1000);
+      let out;
+      try {
+        const res = await fetch('/api/update?channel=' + channel, { method: 'POST' });
+        out = await readJson(res);
+        if (!res.ok) { throw new Error(out.error || 'échec de la mise à jour'); }
+      } finally {
+        clearInterval(poll);
+      }
       setStatus('✔ Version ' + out.version + ' (' + out.updated + ' fichier(s), ' + out.megabytes + ' Mo).');
     } else {
       await play();
@@ -350,10 +366,20 @@ async function mainAction() {
   await refresh();
 }
 
+/* A response that died mid-flight has an EMPTY body: res.json() would throw the cryptic
+   "Unexpected end of JSON input". Read as text, parse if possible, else surface a clear error. */
+async function readJson(res) {
+  const text = await res.text();
+  try { return JSON.parse(text); }
+  catch (e) {
+    return { error: (text && text.trim()) || ('le launcher n’a pas répondu (HTTP ' + res.status + ') — réessaie, la mise à jour reprend où elle en était') };
+  }
+}
+
 async function play() {
   setStatus('<span class="spin"></span>Lancement du jeu…');
   const res = await fetch('/api/play?channel=' + channel, { method: 'POST' });
-  const out = await res.json();
+  const out = await readJson(res);
   if (!res.ok) { throw new Error(out.error || 'lancement impossible'); }
   setStatus('Bon jeu !');
 }
