@@ -58,9 +58,9 @@ public static class UpnpPortOpener
 
     private static async Task<(string controlUrl, string serviceType)?> DiscoverGatewayAsync()
     {
-        // SSDP: multicast M-SEARCH, collect LOCATION headers for internet gateway devices.
-        using var udp = new UdpClient();
-        udp.Client.ReceiveTimeout = 2500;
+        // SSDP M-SEARCH on EVERY IPv4 interface at once: launched as a child process, the
+        // OS-picked default interface is sometimes a virtual adapter (Hyper-V/WSL) — probing
+        // them all finds the real router no matter which card carries the LAN.
         var ssdp = new IPEndPoint(IPAddress.Parse("239.255.255.250"), 1900);
         const string SearchTarget = "urn:schemas-upnp-org:device:InternetGatewayDevice:1";
         byte[] request = Encoding.ASCII.GetBytes(
@@ -69,40 +69,96 @@ public static class UpnpPortOpener
             "MAN: \"ssdp:discover\"\r\n" +
             "MX: 2\r\n" +
             $"ST: {SearchTarget}\r\n\r\n");
-        await udp.SendAsync(request, request.Length, ssdp);
-        await udp.SendAsync(request, request.Length, ssdp);
 
-        DateTime deadline = DateTime.UtcNow.AddSeconds(3);
-        while (DateTime.UtcNow < deadline)
+        var sockets = new List<UdpClient>();
+        try
         {
-            UdpReceiveResult result;
+            // One socket bound per local IPv4 address (plus the OS default as a fallback).
+            var locals = new List<IPAddress> { IPAddress.Any };
             try
             {
-                Task<UdpReceiveResult> receive = udp.ReceiveAsync();
-                if (await Task.WhenAny(receive, Task.Delay(deadline - DateTime.UtcNow)) != receive)
+                foreach (System.Net.NetworkInformation.NetworkInterface nic in
+                         System.Net.NetworkInformation.NetworkInterface.GetAllNetworkInterfaces())
                 {
-                    break; // timed out
+                    if (nic.OperationalStatus != System.Net.NetworkInformation.OperationalStatus.Up)
+                    {
+                        continue;
+                    }
+
+                    foreach (System.Net.NetworkInformation.UnicastIPAddressInformation addr in
+                             nic.GetIPProperties().UnicastAddresses)
+                    {
+                        if (addr.Address.AddressFamily == AddressFamily.InterNetwork &&
+                            !IPAddress.IsLoopback(addr.Address))
+                        {
+                            locals.Add(addr.Address);
+                        }
+                    }
+                }
+            }
+            catch (Exception) { /* interface enumeration failed: the Any socket remains */ }
+
+            foreach (IPAddress local in locals)
+            {
+                try
+                {
+                    var udp = new UdpClient(new IPEndPoint(local, 0));
+                    sockets.Add(udp);
+                    await udp.SendAsync(request, request.Length, ssdp);
+                    await udp.SendAsync(request, request.Length, ssdp);
+                }
+                catch (SocketException) { /* that interface can't multicast: skip it */ }
+            }
+
+            DateTime deadline = DateTime.UtcNow.AddSeconds(3);
+            var pending = sockets.ToDictionary(s => s.ReceiveAsync(), s => s);
+            while (DateTime.UtcNow < deadline && pending.Count > 0)
+            {
+                Task<UdpReceiveResult> winner;
+                {
+                    Task first = await Task.WhenAny(
+                        pending.Keys.Cast<Task>().Append(Task.Delay(deadline - DateTime.UtcNow)).ToArray());
+                    if (first is not Task<UdpReceiveResult> received)
+                    {
+                        break; // global timeout
+                    }
+
+                    winner = received;
                 }
 
-                result = receive.Result;
-            }
-            catch (SocketException)
-            {
-                break;
-            }
+                UdpClient socket = pending[winner];
+                pending.Remove(winner);
+                UdpReceiveResult result;
+                try
+                {
+                    result = winner.Result;
+                    pending[socket.ReceiveAsync()] = socket; // keep listening on that socket
+                }
+                catch (Exception)
+                {
+                    continue; // socket died: drop it
+                }
 
-            string response = Encoding.ASCII.GetString(result.Buffer);
-            Match location = Regex.Match(response, @"LOCATION:\s*(\S+)", RegexOptions.IgnoreCase);
-            if (!location.Success)
-            {
-                continue;
-            }
+                string response = Encoding.ASCII.GetString(result.Buffer);
+                Match location = Regex.Match(response, @"LOCATION:\s*(\S+)", RegexOptions.IgnoreCase);
+                if (!location.Success)
+                {
+                    continue;
+                }
 
-            (string controlUrl, string serviceType)? service =
-                await FindWanServiceAsync(location.Groups[1].Value.Trim());
-            if (service is not null)
+                (string controlUrl, string serviceType)? service =
+                    await FindWanServiceAsync(location.Groups[1].Value.Trim());
+                if (service is not null)
+                {
+                    return service;
+                }
+            }
+        }
+        finally
+        {
+            foreach (UdpClient socket in sockets)
             {
-                return service;
+                try { socket.Dispose(); } catch (Exception) { }
             }
         }
 
