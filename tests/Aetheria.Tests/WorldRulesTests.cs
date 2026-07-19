@@ -132,21 +132,25 @@ public static class WorldRulesTests
         Assert.False(world.TryUseAbility(p.Id, p.BasicAbilityId, chest.Id));
     }
 
-    [Test("Chat messages round-trip byte-exactly.")]
+    [Test("Chat messages round-trip byte-exactly, channel and whisper target included.")]
     public static void Chat_RoundTrips()
     {
         var w = new PacketWriter();
-        new ChatSend("Salut le monde !").Write(w);
+        new ChatSend(ChatChannel.World, "", "Salut le monde !").Write(w);
         var r = new PacketReader(w.WrittenSpan);
         Assert.Equal(MessageType.ChatSend, (MessageType)r.ReadByte());
-        Assert.Equal("Salut le monde !", ChatSend.Read(ref r).Text);
+        ChatSend sent = ChatSend.Read(ref r);
+        Assert.Equal((byte)ChatChannel.World, (byte)sent.Channel);
+        Assert.Equal("Salut le monde !", sent.Text);
 
         var w2 = new PacketWriter();
-        new ChatMessage("Thorin", "on farm les loups ?").Write(w2);
+        new ChatMessage(ChatChannel.Whisper, "Thorin", "Aria", "on farm les loups ?").Write(w2);
         var r2 = new PacketReader(w2.WrittenSpan);
         Assert.Equal(MessageType.ChatMessage, (MessageType)r2.ReadByte());
         ChatMessage msg = ChatMessage.Read(ref r2);
+        Assert.Equal((byte)ChatChannel.Whisper, (byte)msg.Channel);
         Assert.Equal("Thorin", msg.From);
+        Assert.Equal("Aria", msg.To);
         Assert.Equal("on farm les loups ?", msg.Text);
     }
 }

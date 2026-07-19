@@ -82,7 +82,27 @@ namespace Aetheria.UnityClient
         private bool _bankOpen;
 
         // --- Chat (players' words only) ---
-        private readonly List<string> _chatLog = new List<string>();
+        private sealed class ChatLine
+        {
+            public ChatChannel Channel;
+            public string From = "";
+            public string To = "";
+            public string Text = "";
+        }
+
+        private sealed class ChatTab
+        {
+            public string Name = "Général";
+            public int Mask = 0xFF; // bit per ChatChannel
+        }
+
+        private readonly List<ChatLine> _chatHistory = new List<ChatLine>();
+        private readonly List<ChatTab> _chatTabs = new List<ChatTab>();
+        private int _chatTabIndex;
+        private int _chatTabConfig = -1; // tab being configured (right-click), -1 = none
+        private ChatChannel _chatChannel = ChatChannel.Say; // outgoing channel
+        private string _whisperTarget = "";
+        private string _lastWhisperFrom = "";
         private string _chatInput = "";
         private bool _chatInputActive;
         private readonly List<ServerEntry> _servers = new List<ServerEntry>();
@@ -414,7 +434,7 @@ namespace Aetheria.UnityClient
                 if (_chatInputActive)
                 {
                     string text = _chatInput.Trim();
-                    if (text.Length > 0) { _client.SendChat(text); }
+                    if (text.Length > 0) { ParseAndSendChat(text); }
                     _chatInput = "";
                     _chatInputActive = false;
                 }
@@ -906,7 +926,8 @@ namespace Aetheria.UnityClient
             }
 
             _views.Clear();
-            _chatLog.Clear();
+            SaveChatHistory(); // kept channels (groupe, guilde, chuchote, système) survive…
+            LoadChatHistory(); // …the rest (dire, commerce, raid, monde) starts fresh
             _chatInput = "";
             _chatInputActive = false;
             _bankOpen = false;
@@ -1137,15 +1158,158 @@ namespace Aetheria.UnityClient
             }
         }
 
-        /// <summary>Pull received player chat into the local log. Chat carries ONLY players' words.</summary>
+        /// <summary>Pull received chat into the structured history (channel-aware).</summary>
         private void PumpChat()
         {
             IReadOnlyList<ChatMessage> feed = _client.DrainChatFeed();
             for (int i = 0; i < feed.Count; i++)
             {
-                _chatLog.Add("<b>" + feed[i].From + " :</b> " + feed[i].Text);
-                if (_chatLog.Count > 40) { _chatLog.RemoveAt(0); }
+                ChatMessage m = feed[i];
+                _chatHistory.Add(new ChatLine { Channel = m.Channel, From = m.From, To = m.To, Text = m.Text });
+                if (m.Channel == ChatChannel.Whisper && m.From.Length > 0)
+                {
+                    _lastWhisperFrom = m.From; // « /rep » answers here
+                }
+
+                if (_chatHistory.Count > 200) { _chatHistory.RemoveAt(0); }
             }
+        }
+
+        private static readonly (ChatChannel ch, string label, string color)[] ChannelStyles =
+        {
+            (ChatChannel.Say, "Dire", "#ffffff"),
+            (ChatChannel.Party, "Groupe", "#55aaff"),
+            (ChatChannel.Raid, "Raid", "#ff7f00"),
+            (ChatChannel.Guild, "Guilde", "#40ff40"),
+            (ChatChannel.Trade, "Commerce", "#ffb0a0"),
+            (ChatChannel.World, "Monde", "#ffd870"),
+            (ChatChannel.Whisper, "Chuchote", "#ff80ff"),
+            (ChatChannel.System, "Système", "#ffd100"),
+        };
+
+        private static (ChatChannel ch, string label, string color) StyleOf(ChatChannel ch)
+        {
+            for (int i = 0; i < ChannelStyles.Length; i++)
+            {
+                if (ChannelStyles[i].ch == ch) { return ChannelStyles[i]; }
+            }
+
+            return ChannelStyles[0];
+        }
+
+        /// <summary>Parse « /g coucou », « /w Nom message », etc., then send on the right channel.</summary>
+        private void ParseAndSendChat(string text)
+        {
+            if (text.StartsWith("/", System.StringComparison.Ordinal))
+            {
+                int sp = text.IndexOf(' ');
+                string cmd = (sp < 0 ? text : text.Substring(0, sp)).ToLowerInvariant();
+                string rest = sp < 0 ? "" : text.Substring(sp + 1).Trim();
+
+                switch (cmd)
+                {
+                    case "/d": case "/s": case "/dire": _chatChannel = ChatChannel.Say; break;
+                    case "/g": case "/groupe": case "/p": _chatChannel = ChatChannel.Party; break;
+                    case "/r": case "/raid": _chatChannel = ChatChannel.Raid; break;
+                    case "/gu": case "/guilde": _chatChannel = ChatChannel.Guild; break;
+                    case "/co": case "/commerce": _chatChannel = ChatChannel.Trade; break;
+                    case "/m": case "/monde": _chatChannel = ChatChannel.World; break;
+                    case "/w": case "/chuchoter":
+                        int sp2 = rest.IndexOf(' ');
+                        if (sp2 <= 0) { _chatChannel = ChatChannel.Whisper; return; }
+                        _whisperTarget = rest.Substring(0, sp2);
+                        _chatChannel = ChatChannel.Whisper;
+                        rest = rest.Substring(sp2 + 1).Trim();
+                        break;
+                    case "/rep":
+                        if (_lastWhisperFrom.Length == 0) { return; }
+                        _whisperTarget = _lastWhisperFrom;
+                        _chatChannel = ChatChannel.Whisper;
+                        break;
+                    default:
+                        return; // unknown command: swallow silently
+                }
+
+                if (rest.Length == 0) { return; } // just switched channel
+                text = rest;
+            }
+
+            _client.SendChat(_chatChannel, text,
+                _chatChannel == ChatChannel.Whisper ? _whisperTarget : "");
+        }
+
+        // --- Chat persistence: kept channels survive reconnection; the rest reset. ---
+
+        private static bool ChannelPersists(ChatChannel ch)
+            => ch is ChatChannel.Party or ChatChannel.Guild or ChatChannel.Whisper or ChatChannel.System;
+
+        private string ChatHistoryKey => "aeth.chathist." + _account.Trim().ToLowerInvariant();
+
+        private void SaveChatHistory()
+        {
+            var sb = new System.Text.StringBuilder();
+            int start = Mathf.Max(0, _chatHistory.Count - 60);
+            for (int i = start; i < _chatHistory.Count; i++)
+            {
+                ChatLine l = _chatHistory[i];
+                if (!ChannelPersists(l.Channel)) { continue; }
+                sb.Append((int)l.Channel).Append('\u001f').Append(l.From).Append('\u001f')
+                  .Append(l.To).Append('\u001f').Append(l.Text).Append('\u001e');
+            }
+
+            PlayerPrefs.SetString(ChatHistoryKey, sb.ToString());
+            PlayerPrefs.Save();
+        }
+
+        private void LoadChatHistory()
+        {
+            _chatHistory.Clear();
+            string raw = PlayerPrefs.GetString(ChatHistoryKey, "");
+            foreach (string entry in raw.Split('\u001e'))
+            {
+                string[] parts = entry.Split('\u001f');
+                if (parts.Length == 4 && int.TryParse(parts[0], out int ch))
+                {
+                    _chatHistory.Add(new ChatLine
+                    {
+                        Channel = (ChatChannel)ch, From = parts[1], To = parts[2], Text = parts[3],
+                    });
+                }
+            }
+        }
+
+        // --- Chat tabs: named, per-tab channel filters, saved with the interface. ---
+
+        private void EnsureChatTabs()
+        {
+            if (_chatTabs.Count > 0) { return; }
+
+            string raw = PlayerPrefs.GetString("aeth.chattabs", "");
+            foreach (string entry in raw.Split('\u001e'))
+            {
+                string[] parts = entry.Split('\u001f');
+                if (parts.Length == 2 && int.TryParse(parts[1], out int mask))
+                {
+                    _chatTabs.Add(new ChatTab { Name = parts[0], Mask = mask });
+                }
+            }
+
+            if (_chatTabs.Count == 0)
+            {
+                _chatTabs.Add(new ChatTab { Name = "Général", Mask = 0xFF });
+            }
+        }
+
+        private void SaveChatTabs()
+        {
+            var sb = new System.Text.StringBuilder();
+            foreach (ChatTab tab in _chatTabs)
+            {
+                sb.Append(tab.Name).Append('\u001f').Append(tab.Mask).Append('\u001e');
+            }
+
+            PlayerPrefs.SetString("aeth.chattabs", sb.ToString());
+            PlayerPrefs.Save();
         }
 
         /// <summary>Track duel/trade transitions and apply the drag-drop auto-offer when a trade opens.</summary>
@@ -1583,7 +1747,7 @@ namespace Aetheria.UnityClient
                 {
                     const float Icon = 34f;
                     const int Cols = 8;
-                    int cells = SimulationConstants.PlayerInventoryCapacity;
+                    int cells = _client != null ? _client.InventoryCapacity : SimulationConstants.PlayerInventoryCapacity;
                     int rows = ((cells - 1) / Cols) + 1;
                     float w = 24f + (Cols * (Icon + 4f));
                     float h = 78f + (rows * (Icon + 4f)) + 24f; // +filter tab row
@@ -1635,6 +1799,7 @@ namespace Aetheria.UnityClient
             DrawContextMenu();
             DrawSocialNotices();
             DrawTradeWindow();
+            DrawMicroBar();
             DrawInspectWindow();
             DrawQuestLogWindow();
             DrawWorldMapWindow();
@@ -2883,9 +3048,11 @@ namespace Aetheria.UnityClient
 
                 if (_cfg.ShowNameplates)
                 {
-                    bool hostile = view.Kind == EntityKind.Monster ||
+                    // Monsters: YELLOW while passive, RED once aggressive (WoW colour language).
+                    bool hostile = (view.Kind == EntityKind.Monster && view.Aggro) ||
                                    (view.Kind == EntityKind.Player && view.Faction != myFaction);
                     string colour = hostile ? "#ff6060" :
+                        view.Kind == EntityKind.Monster ? "#ffd100" :
                         view.Kind == EntityKind.Npc ? "#f0d060" : "#60a0ff";
 
                     // NAME ONLY — level, stats and gear are for right-click → Inspecter.
@@ -2904,7 +3071,9 @@ namespace Aetheria.UnityClient
                     }
                 }
 
-                if (_cfg.ShowHealthBars && view.Kind != EntityKind.Npc)
+                // Health bars: players always (option) — monsters ONLY once aggressive.
+                if (_cfg.ShowHealthBars && view.Kind != EntityKind.Npc &&
+                    (view.Kind != EntityKind.Monster || view.Aggro))
                 {
                     DrawBar(new Rect(x - 22, y, 44, 6), view.Health / (float)view.MaxHealth,
                         new Color(0.2f, 0.8f, 0.25f), "");
@@ -4128,6 +4297,38 @@ namespace Aetheria.UnityClient
             }
         }
 
+        /// <summary>The WoW micro-bar: tiny buttons for menu, character, quests, map, bags.</summary>
+        private void DrawMicroBar()
+        {
+            (string label, string tip, System.Action toggle)[] entries =
+            {
+                ("☰", "Menu (Échap)", () => { _menuOpen = !_menuOpen; _optionsTab = -1; }),
+                ("P", "Personnage (" + KeyLabel(HudConfig.Bind.CharSheet) + ")", () => _sheetOpen = !_sheetOpen),
+                ("Q", "Carnet de quêtes (" + KeyLabel(HudConfig.Bind.QuestLog) + ")", () => _questLogOpen = !_questLogOpen),
+                ("C", "Carte du monde (" + KeyLabel(HudConfig.Bind.WorldMap) + ")", () => _worldMapOpen = !_worldMapOpen),
+                ("S", "Sacs (" + KeyLabel(HudConfig.Bind.Bags) + ")", () => _bagsOpen = !_bagsOpen),
+            };
+
+            const float B = 26f;
+            float x0 = VirtW - 16 - (entries.Length * (B + 3f));
+            float y = VirtH - 34f;
+            for (int i = 0; i < entries.Length; i++)
+            {
+                var r = new Rect(x0 + (i * (B + 3f)), y, B, B);
+                WowUi.Slot(new Rect(r.x - 1, r.y - 1, r.width + 2, r.height + 2));
+                if (GUI.Button(r, "<size=12><b>" + entries[i].label + "</b></size>",
+                    new GUIStyle(GUI.skin.button) { richText = true }))
+                {
+                    entries[i].toggle();
+                }
+
+                if (r.Contains(Event.current.mousePosition))
+                {
+                    _tooltip = "<b>" + entries[i].tip + "</b>";
+                }
+            }
+        }
+
         /// <summary>The seated logout countdown, front and centre.</summary>
         private void DrawLogoutCountdown()
         {
@@ -4153,11 +4354,41 @@ namespace Aetheria.UnityClient
 
             const float Icon = 34f;
             const int Cols = 8;
-            int cells = SimulationConstants.PlayerInventoryCapacity;
+            int cells = _client.InventoryCapacity;
             Rect win = FrameRect(HudConfig.Frame.Bags);
             float w = win.width;
             WowUi.Panel(win); // opaque WoW backpack, not a see-through box
             WowUi.GoldCentered(new Rect(win.x, win.y + 7, win.width, 18), "<b>Sacs</b>");
+
+            // The WORN BAG's slot, top-left of the window: shows the equipped bag (right-click
+            // a bag in the cells to wear it; wearing a bigger one grows the grid live).
+            var bagSlot = new Rect(win.x + 8, win.y + 4, 24, 24);
+            IReadOnlyList<byte> gearForBag = _client.EquipmentSlots;
+            byte wornBag = gearForBag != null && (int)EquipSlot.Bag < gearForBag.Count
+                ? gearForBag[(int)EquipSlot.Bag] : (byte)0;
+            WowUi.Slot(bagSlot);
+            if (wornBag != 0)
+            {
+                DrawItemIcon(new Rect(bagSlot.x + 2, bagSlot.y + 2, 20, 20), wornBag, 1);
+                if (bagSlot.Contains(Event.current.mousePosition))
+                {
+                    ItemDefinition bagDef = Data.GetItem(wornBag);
+                    _tooltip = "<b>" + bagDef.Name + "</b>\n<color=#a0a0a0>+" + bagDef.BagCapacity +
+                        " emplacements</color>\n<size=9><color=#808080>Clic droit : ranger le sac</color></size>";
+                }
+
+                Event bagEvt = Event.current;
+                if (bagEvt.type == EventType.MouseDown && bagEvt.button == 1 && bagSlot.Contains(bagEvt.mousePosition))
+                {
+                    _client.SendEquipItem(0, (byte)EquipSlot.Bag); // unequip (must fit the base cells)
+                    bagEvt.Use();
+                }
+            }
+            else if (bagSlot.Contains(Event.current.mousePosition))
+            {
+                _tooltip = "<b>Emplacement de sac</b>\n<color=#a0a0a0>Équipe un sac (clic droit dessus) " +
+                    "pour agrandir ton inventaire — en vente chez Mira.</color>";
+            }
 
             if (GUI.Button(new Rect(win.x + win.width - 26, win.y + 5, 21, 21), "X"))
             {
@@ -4976,31 +5207,152 @@ namespace Aetheria.UnityClient
         /// The world chat: ONLY what players write — no combat spam, no system noise. Enter opens
         /// the input, Enter sends, Escape cancels.
         /// </summary>
+        /// <summary>One rendered chat line, coloured by channel.</summary>
+        private static string FormatChatLine(ChatLine l)
+        {
+            (ChatChannel _, string label, string color) = StyleOf(l.Channel);
+            if (l.Channel == ChatChannel.System)
+            {
+                return "<color=" + color + ">" + l.Text + "</color>";
+            }
+
+            if (l.Channel == ChatChannel.Whisper)
+            {
+                string who = l.To.Length > 0 ? "À " + l.To : "De " + l.From;
+                return "<color=" + color + "><b>" + who + " :</b> " + l.Text + "</color>";
+            }
+
+            return "<color=" + color + ">[" + label + "] <b>" + l.From + " :</b> " + l.Text + "</color>";
+        }
+
         private void DrawChat()
         {
-            const float W = 360f;
-            const float LineH = 17f;
-            int lines = Mathf.Min(_chatLog.Count, 8);
-            float historyH = lines * LineH;
-            float inputH = _chatInputActive ? 24f : 0f;
-            float y0 = VirtH - 34f - inputH - historyH;
+            EnsureChatTabs();
+            if (_chatTabIndex >= _chatTabs.Count) { _chatTabIndex = 0; }
+            ChatTab active = _chatTabs[_chatTabIndex];
 
-            if (lines > 0)
+            const float W = 380f;
+            const float LineH = 17f;
+
+            // Collect the ACTIVE TAB's last lines.
+            var show = new List<ChatLine>();
+            for (int i = _chatHistory.Count - 1; i >= 0 && show.Count < 9; i--)
             {
-                Dim(new Rect(8f, y0 - 4f, W, historyH + 8f), 0.35f);
-                for (int i = 0; i < lines; i++)
+                if ((active.Mask & (1 << (int)_chatHistory[i].Channel)) != 0)
                 {
-                    string line = _chatLog[_chatLog.Count - lines + i];
-                    GUI.Label(new Rect(14f, y0 + (i * LineH), W - 12f, LineH + 2f),
-                        "<size=11>" + line + "</size>", Rich());
+                    show.Add(_chatHistory[i]);
                 }
             }
 
+            show.Reverse();
+
+            float historyH = Mathf.Max(show.Count, 1) * LineH;
+            float inputH = _chatInputActive ? 24f : 0f;
+            float tabsH = 20f;
+            float y0 = VirtH - 34f - inputH - historyH;
+
+            // TAB BAR: click = switch, right-click = configure, « + » = new tab.
+            float tx = 8f;
+            for (int t = 0; t < _chatTabs.Count; t++)
+            {
+                float tw = 16f + (_chatTabs[t].Name.Length * 7f);
+                var tabRect = new Rect(tx, y0 - 4f - tabsH, tw, 18f);
+                if (t == _chatTabIndex) { WowUi.Highlight(tabRect); }
+                if (GUI.Button(tabRect, "<size=10>" + _chatTabs[t].Name + "</size>",
+                    new GUIStyle(GUI.skin.button) { richText = true }))
+                {
+                    _chatTabIndex = t;
+                }
+
+                Event te = Event.current;
+                if (te.type == EventType.MouseDown && te.button == 1 && tabRect.Contains(te.mousePosition))
+                {
+                    _chatTabConfig = _chatTabConfig == t ? -1 : t;
+                    te.Use();
+                }
+
+                tx += tw + 4f;
+            }
+
+            if (GUI.Button(new Rect(tx, y0 - 4f - tabsH, 20f, 18f), "+") && _chatTabs.Count < 6)
+            {
+                _chatTabs.Add(new ChatTab { Name = "Onglet " + (_chatTabs.Count + 1), Mask = 0xFF });
+                _chatTabIndex = _chatTabs.Count - 1;
+                _chatTabConfig = _chatTabIndex;
+                SaveChatTabs();
+            }
+
+            // The history box.
+            Dim(new Rect(8f, y0 - 4f, W, historyH + 8f), 0.35f);
+            for (int i = 0; i < show.Count; i++)
+            {
+                GUI.Label(new Rect(14f, y0 + (i * LineH), W - 12f, LineH + 2f),
+                    "<size=11>" + FormatChatLine(show[i]) + "</size>", Rich());
+            }
+
+            // INPUT: the outgoing channel's coloured tag sits before the field.
             if (_chatInputActive)
             {
+                (ChatChannel _, string chLabel, string chColor) = StyleOf(_chatChannel);
+                string tag = _chatChannel == ChatChannel.Whisper && _whisperTarget.Length > 0
+                    ? "À " + _whisperTarget : chLabel;
+                float tagW = 20f + (tag.Length * 7f);
+                GUI.Label(new Rect(8f, VirtH - 32f, tagW, 24f),
+                    "<size=11><color=" + chColor + ">[" + tag + "]</color></size>", Rich());
                 GUI.SetNextControlName("ChatInput");
-                _chatInput = GUI.TextField(new Rect(8f, VirtH - 32f, W, 24f), _chatInput, 200);
+                _chatInput = GUI.TextField(new Rect(8f + tagW, VirtH - 32f, W - tagW, 24f), _chatInput, 200);
                 GUI.FocusControl("ChatInput");
+            }
+
+            DrawChatTabConfig(y0 - tabsH);
+        }
+
+        /// <summary>Right-click tab panel: rename, choose visible channels, delete.</summary>
+        private void DrawChatTabConfig(float anchorY)
+        {
+            if (_chatTabConfig < 0 || _chatTabConfig >= _chatTabs.Count)
+            {
+                return;
+            }
+
+            ChatTab tab = _chatTabs[_chatTabConfig];
+            var box = new Rect(8f, anchorY - 236f, 240f, 228f);
+            WowUi.Panel(box);
+            WowUi.GoldCentered(new Rect(box.x, box.y + 6, box.width, 18), "<b>Onglet de discussion</b>");
+
+            GUI.Label(new Rect(box.x + 12, box.y + 28, 50, 20), "<size=11>Nom :</size>", Rich());
+            string newName = GUI.TextField(new Rect(box.x + 58, box.y + 28, box.width - 70, 20), tab.Name, 14);
+            if (newName != tab.Name) { tab.Name = newName; SaveChatTabs(); }
+
+            float cy = box.y + 54;
+            foreach ((ChatChannel ch, string label, string color) in ChannelStyles)
+            {
+                bool on = (tab.Mask & (1 << (int)ch)) != 0;
+                bool now = GUI.Toggle(new Rect(box.x + 14, cy, box.width - 28, 18),
+                    on, " <color=" + color + ">" + label + "</color>",
+                    new GUIStyle(GUI.skin.toggle) { richText = true });
+                if (now != on)
+                {
+                    tab.Mask ^= 1 << (int)ch;
+                    SaveChatTabs();
+                }
+
+                cy += 19f;
+            }
+
+            if (_chatTabs.Count > 1 &&
+                WowUi.Button(new Rect(box.x + 12, box.yMax - 26, 100, 20), "Supprimer"))
+            {
+                _chatTabs.RemoveAt(_chatTabConfig);
+                _chatTabConfig = -1;
+                _chatTabIndex = 0;
+                SaveChatTabs();
+                return;
+            }
+
+            if (WowUi.Button(new Rect(box.xMax - 90, box.yMax - 26, 78, 20), "Fermer"))
+            {
+                _chatTabConfig = -1;
             }
         }
 

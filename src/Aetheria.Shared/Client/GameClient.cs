@@ -74,6 +74,9 @@ public sealed class GameClient
     public byte EquippedWeaponId => EquipmentSlots[(int)EquipSlot.Weapon];
     public byte EquippedArmorId => EquipmentSlots[(int)EquipSlot.Chest];
     public int InventoryStackCount { get; private set; }
+
+    /// <summary>Carried inventory cells (base + worn bag). Drives the bag window's grid.</summary>
+    public int InventoryCapacity { get; private set; } = SimulationConstants.PlayerInventoryCapacity;
     public IReadOnlyList<ItemStack> InventoryItems { get; private set; } = [];
     public int EffectiveAttack { get; private set; }
     public int EffectiveDefense { get; private set; }
@@ -185,7 +188,8 @@ public sealed class GameClient
     public void SendShapeShift(byte formId) => Send(new ShapeShift(formId));
 
     /// <summary>Say something in the world chat.</summary>
-    public void SendChat(string text) => Send(new ChatSend(text ?? string.Empty));
+    public void SendChat(ChatChannel channel, string text, string target = "")
+        => Send(new ChatSend(channel, target ?? string.Empty, text ?? string.Empty));
 
     /// <summary>Fight this target (the server auto-swings); 0 stops attacking.</summary>
     public void SendAttackTarget(int targetEntityId) => Send(new AttackTarget(targetEntityId));
@@ -420,6 +424,7 @@ public sealed class GameClient
                     EquipmentSlots = inv.Equipment;
                     InventoryItems = inv.Items;
                     InventoryStackCount = inv.Items.Count;
+                    InventoryCapacity = inv.Capacity;
                     break;
 
                 case MessageType.BankState:

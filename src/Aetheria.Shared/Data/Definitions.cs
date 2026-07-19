@@ -219,6 +219,9 @@ public sealed class ItemDefinition
     /// <summary>Worth in gold (for future vendors / banking valuation).</summary>
     public int GoldValue { get; init; }
 
+    /// <summary>Bags only: how many inventory cells this bag ADDS while worn.</summary>
+    public int BagCapacity { get; init; }
+
     public bool IsEquippable => Slot != EquipSlot.None;
 }
 

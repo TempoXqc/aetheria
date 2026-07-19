@@ -214,6 +214,13 @@ public sealed class World
                 return false;
             }
 
+            // Unequipping the BAG: everything (plus the bag itself) must fit the base cells.
+            if (slot == EquipSlot.Bag &&
+                player.Inventory.Stacks.Count + 1 > SimulationConstants.PlayerInventoryCapacity)
+            {
+                return false;
+            }
+
             ItemDefinition currentDef = _gameData.GetItem(current);
             bool stored = bagIndex >= 0 && player.Inventory.TryInsertAt(bagIndex, current, 1);
             if (!stored)
@@ -244,6 +251,17 @@ public sealed class World
 
         // The item's OWN slot decides where it goes (a helm can only sit on the head).
         EquipSlot target = def.Slot;
+
+        // Swapping BAGS: refuse when the smaller capacity could not hold the current cells
+        // (the new bag leaves the bags, the old one drops in — net cell change is zero).
+        if (target == EquipSlot.Bag)
+        {
+            int newCapacity = SimulationConstants.PlayerInventoryCapacity + def.BagCapacity;
+            if (player.Inventory.Stacks.Count > newCapacity)
+            {
+                return false;
+            }
+        }
 
         // Take the new piece out first — and remember WHERE it sat, so the replaced piece
         // lands in that exact bag slot (WoW behaviour: the swap happens in place).
@@ -285,6 +303,11 @@ public sealed class World
         entity.EquipmentAttackBonus = atk;
         entity.EquipmentDefenseBonus = def;
         entity.EquipmentHealthBonus = hp;
+
+        // The worn BAG sets the carried capacity: base cells + the bag's bonus.
+        byte bagId = entity.GetEquipped(EquipSlot.Bag);
+        int bagBonus = bagId != 0 && _gameData.HasItem(bagId) ? _gameData.GetItem(bagId).BagCapacity : 0;
+        entity.Inventory.SetCapacity(SimulationConstants.PlayerInventoryCapacity + bagBonus);
     }
 
     /// <summary>Grant experience to an entity (public entry point for events, quests, and tests).</summary>
@@ -948,6 +971,14 @@ public sealed class World
                     ? e.MonsterId
                     : e.RaceId;
                 byte flags = e.IsJumpingAt(Tick) ? (byte)1 : (byte)0;
+
+                // Bit 1: this monster is AGGRESSIVE (chasing/fighting someone) — the client
+                // shows red name + health bar only then; passive monsters read calm yellow.
+                if (e.Kind == EntityKind.Monster && e.AiTargetId.HasValue)
+                {
+                    flags |= 2;
+                }
+
                 result.Add(new EntitySnapshot(
                     e.Id, e.Kind, e.Faction, e.Position,
                     e.Health, e.EffectiveMaxHealth, (int)e.CurrentResource, e.EffectiveMaxResource,

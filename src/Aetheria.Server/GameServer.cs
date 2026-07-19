@@ -399,7 +399,7 @@ public sealed class GameServer
 
                 case MessageType.ChatSend:
                     ChatSend say = ChatSend.Read(ref reader);
-                    HandleChat(session, say.Text);
+                    HandleChat(peer, session, say.Channel, say.Target, say.Text);
                     break;
 
                 case MessageType.QuestAction:
@@ -596,7 +596,10 @@ public sealed class GameServer
     }
 
     /// <summary>Relay a player's chat line to everyone in the same world. Chat carries ONLY player words.</summary>
-    private void HandleChat(PlayerSession sender, string text)
+    /// <summary>Route a chat line by CHANNEL: say is short-range, party/raid go to the group,
+    /// trade/world reach everyone, whispers find their target by name.</summary>
+    private void HandleChat(PeerId senderPeer, PlayerSession sender, ChatChannel channel,
+        string target, string text)
     {
         text = (text ?? string.Empty).Replace("\n", " ").Replace("\r", " ").Trim();
         if (text.Length == 0)
@@ -609,13 +612,86 @@ public sealed class GameServer
             text = text.Substring(0, 200);
         }
 
-        var msg = new ChatMessage(sender.Name, text);
-        foreach ((PeerId peer, PlayerSession session) in _sessions)
+        switch (channel)
         {
-            if (session.HandshakeComplete && ReferenceEquals(session.CurrentWorld, sender.CurrentWorld))
-            {
-                SendWith(peer, msg.Write);
-            }
+            case ChatChannel.Say:
+                // Short range (30 units), same world — like leaning over to talk.
+                if (!TryGetEntity(sender, out ServerEntity? speaker) || speaker is null)
+                {
+                    return;
+                }
+
+                var sayMsg = new ChatMessage(ChatChannel.Say, sender.Name, "", text);
+                foreach ((PeerId peer, PlayerSession session) in _sessions)
+                {
+                    if (session.HandshakeComplete &&
+                        ReferenceEquals(session.CurrentWorld, sender.CurrentWorld) &&
+                        TryGetEntity(session, out ServerEntity? hearer) && hearer is not null &&
+                        Vec2.DistanceSquared(speaker.Position, hearer.Position) <= 30f * 30f)
+                    {
+                        SendWith(peer, sayMsg.Write);
+                    }
+                }
+
+                break;
+
+            case ChatChannel.Party:
+            case ChatChannel.Raid:
+                Party? party = _parties.GetParty(senderPeer.Value);
+                if (party is null)
+                {
+                    SendWith(senderPeer, new ChatMessage(ChatChannel.System, "", "",
+                        "Tu n'es dans aucun groupe.").Write);
+                    return;
+                }
+
+                var partyMsg = new ChatMessage(channel, sender.Name, "", text);
+                foreach (int member in party.Members)
+                {
+                    var memberPeer = new PeerId(member);
+                    if (_sessions.TryGetValue(memberPeer, out PlayerSession? ms) && ms.HandshakeComplete)
+                    {
+                        SendWith(memberPeer, partyMsg.Write);
+                    }
+                }
+
+                break;
+
+            case ChatChannel.Guild:
+                SendWith(senderPeer, new ChatMessage(ChatChannel.System, "", "",
+                    "Les guildes arrivent bientôt — ce canal s'ouvrira avec elles.").Write);
+                break;
+
+            case ChatChannel.Trade:
+            case ChatChannel.World:
+                var wideMsg = new ChatMessage(channel, sender.Name, "", text);
+                foreach ((PeerId peer, PlayerSession session) in _sessions)
+                {
+                    if (session.HandshakeComplete)
+                    {
+                        SendWith(peer, wideMsg.Write);
+                    }
+                }
+
+                break;
+
+            case ChatChannel.Whisper:
+                string wanted = (target ?? "").Trim();
+                foreach ((PeerId peer, PlayerSession session) in _sessions)
+                {
+                    if (session.HandshakeComplete &&
+                        string.Equals(session.Name, wanted, StringComparison.OrdinalIgnoreCase))
+                    {
+                        SendWith(peer, new ChatMessage(ChatChannel.Whisper, sender.Name, "", text).Write);
+                        // Echo to the sender: « À X : … ».
+                        SendWith(senderPeer, new ChatMessage(ChatChannel.Whisper, "", session.Name, text).Write);
+                        return;
+                    }
+                }
+
+                SendWith(senderPeer, new ChatMessage(ChatChannel.System, "", "",
+                    $"Aucun joueur nommé « {wanted} » en ligne.").Write);
+                break;
         }
     }
 
@@ -1595,7 +1671,7 @@ public sealed class GameServer
         }
 
         SendBankState(peer, session.AccountId);
-        Send(peer, new InventoryState(self.CopyEquipment(), self.Inventory.Stacks));
+        Send(peer, new InventoryState(self.CopyEquipment(), self.Inventory.Stacks, self.Inventory.Capacity));
     }
 
     private Inventory GetOrCreateBank(string accountId)
@@ -1649,7 +1725,7 @@ public sealed class GameServer
         Send(peer, new PlayerStatus(
             self!.Level, self.TotalXp, progression.XpForNextLevel(self.TotalXp), self.Inventory.Gold,
             self.EffectiveAttackPower, self.EffectiveDefense));
-        Send(peer, new InventoryState(self.CopyEquipment(), self.Inventory.Stacks));
+        Send(peer, new InventoryState(self.CopyEquipment(), self.Inventory.Stacks, self.Inventory.Capacity));
     }
 
     // ------------------------------------------------------------- Broadcast
@@ -1719,7 +1795,7 @@ public sealed class GameServer
             Send(peer, new PlayerStatus(
                 self!.Level, self.TotalXp, progression.XpForNextLevel(self.TotalXp), self.Inventory.Gold,
             self.EffectiveAttackPower, self.EffectiveDefense));
-            Send(peer, new InventoryState(self.CopyEquipment(), self.Inventory.Stacks));
+            Send(peer, new InventoryState(self.CopyEquipment(), self.Inventory.Stacks, self.Inventory.Capacity));
         }
     }
 

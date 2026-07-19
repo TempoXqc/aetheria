@@ -90,6 +90,34 @@ public static class EquipmentTests
         Assert.Equal(1, p.Inventory.CountOf(13));              // the cap fell back into the bags
     }
 
+    [Test("Bags: wearing one grows the carried capacity; it can't come off if the cells wouldn't fit.")]
+    public static void Bags_GrowCapacity_AndRefuseUnsafeRemoval()
+    {
+        var world = new World();
+        ServerEntity p = world.SpawnPlayer(new PeerId(3), "Portefaix", raceId: 1, classId: 1);
+        int baseCells = SimulationConstants.PlayerInventoryCapacity;
+        Assert.Equal(baseCells, p.Inventory.Capacity);
+
+        world.AddItem(p, 23, 1); // Sac de toile (+8)
+        Assert.True(world.TryEquipItem(p.Id, 23, EquipSlot.None));
+        Assert.Equal(baseCells + 8, p.Inventory.Capacity);
+
+        // Fill beyond the base capacity, then try to take the bag off: refused.
+        for (int i = 0; i < baseCells + 4; i++)
+        {
+            world.AddItem(p, 10, 1); // Wolf Pelts, unstackable enough? ensure distinct cells
+            p.Inventory.TryAdd((byte)10, 0, stackable: false, maxStack: 1);
+        }
+
+        while (p.Inventory.Stacks.Count <= baseCells)
+        {
+            p.Inventory.TryAdd(11, 1, stackable: false, maxStack: 1);
+        }
+
+        Assert.False(world.TryEquipItem(p.Id, 0, EquipSlot.Bag), "unequip must be refused when full");
+        Assert.Equal((byte)23, p.GetEquipped(EquipSlot.Bag)); // still worn
+    }
+
     [Test("Hardcore full loot: on death EVERY worn piece drops to the corpse.")]
     public static void Death_DropsEverySlotToTheCorpse()
     {

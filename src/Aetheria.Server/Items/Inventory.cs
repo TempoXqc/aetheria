@@ -14,7 +14,10 @@ public sealed class Inventory
     public Inventory(int capacity) => Capacity = capacity;
 
     /// <summary>Maximum number of distinct stacks (slots) this inventory can hold.</summary>
-    public int Capacity { get; }
+    public int Capacity { get; private set; }
+
+    /// <summary>Bags resize the carried inventory. Never shrinks below the cells in use.</summary>
+    public void SetCapacity(int cells) => Capacity = System.Math.Max(cells, _stacks.Count);
 
     public int Gold { get; private set; }
 

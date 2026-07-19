@@ -7,6 +7,7 @@ public enum ItemType : byte
     Weapon = 1,
     Armor = 2,
     Consumable = 3,
+    Bag = 4,        // worn in the Bag slot: raises the carried-inventory capacity
 }
 
 /// <summary>
@@ -27,13 +28,14 @@ public enum EquipSlot : byte
     Waist = 8,
     Back = 9,
     OffHand = 10,
+    Bag = 11, // the carried bag (raises inventory capacity; not part of the visual loadout)
 }
 
 /// <summary>Helpers for iterating the real equipment slots.</summary>
 public static class EquipSlots
 {
     /// <summary>Array length for per-slot storage (index = (int)EquipSlot).</summary>
-    public const int Count = 11;
+    public const int Count = 12;
 
     /// <summary>Every wearable slot, in display order (the character sheet's layout).</summary>
     public static readonly EquipSlot[] All =

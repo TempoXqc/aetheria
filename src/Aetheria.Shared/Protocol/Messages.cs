@@ -202,6 +202,9 @@ public readonly struct EntitySnapshot
 
     public bool IsJumping => (Flags & 1) != 0;
 
+    /// <summary>Monsters: currently chasing/fighting someone (red name + health bar).</summary>
+    public bool IsAggro => (Flags & 2) != 0;
+
     /// <summary>Ability currently being INCANTED (0 = not casting). Drives cast bars.</summary>
     public readonly byte CastAbilityId;
 
@@ -490,18 +493,24 @@ public readonly struct InventoryState
 
     public readonly IReadOnlyList<ItemStack> Items;
 
+    /// <summary>The carried inventory's CURRENT cell count (base + the worn bag's bonus).</summary>
+    public readonly int Capacity;
+
     public byte EquippedWeaponId => Equipment[(int)EquipSlot.Weapon];
     public byte EquippedArmorId => Equipment[(int)EquipSlot.Chest];
 
-    public InventoryState(byte[] equipment, IReadOnlyList<ItemStack> items)
+    public InventoryState(byte[] equipment, IReadOnlyList<ItemStack> items,
+        int capacity = SimulationConstants.PlayerInventoryCapacity)
     {
         Equipment = equipment ?? new byte[EquipSlots.Count];
         Items = items;
+        Capacity = capacity;
     }
 
     public void Write(PacketWriter w)
     {
         w.WriteByte((byte)MessageType.InventoryState);
+        w.WriteInt(Capacity);
         for (int i = 0; i < EquipSlots.Count; i++)
         {
             w.WriteByte(i < Equipment.Length ? Equipment[i] : (byte)0);
@@ -517,6 +526,7 @@ public readonly struct InventoryState
 
     public static InventoryState Read(ref PacketReader r)
     {
+        int capacity = r.ReadInt();
         var equipment = new byte[EquipSlots.Count];
         for (int i = 0; i < EquipSlots.Count; i++)
         {
@@ -532,7 +542,8 @@ public readonly struct InventoryState
             items[i] = new ItemStack(itemId, qty);
         }
 
-        return new InventoryState(equipment, items);
+
+        return new InventoryState(equipment, items, capacity);
     }
 }
 

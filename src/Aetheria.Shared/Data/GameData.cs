@@ -385,6 +385,11 @@ public sealed class GameData
             new ItemDefinition { Id = 19, Name = "Leather Gloves",    Type = ItemType.Armor, Slot = EquipSlot.Hands,     DefenseBonus = 2, GoldValue = 12 },
             new ItemDefinition { Id = 21, Name = "Sturdy Belt",       Type = ItemType.Armor, Slot = EquipSlot.Waist,     DefenseBonus = 2, GoldValue = 12 },
             new ItemDefinition { Id = 22, Name = "Wooden Shield",     Type = ItemType.Armor, Slot = EquipSlot.OffHand,   DefenseBonus = 5, GoldValue = 50 },
+
+            // BAGS: worn in the Bag slot, each adds cells to the carried inventory (vendor stock).
+            new ItemDefinition { Id = 23, Name = "Sac de toile",          Type = ItemType.Bag, Slot = EquipSlot.Bag, BagCapacity = 8,  GoldValue = 200 },
+            new ItemDefinition { Id = 24, Name = "Sac de cuir",           Type = ItemType.Bag, Slot = EquipSlot.Bag, BagCapacity = 16, GoldValue = 800 },
+            new ItemDefinition { Id = 25, Name = "Grand sac du voyageur", Type = ItemType.Bag, Slot = EquipSlot.Bag, BagCapacity = 24, GoldValue = 2500 },
             new ItemDefinition { Id = 10, Name = "Wolf Pelt",    Type = ItemType.Material, Stackable = true, MaxStack = 20, GoldValue = 3 },
             new ItemDefinition { Id = 11, Name = "Goblin Ear",   Type = ItemType.Material, Stackable = true, MaxStack = 20, GoldValue = 2 },
             new ItemDefinition { Id = 20, Name = "Minor Healing Potion", Type = ItemType.Consumable, Stackable = true, MaxStack = 10, GoldValue = 5 },

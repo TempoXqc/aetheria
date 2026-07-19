@@ -268,44 +268,73 @@ public readonly struct AttackTarget
 }
 
 /// <summary>A player speaks in the world chat. The chat carries ONLY player words — no system logs.</summary>
+/// <summary>The chat CHANNELS, WoW-style. Say is short-range; Trade/World reach everyone.</summary>
+public enum ChatChannel : byte
+{
+    Say = 0,
+    Party = 1,
+    Raid = 2,
+    Guild = 3,
+    Trade = 4,
+    World = 5,
+    Whisper = 6,
+    System = 7,
+}
+
 public readonly struct ChatSend
 {
+    public readonly ChatChannel Channel;
+
+    /// <summary>Whisper only: the recipient's character name.</summary>
+    public readonly string Target;
     public readonly string Text;
 
-    public ChatSend(string text) => Text = text;
+    public ChatSend(ChatChannel channel, string target, string text)
+    {
+        Channel = channel;
+        Target = target;
+        Text = text;
+    }
 
     public void Write(PacketWriter w)
     {
         w.WriteByte((byte)MessageType.ChatSend);
+        w.WriteByte((byte)Channel);
+        w.WriteString(Target);
         w.WriteString(Text);
     }
 
-    public static ChatSend Read(ref PacketReader r) => new(r.ReadString());
+    public static ChatSend Read(ref PacketReader r)
+        => new((ChatChannel)r.ReadByte(), r.ReadString(), r.ReadString());
 }
 
-/// <summary>A chat line relayed to everyone in the same world: who said what.</summary>
+/// <summary>A chat line: which channel, who said it, to whom (whispers), and what.</summary>
 public readonly struct ChatMessage
 {
+    public readonly ChatChannel Channel;
     public readonly string From;
+
+    /// <summary>Whisper echo only: the recipient (so the sender sees « À X : … »).</summary>
+    public readonly string To;
     public readonly string Text;
 
-    public ChatMessage(string from, string text)
+    public ChatMessage(ChatChannel channel, string from, string to, string text)
     {
+        Channel = channel;
         From = from;
+        To = to;
         Text = text;
     }
 
     public void Write(PacketWriter w)
     {
         w.WriteByte((byte)MessageType.ChatMessage);
+        w.WriteByte((byte)Channel);
         w.WriteString(From);
+        w.WriteString(To);
         w.WriteString(Text);
     }
 
     public static ChatMessage Read(ref PacketReader r)
-    {
-        string from = r.ReadString();
-        string text = r.ReadString();
-        return new ChatMessage(from, text);
-    }
+        => new((ChatChannel)r.ReadByte(), r.ReadString(), r.ReadString(), r.ReadString());
 }
