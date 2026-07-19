@@ -124,5 +124,5 @@ public static class SimulationConstants
     /// in the in-game HUD, and in the server startup log, so "am I up to date?" has a one-glance
     /// answer on both sides.
     /// </summary>
-    public const string GameVersion = "0.44.0";
+    public const string GameVersion = "0.44.1";
 }

@@ -7,9 +7,12 @@ namespace Aetheria.UnityClient
 {
     /// <summary>
     /// The 3D backdrop behind the login / server-browser / character-creation screens: a night
-    /// campsite (fire, torches, pines, mountains, moon) built entirely from primitives, far away
-    /// from the world origin so it never collides with in-game content. Also hosts the live 3D
-    /// PREVIEW of the character being created, standing on a stone dais and slowly turning.
+    /// campsite (fire, torches, pines, mountains, moon) dressed with the REAL asset kits — pines,
+    /// rocks, grass and flowers from the Nature MegaKit, torches, banners, bench and barrels from
+    /// the Fantasy Props MegaKit, plus Nature Starter Kit 2 undergrowth when the user imported it.
+    /// Every piece degrades to the old primitives when a kit is missing, so the scene always
+    /// builds. Far away from the world origin so it never collides with in-game content. Also
+    /// hosts the live 3D PREVIEW of the character being created, standing on a stone dais.
     /// While active it drives the camera itself (perspective); on teardown it hands the camera
     /// back to the isometric rig.
     /// </summary>
@@ -42,34 +45,43 @@ namespace Aetheria.UnityClient
             _root.transform.position = Origin;
             Transform r = _root.transform;
 
-            // Night ground.
-            Block(r, "Ground", new Vector3(0f, -0.1f, 0f), new Vector3(34f, 0.2f, 34f),
-                new Color(0.14f, 0.19f, 0.14f));
+            // Night ground: real grass texture, dark-tinted for the night.
+            Tex.Apply(Block(r, "Ground", new Vector3(0f, -0.1f, 0f), new Vector3(40f, 0.2f, 40f),
+                new Color(0.14f, 0.19f, 0.14f)), "grass", 12f, 12f, new Color(0.45f, 0.52f, 0.45f));
 
             // Stone dais where the preview character stands.
-            Block(r, "Dais", new Vector3(0f, 0.08f, 0f), new Vector3(2.6f, 0.16f, 2.6f),
-                new Color(0.42f, 0.42f, 0.46f));
-            Block(r, "DaisTrim", new Vector3(0f, 0.19f, 0f), new Vector3(2.0f, 0.06f, 2.0f),
-                new Color(0.50f, 0.50f, 0.55f));
+            Tex.Apply(Block(r, "Dais", new Vector3(0f, 0.08f, 0f), new Vector3(2.6f, 0.16f, 2.6f),
+                new Color(0.42f, 0.42f, 0.46f)), "stone", 3f, 3f, new Color(0.85f, 0.85f, 0.9f));
+            Tex.Apply(Block(r, "DaisTrim", new Vector3(0f, 0.19f, 0f), new Vector3(2.0f, 0.06f, 2.0f),
+                new Color(0.50f, 0.50f, 0.55f)), "stone", 2f, 2f);
 
             _previewSlot = new GameObject("PreviewSlot").transform;
             _previewSlot.SetParent(r, false);
             _previewSlot.localPosition = new Vector3(0f, 0.22f, 0f);
 
-            // Campfire to the side: stone ring, logs, animated flames, warm light.
+            // Campfire to the side: stone ring (real kit pebbles when available), bark logs,
+            // animated flames, warm light.
             Vector3 fire = new Vector3(2.6f, 0f, -1.6f);
             for (int i = 0; i < 6; i++)
             {
                 float a = i * Mathf.PI * 2f / 6f;
-                Block(r, "FireStone", fire + new Vector3(Mathf.Cos(a) * 0.55f, 0.08f, Mathf.Sin(a) * 0.55f),
-                    new Vector3(0.22f, 0.16f, 0.22f), new Color(0.35f, 0.34f, 0.36f));
+                Vector3 at = fire + new Vector3(Mathf.Cos(a) * 0.55f, 0f, Mathf.Sin(a) * 0.55f);
+                if (!NatureModels.Available ||
+                    NatureModels.Spawn(r, "Pebble_Round_" + ((i % 3) + 1), at, 0.18f, i * 61f) == null)
+                {
+                    Tex.Apply(Block(r, "FireStone", at + new Vector3(0f, 0.08f, 0f),
+                        new Vector3(0.22f, 0.16f, 0.22f), new Color(0.35f, 0.34f, 0.36f)),
+                        "stone", 1f, 1f);
+                }
             }
 
             GameObject log1 = Block(r, "Log", fire + new Vector3(0f, 0.10f, 0f), new Vector3(0.12f, 0.10f, 0.7f),
                 new Color(0.30f, 0.19f, 0.10f));
+            Tex.Apply(log1, "bark", 1f, 2f);
             log1.transform.localRotation = Quaternion.Euler(0f, 35f, 0f);
             GameObject log2 = Block(r, "Log", fire + new Vector3(0f, 0.10f, 0f), new Vector3(0.12f, 0.10f, 0.7f),
                 new Color(0.28f, 0.17f, 0.09f));
+            Tex.Apply(log2, "bark", 1f, 2f);
             log2.transform.localRotation = Quaternion.Euler(0f, -40f, 0f);
 
             _flames.Clear();
@@ -87,16 +99,41 @@ namespace Aetheria.UnityClient
             _fireLight.range = 12f;
             _fireLight.intensity = 2.2f;
 
-            // Torches framing the dais.
+            // Torches framing the dais — real metal torches from the props kit when available.
             Torch(r, new Vector3(-2.2f, 0f, 1.6f));
             Torch(r, new Vector3(2.2f, 0f, 1.6f));
 
-            // A few pines around the clearing.
-            Pine(r, new Vector3(-5.5f, 0f, -3f), 1.0f);
-            Pine(r, new Vector3(-7f, 0f, 2.5f), 1.3f);
-            Pine(r, new Vector3(6.5f, 0f, 1.5f), 1.1f);
-            Pine(r, new Vector3(5f, 0f, -5f), 0.9f);
-            Pine(r, new Vector3(-3f, 0f, -6.5f), 1.2f);
+            // Banners behind the dais, framing the character like a hero podium.
+            if (PropModels.Available)
+            {
+                PropModels.Spawn(r, "Banner_1", new Vector3(-1.5f, 0f, 2.6f), 3.0f, 180f);
+                PropModels.Spawn(r, "Banner_2", new Vector3(1.5f, 0f, 2.6f), 3.0f, 180f);
+
+                // Camp life around the fire: somewhere to sit, supplies, an adventurer's chest.
+                PropModels.Spawn(r, "Bench", new Vector3(4.1f, 0f, -0.6f), 0.85f, 245f);
+                PropModels.Spawn(r, "Barrel", new Vector3(3.9f, 0f, -3.0f), 0.9f, 30f);
+                PropModels.Spawn(r, "Crate_Wooden", new Vector3(4.6f, 0f, -2.4f), 0.65f, 70f);
+                PropModels.Spawn(r, "Chest_Wood", new Vector3(-2.9f, 0f, -1.9f), 0.75f, 130f);
+                PropModels.Spawn(r, "Cauldron", new Vector3(1.6f, 0f, -2.6f), 0.9f, 0f);
+            }
+
+            // Pines around the clearing — real textured pines from the nature kit.
+            KitPine(r, new Vector3(-5.5f, 0f, -3f), 1.0f);
+            KitPine(r, new Vector3(-7f, 0f, 2.5f), 1.3f);
+            KitPine(r, new Vector3(6.5f, 0f, 1.5f), 1.1f);
+            KitPine(r, new Vector3(5f, 0f, -5f), 0.9f);
+            KitPine(r, new Vector3(-3f, 0f, -6.5f), 1.2f);
+            KitPine(r, new Vector3(8.5f, 0f, -2f), 1.25f);
+            KitPine(r, new Vector3(-9f, 0f, -1f), 1.1f);
+
+            // A leafy tree or two so the treeline isn't all pines.
+            if (NatureModels.Available)
+            {
+                NatureModels.Spawn(r, "CommonTree_2", new Vector3(-6.2f, 0f, 5.5f), 6.5f, 70f);
+                NatureModels.Spawn(r, "CommonTree_4", new Vector3(7.5f, 0f, 4.5f), 5.8f, 210f);
+            }
+
+            DressClearing(r);
 
             // Distant mountains and a moon.
             Mountain(r, new Vector3(-14f, 0f, -16f), 9f);
@@ -252,8 +289,118 @@ namespace Aetheria.UnityClient
 
         // ------------------------------------------------------------- Helpers
 
+        /// <summary>
+        /// The undergrowth pass: grass tufts, ferns, flowers, bushes and pebbles scattered
+        /// through the clearing (seeded, so the campsite looks the same every launch). Uses the
+        /// Nature MegaKit first, then Nature Starter Kit 2 for extra variety when imported.
+        /// No-op without the kits — the primitives scene stays clean.
+        /// </summary>
+        private static void DressClearing(Transform r)
+        {
+            var rng = new System.Random(7331);
+            Vector3 fire = new Vector3(2.6f, 0f, -1.6f);
+
+            if (NatureModels.Available)
+            {
+                // Grass everywhere the eye lands, denser near the treeline.
+                for (int i = 0; i < 170; i++)
+                {
+                    Vector3 pos = ScatterSpot(rng, fire, 2.0f, 15f);
+                    string tuft = (i % 3) == 0 ? "Grass_Wispy_Tall" : "Grass_Common_Tall";
+                    NatureModels.Spawn(r, tuft, pos, 0.28f + ((float)rng.NextDouble() * 0.35f),
+                        rng.Next(360));
+                }
+
+                // Ferns, flowers and clover in loose patches.
+                string[] cover = { "Fern_1", "Flower_3_Group", "Flower_4_Group", "Clover_1",
+                    "Bush_Common", "Bush_Common_Flowers", "Plant_1_Big" };
+                for (int i = 0; i < 26; i++)
+                {
+                    Vector3 pos = ScatterSpot(rng, fire, 2.6f, 13f);
+                    NatureModels.Spawn(r, cover[rng.Next(cover.Length)], pos,
+                        0.35f + ((float)rng.NextDouble() * 0.55f), rng.Next(360));
+                }
+
+                // Mossy rocks at the clearing's edge.
+                for (int i = 0; i < 7; i++)
+                {
+                    Vector3 pos = ScatterSpot(rng, fire, 5.5f, 14f);
+                    NatureModels.Spawn(r, "Rock_Medium_" + ((i % 3) + 1), pos,
+                        0.5f + ((float)rng.NextDouble() * 0.8f), rng.Next(360));
+                }
+
+                // The odd mushroom by the trees — it's night, after all.
+                NatureModels.Spawn(r, "Mushroom_Common", new Vector3(-4.6f, 0f, -2.2f), 0.35f, 40f);
+                NatureModels.Spawn(r, "Mushroom_Common", new Vector3(5.6f, 0f, -3.9f), 0.28f, 190f);
+            }
+
+            // Nature Starter Kit 2 undergrowth on top, when the user imported it.
+            if (NatureKit.Available)
+            {
+                for (int i = 0; i < 60; i++)
+                {
+                    Vector3 pos = ScatterSpot(rng, fire, 2.2f, 15f);
+                    NatureKit.SpawnGrass(r, rng, pos, 0.4f + ((float)rng.NextDouble() * 0.4f));
+                }
+
+                for (int i = 0; i < 8; i++)
+                {
+                    Vector3 pos = ScatterSpot(rng, fire, 4f, 13f);
+                    NatureKit.SpawnBush(r, rng, pos, 0.6f + ((float)rng.NextDouble() * 0.7f));
+                }
+            }
+        }
+
+        /// <summary>A scatter position inside the clearing, kept off the dais and the campfire.</summary>
+        private static Vector3 ScatterSpot(System.Random rng, Vector3 fire, float minRadius, float maxRadius)
+        {
+            for (int guard = 0; guard < 24; guard++)
+            {
+                float a = (float)rng.NextDouble() * Mathf.PI * 2f;
+                float d = minRadius + ((float)rng.NextDouble() * (maxRadius - minRadius));
+                var pos = new Vector3(Mathf.Cos(a) * d, 0f, Mathf.Sin(a) * d);
+                if ((pos - fire).sqrMagnitude > 1.6f)
+                {
+                    return pos;
+                }
+            }
+
+            return new Vector3(0f, 0f, -maxRadius);
+        }
+
+        private static void KitPine(Transform r, Vector3 at, float s)
+        {
+            if (NatureModels.Available)
+            {
+                int hash = Mathf.Abs((int)((at.x * 7f) + (at.z * 13f)));
+                if (NatureModels.Spawn(r, "Pine_" + ((hash % 3) + 1), at, 6.5f * s, hash % 360) != null)
+                {
+                    return;
+                }
+            }
+
+            Pine(r, at, s);
+        }
+
         private static void Torch(Transform r, Vector3 at)
         {
+            if (PropModels.Available)
+            {
+                GameObject torch = PropModels.Spawn(r, "Torch_Metal", at, 1.8f, 0f);
+                if (torch != null)
+                {
+                    var glowGo = new GameObject("TorchLight");
+                    glowGo.transform.SetParent(torch.transform, false);
+                    glowGo.transform.position = torch.transform.position + new Vector3(0f, 1.7f, 0f);
+                    Light glow = glowGo.AddComponent<Light>();
+                    glow.type = LightType.Point;
+                    glow.color = new Color(1f, 0.65f, 0.3f);
+                    glow.range = 6f;
+                    glow.intensity = 1.2f;
+                    return;
+                }
+            }
+
             Block(r, "TorchPole", at + new Vector3(0f, 0.7f, 0f), new Vector3(0.12f, 1.4f, 0.12f),
                 new Color(0.24f, 0.16f, 0.09f));
             GameObject flame = Block(r, "TorchFlame", at + new Vector3(0f, 1.55f, 0f),
@@ -299,6 +446,7 @@ namespace Aetheria.UnityClient
         {
             GameObject m = Block(r, "Mountain", at + new Vector3(0f, s * 0.35f, 0f),
                 new Vector3(s, s * 0.9f, s), new Color(0.16f, 0.17f, 0.22f));
+            Tex.Apply(m, "stone", 4f, 4f, new Color(0.30f, 0.32f, 0.40f));
             m.transform.localRotation = Quaternion.Euler(0f, 45f, 0f);
         }
 
