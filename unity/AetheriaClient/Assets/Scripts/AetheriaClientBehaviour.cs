@@ -130,7 +130,6 @@ namespace Aetheria.UnityClient
         private byte _trackedQuestId; // quest whose hunting zone is highlighted on the maps
         private int _questLogTab;     // 0 = actives, 1 = terminées
         private float _mapBlinkUntil; // the zone circle pulses until this time (tracker click)
-        private readonly WorldMapView _worldMapView = new WorldMapView();
         private float _logoutAt = -1f; // Time.time when the seated logout completes (-1 = off)
         private static Texture2D _zoneDisc; // soft translucent circle for map zone overlays
         private bool _targetHostile; // stance & auto-attack only apply to hostile targets
@@ -3966,10 +3965,56 @@ namespace Aetheria.UnityClient
             return false;
         }
 
-        /// <summary>M — the WORLD MAP: live top-down view, player arrow, quest-zone circle.</summary>
+        /// <summary>A soft-edged filled disc, tinted with GUI.color at draw time.</summary>
+        private static Texture2D _solidDisc;
+
+        private static Texture2D SolidDisc()
+        {
+            if (_solidDisc == null)
+            {
+                const int S = 64;
+                _solidDisc = new Texture2D(S, S, TextureFormat.RGBA32, false);
+                for (int y = 0; y < S; y++)
+                {
+                    for (int x = 0; x < S; x++)
+                    {
+                        float dx = (x - (S / 2f)) / (S / 2f);
+                        float dy = (y - (S / 2f)) / (S / 2f);
+                        float d = Mathf.Sqrt((dx * dx) + (dy * dy));
+                        float a = Mathf.Clamp01((0.97f - d) * 10f); // soft edge
+                        _solidDisc.SetPixel(x, y, new Color(1f, 1f, 1f, a));
+                    }
+                }
+
+                _solidDisc.Apply();
+            }
+
+            return _solidDisc;
+        }
+
+        /// <summary>A tinted disc + centred label — one named zone patch on the parchment.</summary>
+        private static void MapZone(Rect map, float wx, float wy, float worldRadius, Color color, string label)
+        {
+            Vector2 c = WorldMapView.ToMap(map, wx, wy);
+            float r = worldRadius / WorldMapView.Extent * (map.width / 2f);
+            Color prev = GUI.color;
+            GUI.color = color;
+            GUI.DrawTexture(new Rect(c.x - r, c.y - r, r * 2f, r * 2f), SolidDisc(), ScaleMode.StretchToFill);
+            GUI.color = prev;
+            if (label.Length > 0)
+            {
+                GUI.Label(new Rect(c.x - 90, c.y - 9, 180, 18),
+                    "<size=11><color=#4a3a20><b>" + label + "</b></color></size>", RichCentered());
+            }
+        }
+
+        /// <summary>
+        /// M — the WORLD MAP, WoW-style: a STYLISED parchment chart (not a camera shot — those
+        /// drown in the day/night lighting). Named zones, portals, quest markers, and a big gold
+        /// arrow for the player, rotated to the facing.
+        /// </summary>
         private void DrawWorldMapWindow()
         {
-            _worldMapView.SetActive(_worldMapOpen && !_client.InInstance);
             if (!_worldMapOpen)
             {
                 return;
@@ -3991,9 +4036,38 @@ namespace Aetheria.UnityClient
             if (GUI.Button(new Rect(win.xMax - 26, win.y + 5, 21, 21), "X")) { _worldMapOpen = false; return; }
 
             var map = new Rect(win.x + 10, win.y + 30, size, size);
-            if (_worldMapView.Texture != null)
+
+            // PARCHMENT base + a darker border, WoW map palette.
+            Color prevBg = GUI.color;
+            GUI.color = new Color(0.36f, 0.28f, 0.16f);
+            GUI.DrawTexture(new Rect(map.x - 3, map.y - 3, map.width + 6, map.height + 6), Texture2D.whiteTexture);
+            GUI.color = new Color(0.80f, 0.72f, 0.54f);
+            GUI.DrawTexture(map, Texture2D.whiteTexture);
+            GUI.color = prevBg;
+
+            // The NAMED ZONES, each a tinted patch with its name in map-ink.
+            MapZone(map, 0f, 0f, 20f, new Color(0.62f, 0.62f, 0.66f, 0.85f), "Sanctuaire");
+            MapZone(map, 25f, 11f, 14f, new Color(0.55f, 0.48f, 0.30f, 0.85f), "Camp gobelin");
+            MapZone(map, -48f, 3f, 18f, new Color(0.78f, 0.68f, 0.34f, 0.9f), "Champ des loups");
+            MapZone(map, 80f, 80f, 13f, new Color(0.42f, 0.30f, 0.26f, 0.9f), "Terres brûlées");
+            MapZone(map, 41f, 41f, 8f, new Color(0.52f, 0.44f, 0.36f, 0.8f), "Camp du Roi");
+
+            // The instance GATES: blue swirls, labelled.
+            MapZone(map, 34f, 26f, 4f, new Color(0.35f, 0.55f, 0.95f, 0.95f), "");
+            GUI.Label(new Rect(WorldMapView.ToMap(map, 34f, 26f).x - 70,
+                WorldMapView.ToMap(map, 34f, 26f).y + 8, 140, 16),
+                "<size=10><color=#20406a><b>Donjon</b></color></size>", RichCentered());
+            MapZone(map, 74f, 66f, 4f, new Color(0.55f, 0.35f, 0.95f, 0.95f), "");
+            GUI.Label(new Rect(WorldMapView.ToMap(map, 74f, 66f).x - 70,
+                WorldMapView.ToMap(map, 74f, 66f).y + 8, 140, 16),
+                "<size=10><color=#3a2a6a><b>Raid</b></color></size>", RichCentered());
+
+            // The quest giver: his live « ! » / « ? » stands on the map too (Aldric's plaza).
+            string giverMark = QuestGiverMarker();
+            if (giverMark.Length > 0)
             {
-                GUI.DrawTexture(map, _worldMapView.Texture, ScaleMode.StretchToFill);
+                Vector2 g = WorldMapView.ToMap(map, 3.5f, 3.5f);
+                GUI.Label(new Rect(g.x - 15, g.y - 26, 30, 26), giverMark, RichCentered());
             }
 
             // Quest zone circle — PULSING while the tracker click asked for attention.
@@ -4029,15 +4103,28 @@ namespace Aetheria.UnityClient
                 GUI.color = prevDot;
             }
 
-            // The player: a gold dot exactly where you stand.
+            // THE PLAYER: impossible to miss — a pulsing gold ring under a big arrow that
+            // points where you're facing, WoW-style.
             EntitySnapshot self;
             if (_client.TryGetSelf(out self))
             {
                 Vector2 p = WorldMapView.ToMap(map, self.Position.X, self.Position.Y);
+
+                float pulse = 10f + (Mathf.Sin(Time.time * 3f) * 2.5f);
                 Color prev = GUI.color;
-                GUI.color = new Color(1f, 0.85f, 0.2f);
-                GUI.DrawTexture(new Rect(p.x - 4, p.y - 4, 8, 8), Texture2D.whiteTexture);
+                GUI.color = new Color(1f, 0.85f, 0.2f, 0.5f);
+                GUI.DrawTexture(new Rect(p.x - pulse, p.y - pulse, pulse * 2f, pulse * 2f),
+                    SolidDisc(), ScaleMode.StretchToFill);
                 GUI.color = prev;
+
+                float rot = 90f - (_lastFacing * Mathf.Rad2Deg); // ▲ points north; rotate to facing
+                Matrix4x4 saved = GUI.matrix;
+                GUIUtility.RotateAroundPivot(rot, p);
+                GUI.Label(new Rect(p.x - 12, p.y - 15, 24, 26),
+                    "<size=19><color=#3a2a10><b>▲</b></color></size>", RichCentered());
+                GUI.Label(new Rect(p.x - 12, p.y - 17, 24, 26),
+                    "<size=17><color=#ffd100><b>▲</b></color></size>", RichCentered());
+                GUI.matrix = saved;
             }
         }
 
