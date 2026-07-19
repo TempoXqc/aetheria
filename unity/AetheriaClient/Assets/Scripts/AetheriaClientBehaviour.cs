@@ -1142,6 +1142,13 @@ namespace Aetheria.UnityClient
             float h = Input.GetAxisRaw("Horizontal");
             float v = Input.GetAxisRaw("Vertical");
 
+            // WoW classic: BOTH mouse buttons held = run forward (facing follows the camera).
+            if (v == 0f && !_uiPress && Input.GetMouseButton(0) && Input.GetMouseButton(1))
+            {
+                if (_cameraRig != null) { _lastFacing = _cameraRig.FacingRadians; }
+                v = 1f;
+            }
+
             Vec2 dir = Vec2.Zero;
             if (h != 0f || v != 0f)
             {
@@ -1170,7 +1177,7 @@ namespace Aetheria.UnityClient
                 case HudConfig.Frame.ActionBar: return new Rect((VirtW / 2f) - 120 + o.x, VirtH - 66 + o.y, 240, 52);
                 case HudConfig.Frame.XpBar: return new Rect((VirtW / 2f) - 220 + o.x, VirtH - 88 + o.y, 440, 16);
                 case HudConfig.Frame.Messages: return new Rect(12 + o.x, VirtH - 200 + o.y, 480, 160);
-                case HudConfig.Frame.Minimap: return new Rect(VirtW - 196 + o.x, 8 + o.y, 188, 216);
+                case HudConfig.Frame.Minimap: return new Rect(VirtW - 196 + o.x, 8 + o.y, 188, 226);
                 case HudConfig.Frame.QuestTracker: return new Rect(VirtW - 236 + o.x, 232 + o.y, 228, 66);
                 case HudConfig.Frame.CharSheet: return new Rect(16 + o.x, 128 + o.y, 342, 396);
                 case HudConfig.Frame.Bags:
@@ -1321,12 +1328,13 @@ namespace Aetheria.UnityClient
             }
         }
 
-        /// <summary>True exactly once when Enter is pressed this GUI frame (and eats the event).</summary>
+        /// <summary>True exactly once when Enter (or keypad Enter) is pressed this GUI frame.
+        /// MUST be called BEFORE the text fields are drawn — a focused field eats the key.</summary>
         private static bool EnterPressed()
         {
             Event e = Event.current;
             if (e != null && e.type == EventType.KeyDown &&
-                (e.keyCode == KeyCode.Return || e.keyCode == KeyCode.KeypadEnter))
+                (e.keyCode == KeyCode.Return || e.keyCode == KeyCode.KeypadEnter || e.character == '\n'))
             {
                 e.Use();
                 return true;
@@ -1337,6 +1345,7 @@ namespace Aetheria.UnityClient
 
         private void DrawLoginScreen()
         {
+            bool enter = EnterPressed(); // BEFORE the fields: they'd swallow the key otherwise
             DrawAuthChrome(withNews: true);
 
             float cx = VirtW / 2f;
@@ -1349,7 +1358,7 @@ namespace Aetheria.UnityClient
             _secret = WowUi.TextField(new Rect(cx - 140, y + 84, 280, 30), _secret, password: true);
 
             // Enter anywhere on this screen = the big button (WoW's login works the same way).
-            if (WowUi.Button(new Rect(cx - 110, y + 132, 220, 38), "Se connecter") || EnterPressed())
+            if (WowUi.Button(new Rect(cx - 110, y + 132, 220, 38), "Se connecter") || enter)
             {
                 Connect(LastServerFor(_account.Trim()), createAccount: false);
             }
@@ -1383,6 +1392,7 @@ namespace Aetheria.UnityClient
         /// <summary>Screen 1b — its own registration modal: login + password + confirmation.</summary>
         private void DrawRegisterScreen()
         {
+            bool enter = EnterPressed(); // BEFORE the fields: they'd swallow the key otherwise
             DrawAuthChrome(withNews: false);
 
             float cx = VirtW / 2f;
@@ -1399,7 +1409,7 @@ namespace Aetheria.UnityClient
             WowUi.GoldCentered(new Rect(cx - 140, y + 120, 280, 20), "Confirmation");
             _secret2 = WowUi.TextField(new Rect(cx - 140, y + 142, 280, 30), _secret2, password: true);
 
-            if (WowUi.Button(new Rect(cx - 120, y + 188, 240, 36), "Créer le compte") || EnterPressed())
+            if (WowUi.Button(new Rect(cx - 120, y + 188, 240, 36), "Créer le compte") || enter)
             {
                 if (_secret != _secret2)
                 {
@@ -1779,11 +1789,24 @@ namespace Aetheria.UnityClient
                     <= SimulationConstants.SafeZoneRadius * SimulationConstants.SafeZoneRadius;
             }
 
-            GUI.Label(new Rect(frame.x + 8, frame.y + 64, frame.width - 16, 26),
-                FormatMoney(_client.Gold) +
-                (_client.InInstance ? "   [INSTANCE]" : "") +
-                (inSanctuary ? "   <color=#70d0ff>⛨ Sanctuaire</color>" : "") +
-                (_client.PartySize > 0 ? "   Groupe " + _client.PartySize : ""), Rich());
+            // Under the frame: STATUS only — no gold here (the bags carry the money bar).
+            // Safe zone = a single icon (hover it for the meaning), like WoW's rest icon.
+            string status = (_client.InInstance ? "   [INSTANCE]" : "") +
+                (_client.PartySize > 0 ? "   Groupe " + _client.PartySize : "");
+            if (inSanctuary)
+            {
+                var safe = new Rect(frame.x + 8, frame.y + 64, 20, 20);
+                GUI.Label(safe, "<size=15><color=#70d0ff>★</color></size>", Rich());
+                if (safe.Contains(Event.current.mousePosition))
+                {
+                    _tooltip = "<b><color=#70d0ff>Zone protégée</color></b>\n<color=#a0a0a0>Aucune attaque possible ici.</color>";
+                }
+            }
+
+            if (status.Length > 0)
+            {
+                GUI.Label(new Rect(frame.x + 30, frame.y + 64, frame.width - 38, 26), status.TrimStart(), Rich());
+            }
         }
 
         private Color ResourceColor()
@@ -3347,19 +3370,30 @@ namespace Aetheria.UnityClient
             Rect panel = FrameRect(HudConfig.Frame.Minimap);
             WowUi.Panel(panel);
 
-            EntitySnapshot self;
-            if (_client.TryGetSelf(out self))
-            {
-                WowUi.GoldCentered(new Rect(panel.x, panel.y + 5, panel.width, 18),
-                    "<size=11>" + ZoneName(self) + "</size>");
-            }
-
-            GUI.DrawTexture(new Rect(panel.x + 6, panel.y + 26, panel.width - 12, panel.width - 12),
+            GUI.DrawTexture(new Rect(panel.x + 6, panel.y + 8, panel.width - 12, panel.width - 12),
                 _minimap.Texture, ScaleMode.ScaleToFit);
 
             // The player is always dead-centre: a golden arrow-dot.
-            WowUi.GoldCentered(new Rect(panel.x + (panel.width / 2f) - 8, panel.y + 26 + ((panel.width - 12) / 2f) - 8, 16, 16),
+            WowUi.GoldCentered(new Rect(panel.x + (panel.width / 2f) - 8, panel.y + 8 + ((panel.width - 12) / 2f) - 8, 16, 16),
                 "<size=12>◆</size>");
+
+            // UNDER the map: zone name, then coordinates + server clock (from the day/night sun).
+            EntitySnapshot self;
+            if (_client.TryGetSelf(out self))
+            {
+                float worldSeconds = (_client.LastTick * SimulationConstants.TickDelta) + 150f;
+                float frac = DayNight.PhaseFor(worldSeconds);
+                int minutes = (int)(frac * 24f * 60f);
+                string clock = (minutes / 60).ToString("00") + ":" + (minutes % 60).ToString("00");
+
+                float below = panel.y + 8 + (panel.width - 12);
+                WowUi.GoldCentered(new Rect(panel.x, below + 2, panel.width, 16),
+                    "<size=11>" + ZoneName(self) + "</size>");
+                GUI.Label(new Rect(panel.x, below + 19, panel.width, 15),
+                    "<size=10><color=#c8c8c8>" + Mathf.RoundToInt(self.Position.X) + ", " +
+                    Mathf.RoundToInt(self.Position.Y) + "   ·   " + clock + "</color></size>",
+                    RichCentered());
+            }
         }
 
         /// <summary>
