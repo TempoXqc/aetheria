@@ -218,7 +218,7 @@ function render() {
     st.innerHTML = '<span class="status-warn">Canal vide</span>';
     btn.textContent = 'Aucun build publié';
     btn.disabled = true;
-    setStatus("Le serveur répond, mais rien n'a été publié sur ce canal — l'hôte doit lancer Publier-Build.bat.");
+    setStatus("Le serveur répond, mais rien n'a été publié sur ce canal — l'hôte doit cliquer « Construire et publier » dans son Launcher-Serveur.");
   } else if (!ch.installed) {
     st.innerHTML = '<span class="status-warn">Non installé</span>';
     btn.textContent = 'Installer';
@@ -309,20 +309,23 @@ async function refreshHost() {
     const label = { pull: 'Téléchargement des changements…', build: 'Construction Unity en cours…', publish: 'Publication…' }[HOST.phase];
     git.innerHTML = '<span class="spin"></span>' + label;
     btn.style.display = 'none'; prodAlso.style.display = 'none';
-  } else if (HOST.behind > 0) {
-    git.innerHTML = '<span class="status-warn">⬤</span> <b>' + HOST.behind + ' nouveau(x) changement(s)</b> de Claude sur le dépôt !';
+  } else {
     btn.style.display = 'block';
     prodAlso.style.display = 'block';
+    if (HOST.behind > 0) {
+      git.innerHTML = '<span class="status-warn">⬤</span> <b>' + HOST.behind + ' nouveau(x) changement(s)</b> de Claude sur le dépôt !';
+      btn.textContent = '⟳ Télécharger + construire + publier';
+    } else if (HOST.phase === 'error') {
+      git.innerHTML = '<span class="status-err">La dernière construction a échoué (voir le journal).</span>';
+      btn.textContent = '⟳ Réessayer';
+    } else if (HOST.phase === 'done') {
+      git.innerHTML = '<span class="status-ok">✔ Construit et publié — les launchers voient la mise à jour.</span>';
+      btn.textContent = '⟳ Reconstruire et publier';
+    } else {
+      git.innerHTML = '<span class="status-ok">✔ À jour avec le dépôt.</span>';
+      btn.textContent = '⟳ Construire et publier maintenant';
+    }
     if (!HOST.unityFound) { git.innerHTML += '<br><span class="status-err">Unity introuvable — installe-le via Unity Hub.</span>'; }
-  } else if (HOST.phase === 'error') {
-    git.innerHTML = '<span class="status-err">La dernière construction a échoué (voir le journal).</span>';
-    btn.style.display = 'block'; btn.textContent = '⟳ Réessayer'; prodAlso.style.display = 'block';
-  } else if (HOST.phase === 'done') {
-    git.innerHTML = '<span class="status-ok">✔ Construit et publié — les launchers voient la mise à jour.</span>';
-    btn.style.display = 'none'; prodAlso.style.display = 'none';
-  } else {
-    git.innerHTML = '<span class="status-ok">✔ À jour avec le dépôt.</span>';
-    btn.style.display = 'none'; prodAlso.style.display = 'none';
   }
 
   for (const name of ['prod','tts','patch']) {
@@ -363,6 +366,7 @@ refresh();
 loadNews();
 if (MODE === 'host') { refreshHost(); }
 setInterval(refresh, 15000);  // the PLAY button flips to METTRE À JOUR by itself
+setInterval(loadNews, 30000); // news catch up once the patch server is up
 if (MODE === 'host') { setInterval(refreshHost, 5000); } // git watch + serveurs
 </script>
 </body>
