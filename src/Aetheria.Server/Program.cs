@@ -42,6 +42,10 @@ Console.WriteLine(
     $"at {SimulationConstants.TickRate} Hz — capacity {server.MaxPlayers} players.");
 Console.WriteLine("Press Ctrl+C to stop.");
 
+// Open the port on the home router automatically (UPnP) and print the PUBLIC IP —
+// so friends can join over the internet without touching the router. Best-effort.
+_ = Task.Run(() => Aetheria.Server.Net.UpnpPortOpener.TryOpenAsync(port, Console.WriteLine));
+
 var loop = new FixedStepLoop(SimulationConstants.TickRate, dt =>
 {
     server.ProcessNetwork();

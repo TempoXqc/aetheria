@@ -17,7 +17,7 @@ public static class SimulationConstants
     public const int DefaultPort = 27015;
 
     /// <summary>Default server display name (servers are named, not numbered; override with --name).</summary>
-    public const string DefaultServerName = "Aetheria";
+    public const string DefaultServerName = "Zul'jin";
 
     /// <summary>
     /// Default player capacity (override with --max-players). A FULL server still lets existing
@@ -124,5 +124,5 @@ public static class SimulationConstants
     /// in the in-game HUD, and in the server startup log, so "am I up to date?" has a one-glance
     /// answer on both sides.
     /// </summary>
-    public const string GameVersion = "0.40.2";
+    public const string GameVersion = "0.41.0";
 }
