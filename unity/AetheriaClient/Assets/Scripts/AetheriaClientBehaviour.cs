@@ -1195,6 +1195,7 @@ namespace Aetheria.UnityClient
         {
             GUI.matrix = Matrix4x4.Scale(new Vector3(_cfg.UiScale, _cfg.UiScale, 1f));
             _tooltip = null; // rebuilt each frame by whatever the mouse is over
+            _tooltipCompare = null;
 
             if (!_connected || _client == null || !_client.EntityId.HasValue)
             {
@@ -2051,10 +2052,65 @@ namespace Aetheria.UnityClient
         /// <summary>The tooltip to show this frame (bottom-right corner), or null.</summary>
         private string _tooltip;
 
+        /// <summary>The "Équipé actuellement" panel shown beside the tooltip, or null.</summary>
+        private string _tooltipCompare;
+
         private string ItemTooltip(ItemDefinition def, int quantity)
         {
+            string text = ItemTooltipCore(def, quantity);
+
+            // WoW comparison: an equippable hovered while ANOTHER piece sits in that slot shows
+            // the equipped piece beside it, plus the stat changes a swap would cause.
+            if (def.IsEquippable && _client != null)
+            {
+                IReadOnlyList<byte> gear = _client.EquipmentSlots;
+                byte equippedId = gear != null && (int)def.Slot < gear.Count ? gear[(int)def.Slot] : (byte)0;
+                if (equippedId != 0 && equippedId != def.Id)
+                {
+                    ItemDefinition worn = Data.GetItem(equippedId);
+                    _tooltipCompare = "<b><color=#20d848>Équipé actuellement</color></b>\n"
+                        + ItemTooltipCore(worn, 1);
+
+                    var sb = new System.Text.StringBuilder(text);
+                    sb.Append("\n<color=#ffd100>Si tu remplaces cet objet :</color>");
+                    bool any = false;
+                    any |= AppendStatDelta(sb, def.AttackBonus - worn.AttackBonus, "Attaque");
+                    any |= AppendStatDelta(sb, def.DefenseBonus - worn.DefenseBonus, "Défense");
+                    any |= AppendStatDelta(sb, def.HealthBonus - worn.HealthBonus, "PV");
+                    if (!any) { sb.Append("\n<color=#a0a0a0>Aucun changement de stats</color>"); }
+                    text = sb.ToString();
+                }
+            }
+
+            return text;
+        }
+
+        /// <summary>One WoW-style stat-change line: green when it's a gain, red when it's a loss.</summary>
+        private static bool AppendStatDelta(System.Text.StringBuilder sb, int delta, string stat)
+        {
+            if (delta == 0) { return false; }
+            sb.Append(delta > 0 ? "\n<color=#20ff20>+" : "\n<color=#ff4040>")
+              .Append(delta).Append(' ').Append(stat).Append("</color>");
+            return true;
+        }
+
+        /// <summary>WoW item-quality colour, from the same power scale as the Quest Studio.</summary>
+        private static string QualityHex(ItemDefinition def)
+        {
+            if (def.Type == ItemType.Material) { return "#9d9d9d"; }        // junk grey
+            int power = (def.AttackBonus * 2) + def.DefenseBonus + (def.HealthBonus / 5);
+            if (power >= 16) { return "#a335ee"; }                           // epic
+            if (power >= 9) { return "#0070dd"; }                            // rare
+            if (power >= 3) { return "#1eff00"; }                            // uncommon
+            return "#ffffff";                                                // common
+        }
+
+        /// <summary>The item card itself (name, slot, stats, value) — shared by both panels.</summary>
+        private string ItemTooltipCore(ItemDefinition def, int quantity)
+        {
             var sb = new System.Text.StringBuilder();
-            sb.Append("<b><color=#ffffff>").Append(def.Name).Append("</color></b>");
+            sb.Append("<b><color=").Append(QualityHex(def)).Append('>')
+              .Append(def.Name).Append("</color></b>");
             if (quantity > 1) { sb.Append(" ×").Append(quantity); }
 
             sb.Append('\n');
@@ -2068,10 +2124,11 @@ namespace Aetheria.UnityClient
                 sb.Append("<color=#a0a0a0>").Append(ItemTypeLabel(def.Type)).Append("</color>");
             }
 
-            if (def.AttackBonus > 0) { sb.Append("\n<color=#80ff80>+").Append(def.AttackBonus).Append(" Attaque</color>"); }
-            if (def.DefenseBonus > 0) { sb.Append("\n<color=#80ff80>+").Append(def.DefenseBonus).Append(" Défense</color>"); }
-            if (def.HealthBonus > 0) { sb.Append("\n<color=#80ff80>+").Append(def.HealthBonus).Append(" PV</color>"); }
-            if (def.GoldValue > 0) { sb.Append("\nValeur : ").Append(FormatMoney(def.GoldValue)); }
+            if (def.AttackBonus > 0) { sb.Append("\n<color=#ffffff>+").Append(def.AttackBonus).Append(" Attaque</color>"); }
+            if (def.DefenseBonus > 0) { sb.Append("\n<color=#ffffff>+").Append(def.DefenseBonus).Append(" Défense</color>"); }
+            if (def.HealthBonus > 0) { sb.Append("\n<color=#20ff20>+").Append(def.HealthBonus).Append(" PV</color>"); }
+            if (def.Stackable && def.MaxStack > 1) { sb.Append("\n<color=#a0a0a0>Se cumule par ").Append(def.MaxStack).Append("</color>"); }
+            if (def.GoldValue > 0) { sb.Append("\nPrix de vente : ").Append(FormatMoney(def.GoldValue)); }
 
             return sb.ToString();
         }
@@ -2153,22 +2210,37 @@ namespace Aetheria.UnityClient
             _tooltip = sb.ToString();
         }
 
-        /// <summary>The WoW-style tooltip panel, anchored at the bottom-right edge of the screen.</summary>
+        /// <summary>The WoW-style tooltip panel, anchored at the bottom-right edge of the screen —
+        /// plus the "Équipé actuellement" comparison panel to its left when relevant.</summary>
         private void DrawTooltip()
         {
             if (string.IsNullOrEmpty(_tooltip)) { return; }
 
-            int lines = 1;
-            for (int i = 0; i < _tooltip.Length; i++)
-            {
-                if (_tooltip[i] == '\n') { lines++; }
-            }
-
             const float W = 240f;
-            float h = (lines * 17f) + 16f;
+            float h = TooltipHeight(_tooltip);
             Rect win = new Rect(VirtW - W - 12, VirtH - h - 12, W, h);
             Dim(win, 0.82f);
             GUI.Label(new Rect(win.x + 9, win.y + 7, win.width - 18, win.height - 12), _tooltip, Rich());
+
+            if (!string.IsNullOrEmpty(_tooltipCompare))
+            {
+                float h2 = TooltipHeight(_tooltipCompare);
+                Rect win2 = new Rect(win.x - W - 8, VirtH - h2 - 12, W, h2);
+                Dim(win2, 0.82f);
+                GUI.Label(new Rect(win2.x + 9, win2.y + 7, win2.width - 18, win2.height - 12),
+                    _tooltipCompare, Rich());
+            }
+        }
+
+        private static float TooltipHeight(string text)
+        {
+            int lines = 1;
+            for (int i = 0; i < text.Length; i++)
+            {
+                if (text[i] == '\n') { lines++; }
+            }
+
+            return (lines * 17f) + 16f;
         }
 
         private static readonly Dictionary<byte, Texture2D> IconCache = new Dictionary<byte, Texture2D>();
@@ -2419,8 +2491,13 @@ namespace Aetheria.UnityClient
             for (int i = 0; i < items.Count; i++)
             {
                 ItemStack stack = items[i];
-                string label = Data.GetItem(stack.ItemId).Name + (stack.Quantity > 1 ? " ×" + stack.Quantity : "");
-                GUI.Label(new Rect(win.x + 12, y + 3, 160, 20), label);
+                ItemDefinition def = Data.GetItem(stack.ItemId);
+
+                // Real icon (with its hover tooltip) + quality-coloured name, like a WoW loot row.
+                DrawItemIcon(new Rect(win.x + 10, y, 22, 22), stack.ItemId, stack.Quantity);
+                string label = "<color=" + QualityHex(def) + ">" + def.Name + "</color>" +
+                               (stack.Quantity > 1 ? " ×" + stack.Quantity : "");
+                GUI.Label(new Rect(win.x + 38, y + 2, 134, 20), label, Rich());
                 if (GUI.Button(new Rect(win.x + win.width - 86, y, 74, 22), "Prendre"))
                 {
                     _client.SendLootItem(_client.OpenCorpseId, stack.ItemId);
@@ -2584,6 +2661,11 @@ namespace Aetheria.UnityClient
 
             GUI.Label(new Rect(win.x + 12, win.yMax - 24, w - 24, 18),
                 "<size=9><color=#909090>Clic : équiper · Clic droit : glisser</color></size>", Rich());
+
+            // WoW backpack money bar: your coins, bottom-right of the bag.
+            GUI.Label(new Rect(win.x + 12, win.yMax - 24, w - 27, 18),
+                "<b>" + FormatMoney(_client.Gold) + "</b>",
+                new GUIStyle(GUI.skin.label) { richText = true, alignment = TextAnchor.MiddleRight });
         }
 
         /// <summary>One equipment slot tile; click to unequip the piece back into the bags.</summary>
@@ -3229,6 +3311,7 @@ namespace Aetheria.UnityClient
         /// </summary>
         private static string FormatMoney(int copper)
         {
+            // WoW-style: number + coloured coin dot per denomination, only what you have.
             if (copper < 0) { copper = 0; }
             int gold = copper / 10000;
             int silver = copper % 10000 / 100;
@@ -3236,16 +3319,16 @@ namespace Aetheria.UnityClient
 
             if (gold > 0)
             {
-                return "<color=#ffd700>" + gold + "po</color> <color=#c0c0c0>" + silver +
-                       "pa</color> <color=#b87333>" + cents + "pc</color>";
+                return gold + "<color=#ffd700>●</color> " + silver + "<color=#c8c8d0>●</color> " +
+                       cents + "<color=#c07940>●</color>";
             }
 
             if (silver > 0)
             {
-                return "<color=#c0c0c0>" + silver + "pa</color> <color=#b87333>" + cents + "pc</color>";
+                return silver + "<color=#c8c8d0>●</color> " + cents + "<color=#c07940>●</color>";
             }
 
-            return "<color=#b87333>" + cents + "pc</color>";
+            return cents + "<color=#c07940>●</color>";
         }
 
         private static void DrawBar(Rect rect, float fill, Color color, string caption)
