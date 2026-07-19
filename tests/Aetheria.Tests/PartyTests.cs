@@ -73,6 +73,23 @@ public static class PartyTests
         Assert.True(pm.GetParty(3) is null);
     }
 
+    [Test("Reconnection: ReplaceMember hands the SAME seat to the new key — leadership follows.")]
+    public static void ReplaceMember_KeepsSeatAndLeadership()
+    {
+        var pm = new PartyManager();
+        pm.Invite(1, 2, out _);
+        pm.Accept(2);
+
+        Party? party = pm.ReplaceMember(1, 99); // the LEADER reconnects under a new key
+        Assert.True(party is not null);
+        Assert.Equal(99, party!.Leader);
+        Assert.True(party.Contains(99));
+        Assert.False(party.Contains(1));
+        Assert.True(ReferenceEquals(pm.GetParty(99), party));
+        Assert.True(pm.GetParty(1) is null);
+        Assert.Equal(2, party.Count); // nobody gained or lost a seat
+    }
+
     [Test("The party size cap is enforced.")]
     public static void Cap_IsEnforced()
     {

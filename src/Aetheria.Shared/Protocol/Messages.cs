@@ -772,6 +772,9 @@ public sealed class PartyMemberInfo
     public float X;
     public float Y;
 
+    /// <summary>False = this member is DISCONNECTED: greyed frame, no vitals, no map dot.</summary>
+    public bool Online = true;
+
     /// <summary>Active timed effects: (effect type, seconds remaining).</summary>
     public (byte Type, float Seconds)[] Effects = System.Array.Empty<(byte, float)>();
 }
@@ -810,6 +813,7 @@ public readonly struct PartyState
             w.WriteInt(m.MaxResource);
             w.WriteFloat(m.X);
             w.WriteFloat(m.Y);
+            w.WriteBool(m.Online);
             w.WriteByte((byte)m.Effects.Length);
             for (int e = 0; e < m.Effects.Length; e++)
             {
@@ -838,6 +842,7 @@ public readonly struct PartyState
                 MaxResource = r.ReadInt(),
                 X = r.ReadFloat(),
                 Y = r.ReadFloat(),
+                Online = r.ReadBool(),
             };
 
             int effects = r.ReadByte();

@@ -1639,10 +1639,11 @@ namespace Aetheria.UnityClient
         {
             if (Camera.main == null) { return null; }
 
-            const float PickRadiusPx = 36f;
             Vector3 mouse = Input.mousePosition;
+            int selfId = _client.EntityId ?? -1;
             EntitySnapshot? best = null;
-            float bestDist = PickRadiusPx * PickRadiusPx;
+            EntitySnapshot? selfHit = null;
+            float bestDist = float.MaxValue;
 
             IReadOnlyList<EntitySnapshot> visible = _client.Visible;
             for (int i = 0; i < visible.Count; i++)
@@ -1650,16 +1651,44 @@ namespace Aetheria.UnityClient
                 EntitySnapshot e = visible[i];
                 if (!filter(e)) { continue; }
 
-                Vector3 screen = Camera.main.WorldToScreenPoint(new Vector3(e.Position.X, 1f, e.Position.Y));
-                if (screen.z < 0f) { continue; }
+                // Distance from the mouse to the character's on-screen SPINE (feet → head):
+                // a click anywhere on the visible body counts, whatever the camera distance —
+                // the old single-point test missed everything but an invisible spot at the hip.
+                Vector3 feet = Camera.main.WorldToScreenPoint(new Vector3(e.Position.X, 0.1f, e.Position.Y));
+                Vector3 head = Camera.main.WorldToScreenPoint(new Vector3(e.Position.X, 2.0f, e.Position.Y));
+                if (feet.z < 0f && head.z < 0f) { continue; }
 
-                float dx = screen.x - mouse.x;
-                float dy = screen.y - mouse.y;
-                float d = (dx * dx) + (dy * dy);
+                float d = DistanceToSegmentPx(mouse, feet, head);
+                float bodyPx = Mathf.Abs(head.y - feet.y);
+                float radius = Mathf.Clamp(bodyPx * 0.45f, 24f, 90f); // half-width scales with size on screen
+                if (d > radius) { continue; }
+
+                if (e.Id == selfId)
+                {
+                    // YOURSELF only wins when nobody else is under the cursor — your own model
+                    // must never steal the click aimed at a monster in melee with you.
+                    selfHit = e;
+                    continue;
+                }
+
                 if (d < bestDist) { bestDist = d; best = e; }
             }
 
-            return best;
+            return best ?? selfHit;
+        }
+
+        /// <summary>2D distance (pixels) from point p to the segment a→b, ignoring z.</summary>
+        private static float DistanceToSegmentPx(Vector3 p, Vector3 a, Vector3 b)
+        {
+            var ap = new Vector2(p.x - a.x, p.y - a.y);
+            var ab = new Vector2(b.x - a.x, b.y - a.y);
+            float len = ab.sqrMagnitude;
+            float t = len > 0.0001f ? Mathf.Clamp01(Vector2.Dot(ap, ab) / len) : 0f;
+            float cx = a.x + (ab.x * t);
+            float cy = a.y + (ab.y * t);
+            float dx = p.x - cx;
+            float dy = p.y - cy;
+            return Mathf.Sqrt((dx * dx) + (dy * dy));
         }
 
         private void PressLoot()
@@ -2752,6 +2781,19 @@ namespace Aetheria.UnityClient
 
             WowUi.Panel(frame);
 
+            // WoW rule: clicking YOUR OWN portrait frame targets yourself (the cleric's
+            // self-heal in one click — the party frames never show your own row).
+            Event pf = Event.current;
+            if (pf.type == EventType.MouseDown && pf.button == 0 && haveSelf &&
+                frame.Contains(pf.mousePosition))
+            {
+                _autoTargetPicked = false;
+                _targetHostile = false;
+                _targetId = self.Id;
+                _client.SendAttackTarget(0);
+                pf.Use();
+            }
+
             // WoW-style: round class-coloured portrait on the LEFT, name + bars beside it.
             Rect portrait = new Rect(frame.x + 6, frame.y + 8, 52, 52);
             WowUi.Portrait(portrait, ResourceColor() * 0.85f,
@@ -2863,6 +2905,20 @@ namespace Aetheria.UnityClient
                 WowUi.Panel(frame);
 
                 bool isLeader = m.Name == _client.PartyLeader;
+
+                // OFFLINE member: greyed row, name + « (déco) », no bars, no clicks.
+                if (!m.Online)
+                {
+                    Dim(frame, 0.45f);
+                    GUI.Label(new Rect(frame.x + 8, frame.y + 3, frame.width - 16, 16),
+                        "<size=11><color=#808088>" + (isLeader ? "★ " : "") + m.Name +
+                        "  <size=9>(déco)</size></color></size>", Rich());
+                    GUI.Label(new Rect(frame.x + 8, frame.y + 26, frame.width - 16, 16),
+                        "<size=10><color=#606068>Hors ligne</color></size>", Rich());
+                    y += 64f;
+                    continue;
+                }
+
                 WowUi.Gold(new Rect(frame.x + 8, frame.y + 3, frame.width - 16, 16),
                     "<size=11>" + (isLeader ? "★ " : "") + m.Name +
                     "  <color=#909090><size=9>niv." + m.Level + "</size></color></size>");
@@ -4671,7 +4727,7 @@ namespace Aetheria.UnityClient
                 // PARTY MEMBERS first, under the player's arrow: blue blips with their names.
                 foreach (PartyMemberInfo ally in _client.PartyMembers)
                 {
-                    if (ally.EntityId == self.Id) { continue; }
+                    if (ally.EntityId == self.Id || !ally.Online) { continue; }
 
                     Vector2 ap = WorldMapView.ToMap(map, ally.X, ally.Y);
                     Color prevAlly = GUI.color;
@@ -5730,17 +5786,20 @@ namespace Aetheria.UnityClient
                 float tw = 16f + (_chatTabs[t].Name.Length * 7f);
                 var tabRect = new Rect(tx, y0 - 4f - tabsH, tw, 18f);
                 if (t == _chatTabIndex) { WowUi.Highlight(tabRect); }
-                if (GUI.Button(tabRect, "<size=10>" + _chatTabs[t].Name + "</size>",
-                    new GUIStyle(GUI.skin.button) { richText = true }))
-                {
-                    _chatTabIndex = t;
-                }
 
+                // RIGHT-click must be read BEFORE the button draws: IMGUI buttons swallow
+                // every MouseDown over them, so checking after never saw the right click.
                 Event te = Event.current;
                 if (te.type == EventType.MouseDown && te.button == 1 && tabRect.Contains(te.mousePosition))
                 {
                     _chatTabConfig = _chatTabConfig == t ? -1 : t;
                     te.Use();
+                }
+
+                if (GUI.Button(tabRect, "<size=10>" + _chatTabs[t].Name + "</size>",
+                    new GUIStyle(GUI.skin.button) { richText = true }))
+                {
+                    _chatTabIndex = t;
                 }
 
                 tx += tw + 4f;
@@ -5964,7 +6023,7 @@ namespace Aetheria.UnityClient
                 // 2) PARTY MEMBERS: blue dots, like WoW's party blips.
                 foreach (PartyMemberInfo ally in _client.PartyMembers)
                 {
-                    if (ally.EntityId == selfForZone.Id) { continue; }
+                    if (ally.EntityId == selfForZone.Id || !ally.Online) { continue; }
 
                     float ax = (mapRect.width / 2f) + ((ally.X - selfForZone.Position.X) * pxPerUnit);
                     float ay = (mapRect.height / 2f) - ((ally.Y - selfForZone.Position.Y) * pxPerUnit);

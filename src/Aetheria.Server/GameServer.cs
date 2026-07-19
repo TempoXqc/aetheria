@@ -28,6 +28,9 @@ public sealed class GameServer
     private readonly IServerTransport _transport;
     private readonly WorldManager _worlds;
     private readonly PartyManager _parties = new(SimulationConstants.MaxPartySize);
+
+    /// <summary>Offline party members still holding their seat: dead peer key → character name.</summary>
+    private readonly Dictionary<int, string> _partyGhosts = new();
     private readonly Dictionary<PeerId, PlayerSession> _sessions = new();
     private readonly PacketWriter _writer = new();
     private readonly Action<string> _log;
@@ -870,6 +873,23 @@ public sealed class GameServer
         Send(peer, new QuestCatalogMessage(QuestsWithZones(data)));
         SendQuestState(peer, session);
 
+        // RECONNECTION: if a party still holds this character's seat (he shows greyed
+        // « déco » to the others), hand it back under the new peer id.
+        foreach (KeyValuePair<int, string> ghost in _partyGhosts)
+        {
+            if (string.Equals(ghost.Value, entity.Name, StringComparison.OrdinalIgnoreCase))
+            {
+                Party? rejoined = _parties.ReplaceMember(ghost.Key, peer.Value);
+                _partyGhosts.Remove(ghost.Key);
+                if (rejoined is not null)
+                {
+                    BroadcastPartyState(rejoined);
+                }
+
+                break;
+            }
+        }
+
         _log($"'{session.Name}' entered as {entity.Faction} {data.GetRace(entity.RaceId).Name} " +
              $"{data.GetClass(entity.ClassId).Name} ({entity.Gender}, entity {entity.Id}, {peer}, " +
              $"{(isNew ? "new" : "restored")}). Players online: {PlayerCount}.");
@@ -902,10 +922,26 @@ public sealed class GameServer
             return; // never entered the world — nothing to clean up
         }
 
-        Party? left = _parties.Leave(peer.Value);
-        if (left is not null)
+        // A disconnected party member KEEPS HIS SEAT: the others see him greyed « (déco) »
+        // instead of the group silently shrinking. He takes the seat back on reconnection.
+        Party? party = _parties.GetParty(peer.Value);
+        if (party is not null)
         {
-            BroadcastPartyState(left);
+            _partyGhosts[peer.Value] = session.Name;
+            bool anyOnline = party.Members.Any(m => _sessions.ContainsKey(new PeerId(m)));
+            if (!anyOnline)
+            {
+                // Everyone is gone: the party dissolves for real.
+                foreach (int m in party.Members.ToArray())
+                {
+                    _parties.Leave(m);
+                    _partyGhosts.Remove(m);
+                }
+            }
+            else
+            {
+                BroadcastPartyState(party);
+            }
         }
 
         // Social cleanup: a fleeing duelist forfeits; an open trade is cancelled.
@@ -975,6 +1011,24 @@ public sealed class GameServer
             BroadcastPartyState(party);
             SendPartyStateTo(peer); // the leaver sees an empty roster
         }
+
+        // Seats whose party dissolved release their offline ghosts.
+        List<int>? stale = null;
+        foreach (int key in _partyGhosts.Keys)
+        {
+            if (_parties.GetParty(key) is null)
+            {
+                (stale ??= new List<int>()).Add(key);
+            }
+        }
+
+        if (stale is not null)
+        {
+            foreach (int key in stale)
+            {
+                _partyGhosts.Remove(key);
+            }
+        }
     }
 
     /// <summary>Send the roster to every current member of the party (leader first).</summary>
@@ -1001,7 +1055,8 @@ public sealed class GameServer
         }
 
         string leaderName = _sessions.TryGetValue(new PeerId(party.Leader), out PlayerSession? ls)
-            ? ls.Name : "?";
+            ? ls.Name
+            : _partyGhosts.TryGetValue(party.Leader, out string? ghostLeader) ? ghostLeader : "?";
         uint tick = _worlds.OpenWorld.Tick;
         var members = new List<PartyMemberInfo>(party.Count);
         foreach (int member in party.Members)
@@ -1009,6 +1064,15 @@ public sealed class GameServer
             if (!_sessions.TryGetValue(new PeerId(member), out PlayerSession? ms) ||
                 !TryGetEntity(ms, out ServerEntity? body))
             {
+                // A DISCONNECTED member: keep his row, greyed — the frame shows « (déco) ».
+                if (_partyGhosts.TryGetValue(member, out string? ghostName))
+                {
+                    members.Add(new PartyMemberInfo
+                    {
+                        Name = ghostName, EntityId = -1, Online = false,
+                    });
+                }
+
                 continue;
             }
 

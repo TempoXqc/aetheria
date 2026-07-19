@@ -112,7 +112,7 @@ public static class SimulationConstants
     public const int MaxPartySize = 40;
 
     /// <summary>Protocol version — bump on any wire-format change; handshake rejects mismatches.</summary>
-    public const byte ProtocolVersion = 32;
+    public const byte ProtocolVersion = 33;
 
     /// <summary>Hearthstone cooldown, in ticks (15 minutes).</summary>
     public const int HearthstoneCooldownTicks = 15 * 60 * TickRate;
@@ -152,5 +152,5 @@ public static class SimulationConstants
     /// in the in-game HUD, and in the server startup log, so "am I up to date?" has a one-glance
     /// answer on both sides.
     /// </summary>
-    public const string GameVersion = "0.52.1";
+    public const string GameVersion = "0.53.0";
 }

@@ -19,6 +19,21 @@ public sealed class Party
 
     internal void Add(int member) => _members.Add(member);
 
+    /// <summary>Swap a member's key in place (reconnection: same character, new peer id).</summary>
+    internal void Replace(int oldMember, int newMember)
+    {
+        int index = _members.IndexOf(oldMember);
+        if (index >= 0)
+        {
+            _members[index] = newMember;
+        }
+
+        if (Leader == oldMember)
+        {
+            Leader = newMember;
+        }
+    }
+
     internal bool Remove(int member)
     {
         _members.Remove(member);
@@ -144,4 +159,20 @@ public sealed class PartyManager
     }
 
     public bool HasPendingInvite(int target) => _pendingInviteByTarget.ContainsKey(target);
+
+    /// <summary>
+    /// A member reconnected under a NEW key: hand him back his old seat (membership, leadership,
+    /// position in the roster all preserved). Returns the party, or null if the old key sat nowhere.
+    /// </summary>
+    public Party? ReplaceMember(int oldKey, int newKey)
+    {
+        if (!_partyByMember.Remove(oldKey, out Party? party))
+        {
+            return null;
+        }
+
+        party.Replace(oldKey, newKey);
+        _partyByMember[newKey] = party;
+        return party;
+    }
 }
