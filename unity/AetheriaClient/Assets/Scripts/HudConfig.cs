@@ -22,6 +22,7 @@ namespace Aetheria.UnityClient
         public enum Frame
         {
             PlayerFrame, TargetFrame, ActionBar, Messages, XpBar,
+            Minimap, QuestTracker, CharSheet, Bags,
         }
 
         private static readonly Dictionary<Bind, KeyCode> Defaults = new Dictionary<Bind, KeyCode>

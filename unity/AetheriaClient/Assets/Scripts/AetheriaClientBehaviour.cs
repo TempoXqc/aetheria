@@ -997,7 +997,8 @@ namespace Aetheria.UnityClient
 
         private void PressLoot()
         {
-            if (_client.OpenCorpseId >= 0) { _client.CloseCorpse(); }
+            // Loot window already open: F = take EVERYTHING (the window closes once emptied).
+            if (_client.OpenCorpseId >= 0) { _client.SendLootCorpse(_client.OpenCorpseId); }
             else if (_nearbyCorpseId >= 0) { _client.SendOpenCorpse(_nearbyCorpseId); }
             else if (_questWindowOpen) { _questWindowOpen = false; }
             else if (_nearbyQuestGiverId >= 0) { _questWindowOpen = true; }
@@ -1158,6 +1159,20 @@ namespace Aetheria.UnityClient
                 case HudConfig.Frame.ActionBar: return new Rect((VirtW / 2f) - 120 + o.x, VirtH - 66 + o.y, 240, 52);
                 case HudConfig.Frame.XpBar: return new Rect((VirtW / 2f) - 220 + o.x, VirtH - 88 + o.y, 440, 16);
                 case HudConfig.Frame.Messages: return new Rect(12 + o.x, VirtH - 200 + o.y, 480, 160);
+                case HudConfig.Frame.Minimap: return new Rect(VirtW - 196 + o.x, 8 + o.y, 188, 216);
+                case HudConfig.Frame.QuestTracker: return new Rect(VirtW - 236 + o.x, 232 + o.y, 228, 66);
+                case HudConfig.Frame.CharSheet: return new Rect(16 + o.x, 60 + o.y, 342, 396);
+                case HudConfig.Frame.Bags:
+                {
+                    const float Icon = 34f;
+                    const int Cols = 8;
+                    int cells = SimulationConstants.PlayerInventoryCapacity;
+                    int rows = ((cells - 1) / Cols) + 1;
+                    float w = 24f + (Cols * (Icon + 4f));
+                    float h = 56f + (rows * (Icon + 4f)) + 24f;
+                    return new Rect(VirtW - w - 16 + o.x, VirtH - h - 52 + o.y, w, h);
+                }
+
                 default: return new Rect(0, 0, 100, 100);
             }
         }
@@ -1293,6 +1308,20 @@ namespace Aetheria.UnityClient
             }
         }
 
+        /// <summary>True exactly once when Enter is pressed this GUI frame (and eats the event).</summary>
+        private static bool EnterPressed()
+        {
+            Event e = Event.current;
+            if (e != null && e.type == EventType.KeyDown &&
+                (e.keyCode == KeyCode.Return || e.keyCode == KeyCode.KeypadEnter))
+            {
+                e.Use();
+                return true;
+            }
+
+            return false;
+        }
+
         private void DrawLoginScreen()
         {
             DrawAuthChrome(withNews: true);
@@ -1306,7 +1335,8 @@ namespace Aetheria.UnityClient
             WowUi.GoldCentered(new Rect(cx - 140, y + 62, 280, 20), "Mot de passe");
             _secret = WowUi.TextField(new Rect(cx - 140, y + 84, 280, 30), _secret, password: true);
 
-            if (WowUi.Button(new Rect(cx - 110, y + 132, 220, 38), "Se connecter"))
+            // Enter anywhere on this screen = the big button (WoW's login works the same way).
+            if (WowUi.Button(new Rect(cx - 110, y + 132, 220, 38), "Se connecter") || EnterPressed())
             {
                 Connect(LastServerFor(_account.Trim()), createAccount: false);
             }
@@ -1356,7 +1386,7 @@ namespace Aetheria.UnityClient
             WowUi.GoldCentered(new Rect(cx - 140, y + 120, 280, 20), "Confirmation");
             _secret2 = WowUi.TextField(new Rect(cx - 140, y + 142, 280, 30), _secret2, password: true);
 
-            if (WowUi.Button(new Rect(cx - 120, y + 188, 240, 36), "Créer le compte"))
+            if (WowUi.Button(new Rect(cx - 120, y + 188, 240, 36), "Créer le compte") || EnterPressed())
             {
                 if (_secret != _secret2)
                 {
@@ -1414,7 +1444,9 @@ namespace Aetheria.UnityClient
             // BOTTOM CENTRE: the character's name over the big enter button.
             WowUi.GoldCentered(new Rect((VirtW / 2f) - 220, VirtH - 134, 440, 26),
                 "<size=17>" + _client.CharacterName + "</size>");
-            if (WowUi.Button(new Rect((VirtW / 2f) - 150, VirtH - 100, 300, 42), "Entrer dans le monde"))
+            // Enter = enter the world, same as the big button.
+            if (WowUi.Button(new Rect((VirtW / 2f) - 150, VirtH - 100, 300, 42), "Entrer dans le monde") ||
+                EnterPressed())
             {
                 EnterExisting();
             }
@@ -2332,7 +2364,7 @@ namespace Aetheria.UnityClient
             QuestDefinition q = Data.GetQuest(active);
             if (q == null) { return; }
 
-            Rect r = new Rect(VirtW - 236, 232, 228, 66);
+            Rect r = FrameRect(HudConfig.Frame.QuestTracker);
             WowUi.Gold(new Rect(r.x, r.y, r.width, 18), "Objectifs");
             WowUi.Body(new Rect(r.x, r.y + 20, r.width, 20), "<b>" + q.Name + "</b>");
             bool done = _client.QuestKills >= q.RequiredKills;
@@ -2383,7 +2415,8 @@ namespace Aetheria.UnityClient
                 y += 26f;
             }
 
-            if (GUI.Button(new Rect(win.x + 12, y + 6, win.width - 24, 24), "Tout prendre"))
+            if (GUI.Button(new Rect(win.x + 12, y + 6, win.width - 24, 24),
+                "Tout prendre [" + KeyLabel(HudConfig.Bind.Interact) + "]"))
             {
                 _client.SendLootCorpse(_client.OpenCorpseId);
             }
@@ -2456,8 +2489,8 @@ namespace Aetheria.UnityClient
                 "<size=9><color=#909090>Clic sur une pièce : retirer · Clic droit sur le portrait : tourner · Sacs : " + _cfg.Key(HudConfig.Bind.Bags) + "</color></size>", Rich());
         }
 
-        /// <summary>The character sheet's window rect in virtual GUI coordinates.</summary>
-        private static Rect SheetWindowRect() => new Rect(16, 60, 342, 396);
+        /// <summary>The character sheet's window rect (movable via Options → Déplacer l'interface).</summary>
+        private Rect SheetWindowRect() => FrameRect(HudConfig.Frame.CharSheet);
 
         /// <summary>The mouse position in virtual GUI coordinates (same space as OnGUI rects).</summary>
         private Vector2 GuiMouse()
@@ -2494,10 +2527,8 @@ namespace Aetheria.UnityClient
             const float Icon = 34f;
             const int Cols = 8;
             int cells = SimulationConstants.PlayerInventoryCapacity;
-            int rows = ((cells - 1) / Cols) + 1;
-            float w = 24f + (Cols * (Icon + 4f));
-            float h = 56f + (rows * (Icon + 4f)) + 24f;
-            Rect win = new Rect(VirtW - w - 16, VirtH - h - 52, w, h);
+            Rect win = FrameRect(HudConfig.Frame.Bags);
+            float w = win.width;
             GUI.Box(win, "<b>Sacs</b>", RichCenteredBox());
 
             if (GUI.Button(new Rect(win.x + win.width - 24, win.y + 4, 20, 20), "X"))
@@ -2961,7 +2992,7 @@ namespace Aetheria.UnityClient
 
         private void DrawOptionsLayout()
         {
-            GUILayout.Label("Active le mode déplacement puis glisse les cadres\n(cadre joueur, cible, barre d'action, barre d'XP,\nmessages) où tu veux. Sauvegardé dans le profil " + _cfg.Profile + ".");
+            GUILayout.Label("Active le mode déplacement puis glisse les cadres\n(joueur, cible, barre d'action, barre d'XP, messages,\ncarte, suivi de quêtes, fiche de personnage, sacs)\noù tu veux. Sauvegardé dans le profil " + _cfg.Profile + ".");
             GUILayout.Space(8);
             if (GUILayout.Button(_layoutEditMode ? "Terminer le déplacement" : "Déplacer l'interface", GUILayout.Height(28)))
             {
@@ -3160,7 +3191,7 @@ namespace Aetheria.UnityClient
         {
             if (_minimap.Texture == null) { return; }
 
-            Rect panel = new Rect(VirtW - 196, 8, 188, 216);
+            Rect panel = FrameRect(HudConfig.Frame.Minimap);
             WowUi.Panel(panel);
 
             EntitySnapshot self;
