@@ -263,6 +263,19 @@ public static class EquipmentTests
         Assert.False(world.TryMoveItem(p.Id, 1, 200), "beyond the bag refused");
     }
 
+    [Test("Unequip can target a CHOSEN bag cell (dragging a piece off the character sheet).")]
+    public static void UnequipTo_LandsInTheChosenCell()
+    {
+        var world = new World();
+        ServerEntity p = world.SpawnPlayer(new PeerId(11), "Vestiaire", raceId: 1, classId: 1);
+        world.AddItem(p, 1, 1);
+        Assert.True(world.TryEquipItem(p.Id, 1, EquipSlot.None));
+
+        Assert.True(world.TryEquipItem(p.Id, 0, EquipSlot.Weapon, bagIndex: 6));
+        Assert.Equal((byte)0, p.GetEquipped(EquipSlot.Weapon));
+        Assert.Equal((byte)1, p.Inventory.Stacks[6].ItemId); // parked exactly where dropped
+    }
+
     [Test("Log back in where you logged out: position and bag layout survive save/restore.")]
     public static void PositionAndLayout_SurviveRestore()
     {

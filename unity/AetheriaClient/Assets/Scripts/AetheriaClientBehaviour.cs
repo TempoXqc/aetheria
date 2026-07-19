@@ -150,6 +150,7 @@ namespace Aetheria.UnityClient
         // Drag & drop from the character-sheet bag.
         private ItemStack? _draggingItem;
         private int _dragFromIndex = -1; // bag cell the dragged stack came from
+        private EquipSlot _dragFromEquip = EquipSlot.None; // sheet slot it came from (if any)
 
         // Bag filter tabs: 0 Tout, 1 Équipement, 2 Consommables, 3 Butin — order is customisable.
         private int _bagFilter;
@@ -2910,11 +2911,23 @@ namespace Aetheria.UnityClient
             if (equippedId != 0)
             {
                 DrawItemIcon(new Rect(rect.x + 3, rect.y + 3, rect.width - 6, rect.height - 6), equippedId, 1);
-                if (Event.current.type == EventType.MouseDown && Event.current.button == 0 &&
-                    rect.Contains(Event.current.mousePosition))
+                Event e = Event.current;
+                if (e.type == EventType.MouseDown && rect.Contains(e.mousePosition))
                 {
-                    _client.SendEquipItem(0, (byte)slot);
-                    Event.current.Use();
+                    if (e.button == 0 && _draggingItem == null && !_client.TradeActive)
+                    {
+                        // LEFT hold = take the piece OFF the sheet: drop it on a bag cell to
+                        // store it there, on an ally to trade it, or on the ground to drop it.
+                        _draggingItem = new ItemStack(equippedId, 1);
+                        _dragFromEquip = slot;
+                        _dragFromIndex = -1;
+                        e.Use();
+                    }
+                    else if (e.button == 1)
+                    {
+                        _client.SendEquipItem(0, (byte)slot); // RIGHT = quick unequip
+                        e.Use();
+                    }
                 }
             }
             else
@@ -3192,15 +3205,22 @@ namespace Aetheria.UnityClient
             if (Input.GetMouseButtonUp(0))
             {
                 int from = _dragFromIndex;
+                EquipSlot fromEquip = _dragFromEquip;
                 _draggingItem = null;
                 _dragFromIndex = -1;
+                _dragFromEquip = EquipSlot.None;
 
-                if (_bagsOpen && from >= 0)
+                if (_bagsOpen)
                 {
                     int target = BagCellAt(m);
                     if (target >= 0)
                     {
-                        if (target != from)
+                        if (fromEquip != EquipSlot.None)
+                        {
+                            // From the SHEET onto a bag cell: unequip straight into that cell.
+                            _client.SendUnequipTo((byte)fromEquip, (byte)target);
+                        }
+                        else if (from >= 0 && target != from)
                         {
                             _client.SendMoveItem((byte)from, (byte)target);
                         }
@@ -3209,10 +3229,33 @@ namespace Aetheria.UnityClient
                     }
                 }
 
+                // Dropped back onto the character sheet: cancel, nothing happens.
+                if (_sheetOpen && SheetWindowRect().Contains(m) && fromEquip != EquipSlot.None)
+                {
+                    return;
+                }
+
                 EntitySnapshot self;
                 bool haveSelf = _client.TryGetSelf(out self);
                 EntitySnapshot? ally = !haveSelf ? null : PickEntityUnderMouse(e =>
                     e.Kind == EntityKind.Player && e.Faction == self.Faction && e.Id != self.Id);
+
+                if (fromEquip != EquipSlot.None)
+                {
+                    // The piece must leave the body first — then trade it or drop it.
+                    _client.SendEquipItem(0, (byte)fromEquip);
+                    if (ally != null)
+                    {
+                        _pendingAutoOffer = s;
+                        _client.SendTradeRequest(ally.Value.Id);
+                    }
+                    else
+                    {
+                        _client.SendDropItem(s.ItemId, s.Quantity);
+                    }
+
+                    return;
+                }
 
                 if (ally != null)
                 {

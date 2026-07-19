@@ -316,7 +316,8 @@ public sealed class GameServer
 
                 case MessageType.EquipItem:
                     EquipItem equip = EquipItem.Read(ref reader);
-                    if (world.TryEquipItem(session.EntityId, equip.ItemId, (EquipSlot)equip.Slot))
+                    if (world.TryEquipItem(session.EntityId, equip.ItemId, (EquipSlot)equip.Slot,
+                            equip.BagIndex == 255 ? -1 : equip.BagIndex))
                     {
                         SendSelfState(peer, session);
                     }
@@ -1368,6 +1369,9 @@ public sealed class GameServer
         _state.Names[nameKey] = accountKey; // durable, server-wide, across both factions
         return true;
     }
+
+    /// <summary>Flush everything to disk NOW — called by the host on graceful shutdown.</summary>
+    public void SaveNow() => PersistAll();
 
     /// <summary>Capture every online character and bank into durable records and save.</summary>
     private void PersistAll()

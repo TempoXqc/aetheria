@@ -221,11 +221,13 @@ public readonly struct EquipItem
 {
     public readonly byte ItemId;      // 0 = unequip the given slot
     public readonly byte Slot;        // (byte)EquipSlot — used for unequip; inferred from the item otherwise
+    public readonly byte BagIndex;    // where an UNEQUIPPED piece should land (255 = first free cell)
 
-    public EquipItem(byte itemId, byte slot)
+    public EquipItem(byte itemId, byte slot, byte bagIndex = 255)
     {
         ItemId = itemId;
         Slot = slot;
+        BagIndex = bagIndex;
     }
 
     public void Write(PacketWriter w)
@@ -233,13 +235,15 @@ public readonly struct EquipItem
         w.WriteByte((byte)MessageType.EquipItem);
         w.WriteByte(ItemId);
         w.WriteByte(Slot);
+        w.WriteByte(BagIndex);
     }
 
     public static EquipItem Read(ref PacketReader r)
     {
         byte itemId = r.ReadByte();
         byte slot = r.ReadByte();
-        return new EquipItem(itemId, slot);
+        byte bagIndex = r.ReadByte();
+        return new EquipItem(itemId, slot, bagIndex);
     }
 }
 

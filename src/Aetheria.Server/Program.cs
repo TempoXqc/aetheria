@@ -50,7 +50,9 @@ var loop = new FixedStepLoop(SimulationConstants.TickRate, dt =>
 
 loop.Run(cts.Token);
 
-Console.WriteLine("Server stopped.");
+// LAST save on the way out: everyone reconnects exactly where they were, even across restarts.
+server.SaveNow();
+Console.WriteLine("State saved. Server stopped.");
 return 0;
 
 static int ParsePort(string[] args)

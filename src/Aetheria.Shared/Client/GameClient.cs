@@ -152,6 +152,9 @@ public sealed class GameClient
     /// <summary>Equip a weapon/armor from the bags (or unequip a slot with itemId 0).</summary>
     public void SendEquipItem(byte itemId, byte slot) => Send(new EquipItem(itemId, slot));
 
+    /// <summary>Unequip a slot INTO a chosen bag cell (drag from the character sheet).</summary>
+    public void SendUnequipTo(byte slot, byte bagIndex) => Send(new EquipItem(0, slot, bagIndex));
+
     public void SendMoveItem(byte fromIndex, byte toIndex) => Send(new MoveItem(fromIndex, toIndex));
 
     /// <summary>Say something in the world chat.</summary>

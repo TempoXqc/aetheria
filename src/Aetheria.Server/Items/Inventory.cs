@@ -209,6 +209,18 @@ public sealed class Inventory
             return true;
         }
 
+        // A far cell past the end: pad holes so the item really lands where it was dropped.
+        if (index >= _stacks.Count && index < Capacity)
+        {
+            while (_stacks.Count < index)
+            {
+                _stacks.Add(new ItemStack(0, 0));
+            }
+
+            _stacks.Add(new ItemStack(itemId, quantity));
+            return true;
+        }
+
         if (_stacks.Count < Capacity)
         {
             _stacks.Insert(System.Math.Clamp(index, 0, _stacks.Count), new ItemStack(itemId, quantity));

@@ -158,7 +158,7 @@ public sealed class World
                player.Inventory.MoveSlot(from, to);
     }
 
-    public bool TryEquipItem(int playerId, byte itemId, EquipSlot slot)
+    public bool TryEquipItem(int playerId, byte itemId, EquipSlot slot, int bagIndex = -1)
     {
         if (!_entities.TryGetValue(playerId, out ServerEntity? player) ||
             player.IsDead || player.Kind != EntityKind.Player)
@@ -168,7 +168,8 @@ public sealed class World
 
         if (itemId == 0)
         {
-            // Unequip the given slot back into the bags.
+            // Unequip the given slot back into the bags — into the CHOSEN cell when the player
+            // dragged the piece onto one (falls back to the first free cell).
             if (slot == EquipSlot.None || (int)slot >= EquipSlots.Count)
             {
                 return false;
@@ -181,7 +182,13 @@ public sealed class World
             }
 
             ItemDefinition currentDef = _gameData.GetItem(current);
-            if (player.Inventory.TryAdd(current, 1, currentDef.Stackable, currentDef.MaxStack) > 0)
+            bool stored = bagIndex >= 0 && player.Inventory.TryInsertAt(bagIndex, current, 1);
+            if (!stored)
+            {
+                stored = player.Inventory.TryAdd(current, 1, currentDef.Stackable, currentDef.MaxStack) == 0;
+            }
+
+            if (!stored)
             {
                 return false; // bags full: the piece stays on
             }
