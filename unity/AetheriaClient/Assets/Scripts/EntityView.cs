@@ -40,6 +40,9 @@ namespace Aetheria.UnityClient
         private Animator _extAnimator;
         private float _extHeadHeight;
 
+        // Real monster (Ultimate Monsters pack): its clip player replaces procedural animation.
+        private MonsterAnimator _monsterAnim;
+
         // Colour bookkeeping: base colour per renderer, so the hit flash can restore them.
         private Renderer[] _parts = new Renderer[0];
         private Color[] _baseColors = new Color[0];
@@ -87,7 +90,11 @@ namespace Aetheria.UnityClient
         /// <summary>Where nameplates and prompts should anchor, above the model's head.</summary>
         public float HeadHeight
         {
-            get { return _extAnimator != null ? _extHeadHeight : _rig != null ? _rig.HeadHeight : 2f; }
+            get
+            {
+                return _extAnimator != null || _monsterAnim != null ? _extHeadHeight
+                    : _rig != null ? _rig.HeadHeight : 2f;
+            }
         }
 
         public static EntityView Create(EntitySnapshot snapshot)
@@ -113,7 +120,18 @@ namespace Aetheria.UnityClient
                 }
             }
 
-            if (view._extAnimator == null)
+            // Monsters: prefer a real animated model (Ultimate Monsters pack) when imported.
+            if (snapshot.Kind == EntityKind.Monster && MonsterModels.Available)
+            {
+                MonsterHandle real = MonsterModels.Create(body.transform, snapshot.RaceId);
+                if (real != null)
+                {
+                    view._monsterAnim = real.Animator;
+                    view._extHeadHeight = real.HeadHeight;
+                }
+            }
+
+            if (view._extAnimator == null && view._monsterAnim == null)
             {
                 view._rig = CharacterModelBuilder.Build(body.transform, snapshot);
             }
@@ -234,6 +252,12 @@ namespace Aetheria.UnityClient
                 return;
             }
 
+            if (_monsterAnim != null)
+            {
+                _monsterAnim.PlayAttack();
+                return;
+            }
+
             _attackTimer = AttackDuration;
         }
 
@@ -241,6 +265,10 @@ namespace Aetheria.UnityClient
         public void TriggerHit()
         {
             _flashTimer = HitFlashDuration;
+            if (_monsterAnim != null)
+            {
+                _monsterAnim.PlayHit(); // a real flinch on top of the red flash
+            }
         }
 
         private GameObject _selectionRing;
@@ -323,10 +351,14 @@ namespace Aetheria.UnityClient
                 _lastPosition = transform.position;
             }
 
-            // External characters: their Animator does the acting — feed it the measured speed.
+            // External characters / real monsters: their clips do the acting — feed them speed.
             if (_extAnimator != null)
             {
                 _extAnimator.SetFloat("Speed", _smoothedSpeed);
+            }
+            else if (_monsterAnim != null)
+            {
+                _monsterAnim.SetSpeed(_smoothedSpeed);
             }
             else
             {

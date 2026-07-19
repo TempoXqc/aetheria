@@ -211,6 +211,16 @@ namespace Aetheria.UnityClient
         /// <summary>The slain creature lying on its side, darkened — cosmetic remains on a timer.</summary>
         private static ModelRig BuildMonsterRemains(Transform parent, byte defId)
         {
+            // Real monster models: play the Death clip once and stay down — no tilt needed.
+            if (MonsterModels.Available)
+            {
+                MonsterHandle real = MonsterModels.CreateRemains(parent, defId);
+                if (real != null)
+                {
+                    return new ModelRig { HeadHeight = 0.9f };
+                }
+            }
+
             // A tilt node rolls the whole body onto its side just above the ground.
             var tilt = new GameObject("Remains");
             tilt.transform.SetParent(parent, false);
