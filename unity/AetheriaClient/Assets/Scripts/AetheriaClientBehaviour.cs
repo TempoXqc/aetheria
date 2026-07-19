@@ -84,6 +84,7 @@ namespace Aetheria.UnityClient
         private string _chatInput = "";
         private bool _chatInputActive;
         private readonly List<ServerEntry> _servers = new List<ServerEntry>();
+        private string _newServerAddress = ""; // the browser's add-a-server field
         private bool _lastServerSaved;
         private int _previewKey = -1;
 
@@ -561,11 +562,46 @@ namespace Aetheria.UnityClient
 
             foreach (string address in PredefinedServers)
             {
-                if (SplitAddress(address, out string host, out int port))
+                AddServerEntry(address);
+            }
+
+            // servers.txt next to the game (one ip:port per line): ship a build pre-pointed at
+            // YOUR server — drop the file beside the .exe, no rebuild needed.
+            try
+            {
+                string path = System.IO.Path.Combine(Application.dataPath, "..", "servers.txt");
+                if (System.IO.File.Exists(path))
                 {
-                    _servers.Add(new ServerEntry { Host = host, Port = port });
+                    foreach (string line in System.IO.File.ReadAllLines(path))
+                    {
+                        AddServerEntry(line.Trim());
+                    }
                 }
             }
+            catch (System.Exception) { /* unreadable file: the predefined list still works */ }
+
+            // Servers the player added by hand in the browser (saved locally).
+            foreach (string address in PlayerPrefs.GetString("aeth.customServers", "")
+                         .Split(';'))
+            {
+                AddServerEntry(address);
+            }
+        }
+
+        /// <summary>Add one ip:port to the list (ignoring blanks and duplicates).</summary>
+        private void AddServerEntry(string address)
+        {
+            if (string.IsNullOrEmpty(address) || !SplitAddress(address, out string host, out int port))
+            {
+                return;
+            }
+
+            foreach (ServerEntry existing in _servers)
+            {
+                if (existing.Host == host && existing.Port == port) { return; }
+            }
+
+            _servers.Add(new ServerEntry { Host = host, Port = port });
         }
 
         /// <summary>(Re)query every listed server: name, population, your character there.</summary>
@@ -1688,6 +1724,29 @@ namespace Aetheria.UnityClient
                 GUI.enabled = true;
                 GUILayout.EndHorizontal();
             }
+
+            // Add a server by address — how a friend joins YOUR server across the internet.
+            GUILayout.Space(8);
+            GUILayout.BeginHorizontal();
+            GUILayout.Label("<size=11>Ajouter :</size>", Rich(), GUILayout.Width(58));
+            _newServerAddress = GUILayout.TextField(_newServerAddress, GUILayout.Width(190));
+            if (GUILayout.Button("＋ Ajouter", GUILayout.Width(84)))
+            {
+                string address = _newServerAddress.Trim();
+                if (SplitAddress(address, out string _, out int _) && address.Length > 0)
+                {
+                    AddServerEntry(address);
+                    string saved = PlayerPrefs.GetString("aeth.customServers", "");
+                    PlayerPrefs.SetString("aeth.customServers",
+                        string.IsNullOrEmpty(saved) ? address : saved + ";" + address);
+                    PlayerPrefs.Save();
+                    _newServerAddress = "";
+                    RefreshServers();
+                }
+            }
+
+            GUILayout.Label("<size=9><color=#909090>ex : 82.65.12.34:27015</color></size>", Rich());
+            GUILayout.EndHorizontal();
 
             GUILayout.Space(6);
             GUILayout.BeginHorizontal();
