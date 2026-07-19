@@ -7,4 +7,9 @@
     <InvariantGlobalization>true</InvariantGlobalization>
   </PropertyGroup>
 
+  <ItemGroup>
+    <!-- The UI page ships beside the binary so the launcher works from any working directory. -->
+    <None Include="launcher.html" CopyToOutputDirectory="PreserveNewest" />
+  </ItemGroup>
+
 </Project>

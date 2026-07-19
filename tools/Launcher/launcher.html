@@ -5,169 +5,237 @@
 <title>Aetheria — Launcher</title>
 <style>
   :root {
-    --bg: #0a0d13; --panel: #131824; --panel2: #1a2130; --border: #2c3547;
-    --gold: #f0c85a; --gold-dim: #b59a54; --text: #dfe4ee; --muted: #8a93a6;
-    --green: #58c05a; --orange: #e8a33d; --red: #d05548;
+    --bg: #0b0e14; --side: #0d1017; --panel: #151a24; --panel2: #1b2230;
+    --border: #262e3f; --gold: #f0c85a; --gold-dim: #b59a54;
+    --text: #e6eaf2; --muted: #8a93a6; --dim: #5d6577;
+    --blue: #0d6fd8; --blue-hi: #1e83f0; --green: #58c05a; --orange: #e8a33d; --red: #d05548;
   }
   * { box-sizing: border-box; }
+  html, body { height: 100%; }
   body {
-    margin: 0; min-height: 100vh; color: var(--text);
+    margin: 0; color: var(--text); background: var(--bg);
     font: 14px/1.5 'Segoe UI', system-ui, sans-serif;
+    display: flex; overflow: hidden;
+  }
+
+  /* ============================================================= sidebar */
+  #sidebar {
+    width: 300px; flex-shrink: 0; display: flex; flex-direction: column;
     background:
-      radial-gradient(900px 480px at 80% -10%, #232c44 0%, transparent 60%),
-      radial-gradient(700px 400px at 0% 110%, #1a2233 0%, transparent 55%),
-      var(--bg);
-    display: flex; flex-direction: column;
+      radial-gradient(400px 300px at 30% 12%, rgba(240,200,90,.12) 0%, transparent 60%),
+      linear-gradient(180deg, #141926 0%, var(--side) 45%);
+    border-right: 1px solid var(--border);
+    padding: 26px 20px 20px; position: relative;
   }
-  header {
-    padding: 26px 36px 10px; text-align: center;
+  #logo { text-align: center; margin-top: 12px; }
+  #logo .title {
+    font-family: Georgia, serif; font-size: 34px; letter-spacing: 7px; color: var(--gold);
+    text-transform: uppercase; text-shadow: 0 0 26px rgba(240,200,90,.4);
   }
-  header h1 {
-    margin: 0; font-family: Georgia, serif; font-size: 40px; letter-spacing: 10px;
-    color: var(--gold); text-transform: uppercase;
-    text-shadow: 0 0 24px rgba(240,200,90,.35);
+  #logo .subtitle {
+    color: #c33; font-size: 13px; letter-spacing: 6px; font-weight: 700;
+    text-transform: uppercase; margin-top: 2px;
   }
-  header .sub { color: var(--muted); font-size: 12px; letter-spacing: 3px; text-transform: uppercase; }
+  #logo .emblem {
+    width: 110px; height: 110px; margin: 22px auto 0; border-radius: 50%;
+    background: radial-gradient(circle at 35% 30%, #2b3550, #10141f 70%);
+    border: 2px solid var(--gold-dim); display: grid; place-items: center;
+    font-size: 52px; box-shadow: 0 0 34px rgba(240,200,90,.2);
+  }
 
-  main { flex: 1; display: flex; gap: 18px; padding: 18px 36px; max-width: 1100px; margin: 0 auto; width: 100%; }
-  .col-left { flex: 1.4; display: flex; flex-direction: column; gap: 14px; }
-  .col-right { flex: 1; display: flex; flex-direction: column; gap: 14px; }
+  #sidebar .spacer { flex: 1; }
 
-  .panel {
+  .sect-label {
+    color: var(--dim); font-size: 10.5px; letter-spacing: 1.6px; text-transform: uppercase;
+    font-weight: 700; margin: 0 0 6px;
+  }
+  select, .sideinput {
+    width: 100%; padding: 9px 11px; background: #10141d; color: var(--text);
+    border: 1px solid var(--border); border-radius: 6px;
+    font: 14px 'Segoe UI', sans-serif; margin-bottom: 10px;
+  }
+  select:focus, .sideinput:focus { outline: none; border-color: var(--blue); }
+
+  #verline { color: var(--dim); font-size: 11.5px; margin: -4px 0 12px; }
+  #verline b { color: var(--muted); }
+
+  #playrow { display: flex; gap: 8px; }
+  #bigbtn {
+    flex: 1; padding: 14px 10px; font: 700 17px 'Segoe UI', sans-serif; letter-spacing: .5px;
+    cursor: pointer; border-radius: 6px; color: #fff; border: 1px solid #2a8bea;
+    background: linear-gradient(180deg, var(--blue-hi), var(--blue));
+    box-shadow: 0 4px 18px rgba(20,120,230,.35);
+  }
+  #bigbtn:hover { filter: brightness(1.1); }
+  #bigbtn:disabled { opacity: .5; cursor: default; filter: none; }
+  #bigbtn.update { background: linear-gradient(180deg, #33aa44, #1f7c2e); border-color: #3f8a46; box-shadow: 0 4px 18px rgba(60,180,80,.3); }
+  #gearbtn {
+    width: 48px; border-radius: 6px; cursor: pointer; font-size: 18px;
+    background: var(--panel2); border: 1px solid var(--border); color: var(--muted);
+  }
+  #gearbtn:hover { border-color: var(--blue); color: var(--text); }
+  #status { color: var(--muted); font-size: 12px; min-height: 18px; margin-top: 10px; }
+  #status.err { color: var(--red); }
+
+  /* settings popover */
+  #settings {
+    display: none; position: absolute; bottom: 110px; left: 20px; width: 260px; z-index: 60;
+    background: var(--panel); border: 1px solid var(--border); border-radius: 10px;
+    padding: 14px; box-shadow: 0 14px 40px rgba(0,0,0,.6);
+  }
+  #settings label { display:block; color: var(--dim); font-size: 10.5px; letter-spacing: 1.4px;
+    text-transform: uppercase; font-weight: 700; margin: 8px 0 3px; }
+  #settings .hint { color: var(--dim); font-size: 11px; margin-top: 8px; }
+
+  /* ============================================================= main */
+  #main { flex: 1; overflow-y: auto; padding: 22px 26px; }
+  #main::-webkit-scrollbar { width: 10px; }
+  #main::-webkit-scrollbar-thumb { background: var(--border); border-radius: 5px; }
+
+  #hero {
+    border-radius: 12px; overflow: hidden; border: 1px solid var(--border);
+    background:
+      radial-gradient(700px 320px at 85% 0%, rgba(240,200,90,.16) 0%, transparent 55%),
+      radial-gradient(500px 300px at 10% 100%, rgba(30,110,220,.18) 0%, transparent 55%),
+      linear-gradient(180deg, #1a2233, #12161f);
+    padding: 34px 34px 30px;
+  }
+  #hero .tag { color: var(--muted); font-size: 11px; letter-spacing: 2px; text-transform: uppercase; font-weight: 700; }
+  #hero h1 { margin: 8px 0 12px; font-size: 26px; line-height: 1.25; color: var(--gold); font-family: Georgia, serif; }
+  #hero p { margin: 0; color: #b9c1d2; max-width: 640px; white-space: pre-wrap; }
+
+  h2.rowtitle { font-size: 17px; margin: 24px 0 12px; }
+  #cards { display: grid; grid-template-columns: repeat(auto-fill, minmax(230px, 1fr)); gap: 14px; }
+  .card {
+    border: 1px solid var(--border); border-radius: 10px; overflow: hidden;
     background: linear-gradient(180deg, var(--panel), #10141d);
-    border: 1px solid var(--border); border-radius: 10px; padding: 16px 18px;
-    box-shadow: 0 10px 30px rgba(0,0,0,.5);
   }
-  .panel h2 { margin: 0 0 10px; font-size: 12px; letter-spacing: 2px; text-transform: uppercase; color: var(--gold); }
+  .card .art { height: 96px; }
+  .card:nth-child(3n+1) .art { background: radial-gradient(240px 120px at 30% 20%, rgba(240,200,90,.35), transparent 70%), linear-gradient(160deg,#2a2438,#151a24); }
+  .card:nth-child(3n+2) .art { background: radial-gradient(240px 120px at 70% 30%, rgba(30,140,240,.35), transparent 70%), linear-gradient(200deg,#1c2c40,#141a26); }
+  .card:nth-child(3n)   .art { background: radial-gradient(240px 120px at 50% 80%, rgba(90,200,110,.3), transparent 70%), linear-gradient(180deg,#1c3024,#141c18); }
+  .card .body { padding: 12px 14px 14px; }
+  .card .tag { color: var(--dim); font-size: 10px; letter-spacing: 1.6px; text-transform: uppercase; font-weight: 700; }
+  .card .txt { margin-top: 4px; font-size: 13.5px; }
 
-  /* Channel tabs */
-  .channels { display: flex; gap: 8px; }
-  .chan {
-    flex: 1; text-align: center; padding: 10px 6px; cursor: pointer;
-    border: 1px solid var(--border); border-radius: 8px; background: var(--panel2);
-    transition: border-color .15s;
+  /* ============================================================= friends */
+  #friends {
+    width: 250px; flex-shrink: 0; border-left: 1px solid var(--border);
+    background: var(--side); padding: 20px 16px; display: flex; flex-direction: column;
   }
-  .chan:hover { border-color: #45536e; }
-  .chan.active { border-color: var(--gold-dim); box-shadow: 0 0 0 1px var(--gold-dim); }
-  .chan .cname { font-weight: 700; }
-  .chan .cdesc { color: var(--muted); font-size: 11px; }
+  #friends h2 { font-size: 12px; letter-spacing: 2px; text-transform: uppercase; color: var(--muted); margin: 0 0 14px; }
+  .friend {
+    display: flex; align-items: center; gap: 10px; padding: 8px 6px; border-radius: 8px; opacity: .45;
+  }
+  .friend .dot { width: 34px; height: 34px; border-radius: 50%; background: var(--panel2); border: 1px solid var(--border);
+    display: grid; place-items: center; color: var(--dim); }
+  .friend .who .n { font-size: 13px; }
+  .friend .who .s { font-size: 11px; color: var(--dim); }
+  #friends .soon {
+    margin-top: 10px; padding: 12px; border: 1px dashed var(--border); border-radius: 10px;
+    color: var(--dim); font-size: 12px; text-align: center;
+  }
 
-  .verline { display: flex; justify-content: space-between; color: var(--muted); font-size: 12.5px; margin-top: 10px; }
-  .verline b { color: var(--text); }
+  /* ============================================================= host mode */
+  #hostPanel {
+    display: none; max-width: 720px; margin: 30px auto;
+    background: linear-gradient(180deg, var(--panel), #10141d);
+    border: 1px solid var(--border); border-radius: 12px; padding: 20px 22px;
+  }
+  #hostPanel h2 { margin: 0 0 10px; font-size: 12px; letter-spacing: 2px; text-transform: uppercase; color: var(--gold); }
+  .srv { flex: 1; padding: 9px 4px; border-radius: 7px; cursor: pointer; background: var(--panel2);
+         border: 1px solid var(--border); color: var(--muted); font-weight: 600; font-size: 12px; }
+  .srv.on { border-color: #3f8a46; color: #7de582; box-shadow: 0 0 0 1px #3f8a46; }
   .status-ok { color: var(--green); }
   .status-warn { color: var(--orange); }
   .status-err { color: var(--red); }
-
-  #news {
-    white-space: pre-wrap; color: var(--muted); font-size: 13px;
-    max-height: 260px; overflow-y: auto;
-  }
-
-  label { display: block; margin: 8px 0 3px; color: var(--muted); font-size: 11px; letter-spacing: 1px; text-transform: uppercase; }
-  input {
-    width: 100%; padding: 9px 11px; background: #0d1118; color: var(--text);
-    border: 1px solid var(--border); border-radius: 7px; font: 14px 'Segoe UI', sans-serif;
-  }
-  input:focus { outline: none; border-color: var(--gold-dim); }
-  .hint { color: #616a7d; font-size: 11.5px; margin-top: 6px; }
-
-  footer {
-    display: flex; align-items: center; gap: 18px;
-    padding: 16px 36px 26px; max-width: 1100px; margin: 0 auto; width: 100%;
-  }
-  #bigbtn {
-    min-width: 260px; padding: 16px 34px; font: 700 20px Georgia, serif; letter-spacing: 2px;
-    text-transform: uppercase; cursor: pointer; border-radius: 10px; color: #fff8e0;
-    background: linear-gradient(180deg, #8a6a1e, #6b500f); border: 1px solid #a8843a;
-    box-shadow: 0 6px 24px rgba(240,200,90,.25);
-  }
-  #bigbtn:hover { border-color: var(--gold); }
-  #bigbtn:disabled { opacity: .55; cursor: default; }
-  #bigbtn.update { background: linear-gradient(180deg, #2e6b33, #1d4a22); border-color: #3f8a46; box-shadow: 0 6px 24px rgba(88,192,90,.25); }
-  #status { color: var(--muted); font-size: 13px; flex: 1; }
-  #status.err { color: var(--red); }
   .spin {
-    display: inline-block; width: 14px; height: 14px; border-radius: 50%;
+    display: inline-block; width: 13px; height: 13px; border-radius: 50%;
     border: 2px solid var(--gold-dim); border-top-color: transparent;
-    animation: spin 0.9s linear infinite; vertical-align: -2px; margin-right: 8px;
+    animation: spin .9s linear infinite; vertical-align: -2px; margin-right: 7px;
   }
   @keyframes spin { to { transform: rotate(360deg); } }
 </style>
 </head>
 <body>
-<header>
-  <h1>Aetheria</h1>
-  <div class="sub" id="subTitle">Launcher officiel</div>
-</header>
 
-<main>
-  <div class="col-left" id="playerLeft">
-    <div class="panel">
-      <h2>Canal</h2>
-      <div class="channels">
-        <div class="chan active" id="chan-prod" onclick="pickChannel('prod')">
-          <div class="cname">Zul'jin</div>
-          <div class="cdesc">Jouable — version stable</div>
-        </div>
-        <div class="chan" id="chan-staging" onclick="pickChannel('staging')">
-          <div class="cname">Zul'jin TTS</div>
-          <div class="cdesc">Test — les nouveautés d'abord</div>
-        </div>
-      </div>
-      <div class="verline"><span>Installée : <b id="v-local">—</b></span>
-        <span>Disponible : <b id="v-remote">—</b></span>
-        <span id="v-status">…</span></div>
-    </div>
-
-    <div class="panel" style="flex:1">
-      <h2>Nouvelles du royaume</h2>
-      <div id="news">Chargement…</div>
-    </div>
+<!-- ============================================= LEFT: game + play -->
+<div id="sidebar">
+  <div id="logo">
+    <div class="title">Aetheria</div>
+    <div class="subtitle">Hardcore</div>
+    <div class="emblem">⚔</div>
   </div>
 
-  <div class="col-right">
-    <div class="panel" id="hostPanel" style="display:none">
-      <h2>Hébergement (ce PC)</h2>
-      <div id="gitState" style="font-size:13px; color: var(--muted); margin-bottom: 8px;">…</div>
-      <button id="buildBtn" onclick="hostUpdate()" style="width:100%; padding:9px; border-radius:7px; cursor:pointer;
-        background: linear-gradient(180deg,#2e6b33,#1d4a22); border:1px solid #3f8a46; color:#e7ffe8; font-weight:600; display:none;">
-        ⟳ Télécharger + construire + publier
-      </button>
-      <label style="display:none" id="prodAlso"><input type="checkbox" id="pubProd" style="width:auto"> publier aussi en prod</label>
-      <div style="display:flex; gap:6px; margin-top:10px;">
-        <button class="srv" id="srv-prod" onclick="toggleServer('prod')">Zul'jin</button>
-        <button class="srv" id="srv-tts" onclick="toggleServer('tts')">TTS</button>
-        <button class="srv" id="srv-patch" onclick="toggleServer('patch')">Patchs</button>
-      </div>
-      <div class="hint">Un clic démarre/arrête chaque serveur. Ils vivent tant que le launcher est ouvert.</div>
-      <button onclick="shareZip()" style="width:100%; margin-top:8px; padding:8px; border-radius:7px; cursor:pointer;
-        background:var(--panel2); border:1px solid var(--border); color:var(--text); font-weight:600;">
-        📦 Créer le ZIP à envoyer aux amis
-      </button>
-      <pre id="hostLog" style="max-height:130px; overflow-y:auto; font-size:10.5px; color:#8a93a6; white-space:pre-wrap; margin:8px 0 0;"></pre>
-    </div>
-    <style>
-      .srv { flex:1; padding:8px 4px; border-radius:7px; cursor:pointer; background:var(--panel2);
-             border:1px solid var(--border); color:var(--muted); font-weight:600; font-size:12px; }
-      .srv.on { border-color:#3f8a46; color:#7de582; box-shadow:0 0 0 1px #3f8a46; }
-    </style>
-    <div class="panel" id="loginPanel">
-      <h2>Connexion</h2>
-      <label>Nom de compte</label>
-      <input id="account" placeholder="ton compte">
-      <label>Mot de passe</label>
-      <input id="secret" type="password" placeholder="••••••••">
-      <div class="hint">Sauvegardés sur CE PC : le jeu se connecte tout seul jusqu'à l'écran
-      de personnage. Laisse vide pour te connecter dans le jeu comme avant.</div>
-    </div>
-    </div>
-  </div>
-</main>
+  <div class="spacer"></div>
 
-<footer>
+  <div class="sect-label">Version du jeu &amp; compte</div>
+  <select id="channelSel" onchange="pickChannel(this.value)">
+    <option value="prod">Aetheria — Zul'jin (jouable)</option>
+    <option value="staging">Aetheria TTS — test des nouveautés</option>
+  </select>
+  <div id="verline">Installée : <b id="v-local">—</b> · Disponible : <b id="v-remote">—</b> · <span id="v-status">…</span></div>
+
+  <div id="playrow">
+    <button id="bigbtn" onclick="mainAction()" disabled>…</button>
+    <button id="gearbtn" onclick="toggleSettings()" title="Compte">⚙</button>
+  </div>
   <div id="status"></div>
-  <button id="bigbtn" onclick="mainAction()" disabled>…</button>
-</footer>
+
+  <div id="settings">
+    <div class="sect-label">Connexion automatique</div>
+    <label>Nom de compte</label>
+    <input class="sideinput" id="account" placeholder="ton compte">
+    <label>Mot de passe</label>
+    <input class="sideinput" id="secret" type="password" placeholder="••••••••">
+    <div class="hint">Sauvegardés sur CE PC : le jeu file droit à l'écran de personnage.
+    Laisse vide pour te connecter dans le jeu.</div>
+  </div>
+</div>
+
+<!-- ============================================= CENTER: news -->
+<div id="main">
+  <div id="hostPanel">
+    <h2>Hébergement (ce PC)</h2>
+    <div id="gitState" style="font-size:13px; color: var(--muted); margin-bottom: 8px;">…</div>
+    <button id="buildBtn" onclick="hostUpdate()" style="width:100%; padding:9px; border-radius:7px; cursor:pointer;
+      background: linear-gradient(180deg,#2e6b33,#1d4a22); border:1px solid #3f8a46; color:#e7ffe8; font-weight:600; display:none;">
+      ⟳ Télécharger + construire + publier
+    </button>
+    <label style="display:none; color:var(--muted); font-size:12px;" id="prodAlso">
+      <input type="checkbox" id="pubProd" style="width:auto"> publier aussi en prod</label>
+    <div style="display:flex; gap:6px; margin-top:10px;">
+      <button class="srv" id="srv-prod" onclick="toggleServer('prod')">Zul'jin</button>
+      <button class="srv" id="srv-tts" onclick="toggleServer('tts')">TTS</button>
+      <button class="srv" id="srv-patch" onclick="toggleServer('patch')">Patchs</button>
+    </div>
+    <div style="color:var(--dim); font-size:11.5px; margin-top:6px;">Un clic démarre/arrête chaque serveur. Ils vivent tant que le launcher est ouvert.</div>
+    <button onclick="shareZip()" style="width:100%; margin-top:8px; padding:8px; border-radius:7px; cursor:pointer;
+      background:var(--panel2); border:1px solid var(--border); color:var(--text); font-weight:600;">
+      📦 Créer le ZIP à envoyer aux amis
+    </button>
+    <pre id="hostLog" style="max-height:220px; overflow-y:auto; font-size:10.5px; color:#8a93a6; white-space:pre-wrap; margin:8px 0 0;"></pre>
+  </div>
+
+  <div id="playerMain">
+    <div id="hero">
+      <div class="tag">Nouvelle mise à jour</div>
+      <h1 id="heroTitle">Bienvenue sur Aetheria</h1>
+      <p id="heroBody">Chargement des nouvelles…</p>
+    </div>
+
+    <h2 class="rowtitle">À la une</h2>
+    <div id="cards"></div>
+  </div>
+</div>
+
+<!-- ============================================= RIGHT: friends -->
+<div id="friends">
+  <h2>Amis</h2>
+  <div class="friend"><div class="dot">?</div><div class="who"><div class="n">…</div><div class="s">Hors ligne</div></div></div>
+  <div class="friend"><div class="dot">?</div><div class="who"><div class="n">…</div><div class="s">Hors ligne</div></div></div>
+  <div class="soon">La liste d'amis arrive bientôt — tu verras ici qui est en ligne sur Zul'jin.</div>
+</div>
 
 <script>
 const MODE = '__MODE__'; // 'player' ou 'host'
@@ -196,12 +264,11 @@ function pickChannel(c) {
 }
 
 function render() {
-  document.getElementById('chan-prod').classList.toggle('active', channel === 'prod');
-  document.getElementById('chan-staging').classList.toggle('active', channel === 'staging');
+  document.getElementById('channelSel').value = channel;
   if (!STATE) { return; }
   const ch = STATE.channels[channel];
   document.getElementById('v-local').textContent = ch.localVersion;
-  document.getElementById('v-remote').textContent = ch.reachable ? ch.remoteVersion : '?';
+  document.getElementById('v-remote').textContent = ch.reachable ? (ch.remoteVersion || '—') : '?';
 
   const st = document.getElementById('v-status');
   const btn = document.getElementById('bigbtn');
@@ -210,25 +277,29 @@ function render() {
 
   if (!ch.reachable) {
     st.innerHTML = '<span class="status-err">Serveur injoignable</span>';
-    btn.textContent = ch.installed ? 'Jouer (hors ligne ?)' : 'Serveur requis';
+    btn.textContent = ch.installed ? 'Jouer' : 'Serveur requis';
     btn.disabled = busy || !ch.installed;
   } else if (!ch.published) {
     st.innerHTML = '<span class="status-warn">Canal vide</span>';
     btn.textContent = 'Aucun build publié';
     btn.disabled = true;
-    setStatus("Le serveur répond, mais rien n'a été publié sur ce canal — l'hôte doit cliquer « Construire et publier » dans son Launcher-Serveur.");
   } else if (!ch.installed) {
     st.innerHTML = '<span class="status-warn">Non installé</span>';
     btn.textContent = 'Installer';
     btn.classList.add('update');
   } else if (!ch.upToDate) {
-    st.innerHTML = '<span class="status-warn">Mise à jour disponible</span>';
+    st.innerHTML = '<span class="status-warn">Mise à jour</span>';
     btn.textContent = 'Mettre à jour';
     btn.classList.add('update');
   } else {
     st.innerHTML = '<span class="status-ok">À jour</span>';
     btn.textContent = 'Jouer';
   }
+}
+
+function toggleSettings() {
+  const s = document.getElementById('settings');
+  s.style.display = s.style.display === 'block' ? 'none' : 'block';
 }
 
 async function saveConfig() {
@@ -247,17 +318,18 @@ async function mainAction() {
   if (busy || !STATE) { return; }
   busy = true;
   await saveConfig();
+  document.getElementById('settings').style.display = 'none';
   const ch = STATE.channels[channel];
   try {
     if (!ch.reachable && ch.installed) {
       await play();
     } else if (!ch.installed || !ch.upToDate) {
-      setStatus('<span class="spin"></span>Téléchargement de la mise à jour… (seuls les fichiers modifiés sont téléchargés)');
+      setStatus('<span class="spin"></span>Téléchargement… (fichiers modifiés uniquement)');
       render();
       const res = await fetch('/api/update?channel=' + channel, { method: 'POST' });
       const out = await res.json();
       if (!res.ok) { throw new Error(out.error || 'échec de la mise à jour'); }
-      setStatus('✔ À jour — version ' + out.version + ' (' + out.updated + ' fichier(s), ' + out.megabytes + ' Mo).');
+      setStatus('✔ Version ' + out.version + ' (' + out.updated + ' fichier(s), ' + out.megabytes + ' Mo).');
     } else {
       await play();
     }
@@ -273,7 +345,7 @@ async function play() {
   const res = await fetch('/api/play?channel=' + channel, { method: 'POST' });
   const out = await res.json();
   if (!res.ok) { throw new Error(out.error || 'lancement impossible'); }
-  setStatus('Bon jeu ! Tu peux fermer cette fenêtre.');
+  setStatus('Bon jeu !');
 }
 
 function setStatus(html, err) {
@@ -282,10 +354,28 @@ function setStatus(html, err) {
   el.className = err ? 'err' : '';
 }
 
+/* -------- news: line 1 = hero title, plain lines = hero body, "- " lines = cards */
 async function loadNews() {
-  try {
-    document.getElementById('news').textContent = await (await fetch('/api/news')).text();
-  } catch (e) { /* keep the placeholder */ }
+  let text;
+  try { text = await (await fetch('/api/news')).text(); } catch (e) { return; }
+  const lines = text.split('\n').map(l => l.trim()).filter(l => l.length > 0);
+  if (lines.length === 0) { return; }
+
+  document.getElementById('heroTitle').textContent = lines[0];
+  const body = lines.slice(1).filter(l => !l.startsWith('-')).join('\n');
+  document.getElementById('heroBody').textContent = body || 'Rejoins le royaume et découvre les nouveautés.';
+
+  const bullets = lines.filter(l => l.startsWith('-')).map(l => l.replace(/^-\s*/, ''));
+  const cards = document.getElementById('cards');
+  cards.innerHTML = (bullets.length ? bullets : ["Le royaume Zul'jin est en ligne."])
+    .slice(0, 6)
+    .map(b => '<div class="card"><div class="art"></div><div class="body">' +
+      '<div class="tag">Nouveauté</div><div class="txt">' + esc(b) + '</div></div></div>')
+    .join('');
+}
+
+function esc(s) {
+  return String(s ?? '').replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;');
 }
 
 /* ------------------------------------------------------------- host mode */
@@ -293,9 +383,7 @@ let HOST = null;
 
 async function refreshHost() {
   try { HOST = await (await fetch('/api/host')).json(); } catch (e) { return; }
-  const panel = document.getElementById('hostPanel');
-  if (!HOST.isHost) { panel.style.display = 'none'; return; }
-  panel.style.display = 'block';
+  if (!HOST.isHost) { return; }
 
   const git = document.getElementById('gitState');
   const btn = document.getElementById('buildBtn');
@@ -348,8 +436,8 @@ async function shareZip() {
   const out = await res.json();
   const git = document.getElementById('gitState');
   git.innerHTML = res.ok
-    ? '<span class="status-ok">📦 ZIP prêt : ' + out.path + '</span>'
-    : '<span class="status-err">' + (out.error || 'échec') + '</span>';
+    ? '<span class="status-ok">📦 ZIP prêt : ' + esc(out.path) + '</span>'
+    : '<span class="status-err">' + esc(out.error || 'échec') + '</span>';
 }
 
 async function toggleServer(name) {
@@ -358,21 +446,21 @@ async function toggleServer(name) {
   setTimeout(refreshHost, 800);
 }
 
+/* ------------------------------------------------------------------ boot */
 if (MODE === 'host') {
-  document.getElementById('subTitle').textContent = 'Launcher serveur';
-  for (const id of ['playerLeft','loginPanel']) {
-    const el = document.getElementById(id); if (el) { el.style.display = 'none'; }
-  }
-  document.querySelector('footer').style.display = 'none';
+  document.getElementById('sidebar').style.display = 'none';
+  document.getElementById('friends').style.display = 'none';
+  document.getElementById('playerMain').style.display = 'none';
+  document.getElementById('hostPanel').style.display = 'block';
+  refreshHost();
+  setInterval(refreshHost, 5000);
 } else {
   document.getElementById('hostPanel').remove(); // players NEVER see hosting
+  refresh();
+  loadNews();
+  setInterval(refresh, 15000);   // the PLAY button flips to METTRE À JOUR by itself
+  setInterval(loadNews, 30000);
 }
-refresh();
-loadNews();
-if (MODE === 'host') { refreshHost(); }
-setInterval(refresh, 15000);  // the PLAY button flips to METTRE À JOUR by itself
-setInterval(loadNews, 30000); // news catch up once the patch server is up
-if (MODE === 'host') { setInterval(refreshHost, 5000); } // git watch + serveurs
 </script>
 </body>
 </html>
