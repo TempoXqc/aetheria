@@ -189,16 +189,27 @@ async Task<JsonNode> ChannelState(JsonNode config, string channel)
 
     string remoteVersion = "";
     string notes = "";
-    bool reachable = false;
+    bool reachable = false; // the patch server answered (even "nothing published yet")
+    bool published = false; // this channel has a build to offer
     try
     {
-        JsonNode? remote = JsonNode.Parse(
-            await http.GetStringAsync($"http://{config["host"]!.GetValue<string>()}/manifest/{channel}"));
-        remoteVersion = remote?["version"]?.GetValue<string>() ?? "";
-        notes = remote?["notes"]?.GetValue<string>() ?? "";
-        reachable = remoteVersion.Length > 0;
+        HttpResponseMessage response = await http.GetAsync(
+            $"http://{config["host"]!.GetValue<string>()}/manifest/{channel}");
+        reachable = true;
+        if (response.IsSuccessStatusCode)
+        {
+            JsonNode? remote = JsonNode.Parse(await response.Content.ReadAsStringAsync());
+            remoteVersion = remote?["version"]?.GetValue<string>() ?? "";
+            notes = remote?["notes"]?.GetValue<string>() ?? "";
+            published = remoteVersion.Length > 0;
+        }
+
+        // 404 = the server is up but the channel is EMPTY (no build published yet).
     }
-    catch (Exception) { /* offline: the page shows it */ }
+    catch (Exception)
+    {
+        reachable = false; // truly offline
+    }
 
     bool installed = localVersion != "—";
     return new JsonObject
@@ -207,7 +218,8 @@ async Task<JsonNode> ChannelState(JsonNode config, string channel)
         ["localVersion"] = localVersion,
         ["remoteVersion"] = remoteVersion,
         ["reachable"] = reachable,
-        ["upToDate"] = reachable && installed && localVersion == remoteVersion,
+        ["published"] = published,
+        ["upToDate"] = published && installed && localVersion == remoteVersion,
         ["notes"] = notes,
     };
 }

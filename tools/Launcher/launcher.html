@@ -192,6 +192,11 @@ function render() {
     st.innerHTML = '<span class="status-err">Serveur injoignable</span>';
     btn.textContent = ch.installed ? 'Jouer (hors ligne ?)' : 'Serveur requis';
     btn.disabled = busy || !ch.installed;
+  } else if (!ch.published) {
+    st.innerHTML = '<span class="status-warn">Canal vide</span>';
+    btn.textContent = 'Aucun build publié';
+    btn.disabled = true;
+    setStatus("Le serveur répond, mais rien n'a été publié sur ce canal — l'hôte doit lancer Publier-Build.bat.");
   } else if (!ch.installed) {
     st.innerHTML = '<span class="status-warn">Non installé</span>';
     btn.textContent = 'Installer';
