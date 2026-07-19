@@ -635,8 +635,16 @@ namespace Aetheria.UnityClient
         /// </summary>
         private static readonly (string Label, string Address)[] PredefinedServers =
         {
-            ("Zul'jin", "127.0.0.1:27015"),      // prod: the playable realm
-            ("Zul'jin PTR", "127.0.0.1:27016"),  // staging: the shared TEST realm (dev included)
+#if UNITY_EDITOR
+            // In the EDITOR both realms show, so dev tests can reach the shared PTR server.
+            ("Zul'jin", "127.0.0.1:27015"),
+            ("PTR", "127.0.0.1:27016"),
+#else
+            // A real build without servers.txt (shouldn't happen — every channel ships one)
+            // falls back to the playable realm only. Each channel's servers.txt is the truth:
+            // the Aetheria channel lists Zul'jin, the PTR channel lists PTR.
+            ("Zul'jin", "127.0.0.1:27015"),
+#endif
         };
 
         private void LoadServerList()

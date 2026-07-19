@@ -225,13 +225,13 @@ public static class HostMode
                 Log("── Build OK.");
                 SetPhase("publish");
 
-                // The realm list ships INSIDE the build: public IP for friends, LAN for the
-                // house, localhost for this PC — every launcher-installed copy sees both realms.
-                await WriteServersFile(buildDir);
-
                 string version = await GameVersion();
                 foreach (string channel in channels)
                 {
+                    // The realm list ships INSIDE the build, PER CHANNEL: the Aetheria channel
+                    // sees only Zul'jin, the PTR channel sees only PTR. Public IP for friends,
+                    // LAN for the house, localhost for this PC.
+                    await WriteServersFile(buildDir, channel);
                     Log($"── Publication sur le canal « {channel} » (version {version})…");
                     PublishChannel(buildDir, channel, version); // in-process: no compile, no locks
                 }
@@ -365,8 +365,11 @@ public static class HostMode
         Log($"Canal « {channel} » publié : version {version}, {copied} fichiers.");
     }
 
-    /// <summary>servers.txt with every route to both realms (replaces Preparer-Build.bat).</summary>
-    private static async Task WriteServersFile(string buildDir)
+    /// <summary>
+    /// servers.txt for ONE channel: the Aetheria channel ships only Zul'jin, the PTR channel
+    /// only PTR — each installed game sees exactly its own realm.
+    /// </summary>
+    private static async Task WriteServersFile(string buildDir, string channel)
     {
         string publicIp = "";
         try
@@ -397,8 +400,9 @@ public static class HostMode
             return string.Join("|", parts);
         }
 
-        string content = $"Zul'jin|{Routes(publicIp, lanIp, 27015)}\n" +
-                         $"Zul'jin PTR|{Routes(publicIp, lanIp, 27016)}\n";
+        string content = channel == "prod"
+            ? $"Zul'jin|{Routes(publicIp, lanIp, 27015)}\n"
+            : $"PTR|{Routes(publicIp, lanIp, 27016)}\n";
         await File.WriteAllTextAsync(Path.Combine(buildDir, "servers.txt"), content);
         Log("── servers.txt généré (" + (publicIp.Length > 0 ? "IP publique " + publicIp : "sans IP publique") + ").");
     }
@@ -462,7 +466,7 @@ public static class HostMode
             "prod" => (Path.Combine("artifacts", "bin", "Aetheria.Server", "release"), "Aetheria.Server.dll",
                 $"--name \"Zul'jin\" --port 27015 --state \"{Path.Combine(stateDir, "aetheria-prod.json")}\""),
             "tts" => (Path.Combine("artifacts", "bin", "Aetheria.Server", "release"), "Aetheria.Server.dll",
-                $"--name \"Zul'jin PTR\" --port 27016 --state \"{Path.Combine(stateDir, "aetheria-tts.json")}\""),
+                $"--name \"PTR\" --port 27016 --state \"{Path.Combine(stateDir, "aetheria-tts.json")}\""),
             "patch" => (Path.Combine("artifacts", "bin", "PatchServer", "release"), "PatchServer.dll", ""),
             _ => (string.Empty, string.Empty, string.Empty),
         };
