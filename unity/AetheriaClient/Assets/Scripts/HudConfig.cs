@@ -69,6 +69,9 @@ namespace Aetheria.UnityClient
         public bool ShowHelp = true;
         public bool ShowNameplates = true;
 
+        /// <summary>Auto-select the nearest hostile you're FACING when you have no target.</summary>
+        public bool AutoTarget = false;
+
         public KeyCode Key(Bind bind) => _binds.TryGetValue(bind, out KeyCode k) ? k : Defaults[bind];
 
         public void SetKey(Bind bind, KeyCode key) => _binds[bind] = key;
@@ -93,6 +96,7 @@ namespace Aetheria.UnityClient
             ShowHealthBars = PlayerPrefs.GetInt(P(Profile, "healthBars"), 1) == 1;
             ShowHelp = PlayerPrefs.GetInt(P(Profile, "help"), 1) == 1;
             ShowNameplates = PlayerPrefs.GetInt(P(Profile, "nameplates"), 1) == 1;
+            AutoTarget = PlayerPrefs.GetInt(P(Profile, "autoTarget"), 0) == 1;
 
             _binds.Clear();
             foreach (KeyValuePair<Bind, KeyCode> pair in Defaults)
@@ -121,6 +125,7 @@ namespace Aetheria.UnityClient
             PlayerPrefs.SetInt(P(Profile, "healthBars"), ShowHealthBars ? 1 : 0);
             PlayerPrefs.SetInt(P(Profile, "help"), ShowHelp ? 1 : 0);
             PlayerPrefs.SetInt(P(Profile, "nameplates"), ShowNameplates ? 1 : 0);
+            PlayerPrefs.SetInt(P(Profile, "autoTarget"), AutoTarget ? 1 : 0);
 
             foreach (KeyValuePair<Bind, KeyCode> pair in _binds)
             {

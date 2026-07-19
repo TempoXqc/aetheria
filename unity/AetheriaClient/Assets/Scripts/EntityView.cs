@@ -191,6 +191,12 @@ namespace Aetheria.UnityClient
                 Object.Destroy(old.gameObject);
             }
 
+            // Shapeshifting mid-air LANDS the body: a stale jump offset (or bob) must never
+            // become the new form's baseline — that was the druid sinking into the ground.
+            _body.localPosition = Vector3.zero;
+            _jumpTimer = 0f;
+            _torsoBaseY = 0f;
+
             _rig = null;
             _monsterAnim = null;
             _extAnimator = null;

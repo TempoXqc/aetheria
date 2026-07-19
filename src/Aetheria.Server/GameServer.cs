@@ -98,6 +98,36 @@ public sealed class GameServer
         }
 
         SpawnOpenWorldContent();
+        _worlds.OpenWorld.PartySiblingsOf = PartySiblingEntityIds;
+    }
+
+    /// <summary>The OTHER party members' entity ids for a player entity (kill sharing).</summary>
+    private List<int> PartySiblingEntityIds(int entityId)
+    {
+        (PeerId peer, PlayerSession _)? owner = FindSessionByEntity(entityId);
+        if (owner is null)
+        {
+            return [];
+        }
+
+        Party? party = _parties.GetParty(owner.Value.peer.Value);
+        if (party is null)
+        {
+            return [];
+        }
+
+        var result = new List<int>(party.Count - 1);
+        foreach (int member in party.Members)
+        {
+            var memberPeer = new PeerId(member);
+            if (memberPeer.Value != owner.Value.peer.Value &&
+                _sessions.TryGetValue(memberPeer, out PlayerSession? ms) && ms.HandshakeComplete)
+            {
+                result.Add(ms.EntityId);
+            }
+        }
+
+        return result;
     }
 
     /// <summary>The shared open world (kept as `World` for compatibility and tests).</summary>
@@ -324,7 +354,7 @@ public sealed class GameServer
 
                 case MessageType.LootCorpse:
                     LootCorpse loot = LootCorpse.Read(ref reader);
-                    world.TryLootCorpse(session.EntityId, loot.CorpseEntityId);
+                    world.TryLootAllNearby(session.EntityId, loot.CorpseEntityId); // area loot
                     SendCorpseContents(peer, session, loot.CorpseEntityId); // now empty → client closes
                     SendSelfState(peer, session);
                     break;
@@ -992,6 +1022,8 @@ public sealed class GameServer
                 MaxHealth = body.EffectiveMaxHealth,
                 Resource = (int)body.CurrentResource,
                 MaxResource = body.EffectiveMaxResource,
+                X = body.Position.X,
+                Y = body.Position.Y,
             };
 
             // Timed buffs, with their remaining seconds — the frames draw them as icons.
@@ -1287,6 +1319,7 @@ public sealed class GameServer
             !_worlds.AllWorlds.Contains(instance))
         {
             instance = _worlds.CreateInstance(def, party.Count);
+            instance.PartySiblingsOf = PartySiblingEntityIds;
             _partyInstances[party.Leader] = instance;
             _log($"Instance '{def.Name}' opened for party {party.Id} ({party.Count} player(s)).");
         }
@@ -1352,6 +1385,7 @@ public sealed class GameServer
         }
 
         World.World instance = _worlds.CreateInstance(def, group.Count);
+        instance.PartySiblingsOf = PartySiblingEntityIds;
 
         int slot = 0;
         foreach ((PeerId memberPeer, PlayerSession memberSession) in group)

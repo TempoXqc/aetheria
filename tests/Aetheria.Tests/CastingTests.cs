@@ -42,7 +42,12 @@ public static class CastingTests
     [Test("The incantation completes after its cast time: damage lands, mana and cooldown are paid.")]
     public static void Firebolt_Completes_DamageAndCosts()
     {
-        (World world, ServerEntity mage, ServerEntity goblin) = Arrange();
+        // The goblin stands OUTSIDE its aggro radius (8) but inside Firebolt range (12):
+        // since « being hit breaks the incantation », a charging goblin would legitimately
+        // interrupt the cast — this test is about the undisturbed completion.
+        var world = new World();
+        ServerEntity mage = world.SpawnPlayer(new PeerId(1), "Magus", raceId: 1, classId: 2);
+        ServerEntity goblin = world.SpawnMonster(1, mage.Position + new Vec2(10f, 0f));
         int hp = goblin.Health;
         float mana = mage.CurrentResource;
 
@@ -98,6 +103,28 @@ public static class CastingTests
         Assert.True(world.TryUseAbility(warrior.Id, 1, goblin.Id));
         Assert.False(warrior.IsCasting);
         Assert.True(goblin.Health < hp, "Slash lands immediately");
+    }
+
+    [Test("A HIT breaks the incantation — and charges NOTHING: no cooldown, no mana.")]
+    public static void TakingAHit_CancelsCast_WithoutCooldown()
+    {
+        (World world, ServerEntity mage, ServerEntity goblin) = Arrange();
+        int hp = goblin.Health;
+        float mana = mage.CurrentResource;
+
+        world.TryUseAbility(mage.Id, 2, goblin.Id);
+        world.Step(SimulationConstants.TickDelta);
+        Assert.True(mage.IsCasting);
+
+        // The goblin punches the mage mid-incantation.
+        world.Teleport(goblin, mage.Position + new Vec2(1f, 0f));
+        goblin.FacingRadians = System.MathF.PI; // face the mage (west of him)
+        Assert.True(world.TryUseAbility(goblin.Id, 4, mage.Id));
+
+        Assert.False(mage.IsCasting, "the hit breaks the incantation");
+        Assert.Equal(hp, goblin.Health);
+        Assert.True(mage.CurrentResource >= mana - 0.01f, "no mana lost on an interrupted cast");
+        Assert.True(mage.IsAbilityReady(2, world.Tick), "no cooldown charged: the recast is immediate");
     }
 
     [Test("If the target dies mid-cast, the spell fizzles without cost.")]

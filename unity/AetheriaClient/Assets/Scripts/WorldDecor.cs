@@ -843,10 +843,27 @@ namespace Aetheria.UnityClient
     /// </summary>
     public sealed class MinimapView
     {
+        /// <summary>Zoom bounds: tight street view … wide area overview.</summary>
+        public const float MinOrtho = 12f;
+        public const float MaxOrtho = 48f;
+
         private GameObject _root;
         private Camera _camera;
 
         public RenderTexture Texture { get; private set; }
+
+        /// <summary>Current half-height of the view in world units (the camera's ortho size).</summary>
+        public float Ortho { get; private set; } = 26f;
+
+        /// <summary>Zoom in (negative steps) or out (positive), WoW's +/- minimap buttons.</summary>
+        public void Zoom(float steps)
+        {
+            Ortho = Mathf.Clamp(Ortho + (steps * 6f), MinOrtho, MaxOrtho);
+            if (_camera != null)
+            {
+                _camera.orthographicSize = Ortho;
+            }
+        }
 
         public void EnsureBuilt()
         {
@@ -859,7 +876,7 @@ namespace Aetheria.UnityClient
             Texture = new RenderTexture(192, 192, 16);
             _camera = _root.AddComponent<Camera>();
             _camera.orthographic = true;
-            _camera.orthographicSize = 26f;
+            _camera.orthographicSize = Ortho;
             _camera.targetTexture = Texture;
             _camera.clearFlags = CameraClearFlags.SolidColor;
             _camera.backgroundColor = new Color(0.24f, 0.34f, 0.18f); // grass from above

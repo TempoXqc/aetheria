@@ -56,6 +56,13 @@ public sealed class World
     public uint Tick { get; private set; }
 
     /// <summary>
+    /// Injected by the GameServer: the OTHER party members' entity ids for a given player
+    /// entity id (empty when solo). Lets kills share XP, quest credit and quest loot with the
+    /// healer and the tank — the whole group hunted, the whole group is paid.
+    /// </summary>
+    public Func<int, IReadOnlyList<int>>? PartySiblingsOf { get; set; }
+
+    /// <summary>
     /// True for the open world: a sanctuary circle around the spawn where players can neither
     /// attack nor be attacked (PvP AND PvE), and monsters never aggro. Instances have none.
     /// </summary>
@@ -648,7 +655,7 @@ public sealed class World
 
                 selfCaster.StartCooldown(selfDef.Id, Tick + (uint)selfDef.CooldownTicks);
                 selfCaster.SpendResource(selfDef.ResourceCost);
-                ApplyEffectToSelf(selfCaster, selfDef);
+                ApplyEffectToSelf(selfCaster, selfDef, selfCaster.Id);
                 TouchGcd(selfCaster, fromAuto);
                 return true;
             }
@@ -856,7 +863,7 @@ public sealed class World
 
         caster.StartCooldown(ability.Id, Tick + (uint)ability.CooldownTicks);
         caster.SpendResource(ability.ResourceCost);
-        ApplyEffectToSelf(target, ability);
+        ApplyEffectToSelf(target, ability, caster.Id);
         TouchGcd(caster, fromAuto);
         return true;
     }
@@ -911,7 +918,7 @@ public sealed class World
             Id = 0, Effect = def.ConsumeEffect, EffectMagnitude = def.ConsumeMagnitude,
             EffectDurationTicks = def.ConsumeDurationTicks,
         };
-        ApplyEffectToSelf(player, pseudo);
+        ApplyEffectToSelf(player, pseudo, player.Id);
         return true;
     }
 
@@ -1003,7 +1010,7 @@ public sealed class World
                 {
                     caster.StartCooldown(ability.Id, Tick + (uint)ability.CooldownTicks);
                     caster.SpendResource(ability.ResourceCost);
-                    ApplyEffectToSelf(target, ability);
+                    ApplyEffectToSelf(target, ability, caster.Id);
                 }
 
                 continue;
@@ -1039,16 +1046,27 @@ public sealed class World
         }
 
         entity.StartCooldown(racial.Id, Tick + (uint)racial.CooldownTicks);
-        ApplyEffectToSelf(entity, racial);
+        ApplyEffectToSelf(entity, racial, entity.Id);
         return true;
     }
 
-    private void ApplyEffectToSelf(ServerEntity entity, AbilityDefinition ability)
+    private void ApplyEffectToSelf(ServerEntity entity, AbilityDefinition ability, int healSourceId = -1)
     {
         switch (ability.Effect)
         {
             case EffectType.Heal:
+                int before = entity.Health;
                 entity.Heal(ability.EffectMagnitude);
+
+                // Broadcast the heal as a NEGATIVE-damage combat event so clients float a
+                // green « +N » beside the character, mirroring the damage numbers.
+                int healed = entity.Health - before;
+                if (healed > 0 && healSourceId >= 0)
+                {
+                    _combatEvents.Add(new CombatEventMessage(
+                        healSourceId, entity.Id, ability.Id, -healed, entity.Health, false));
+                }
+
                 break;
             case EffectType.RestoreResource:
                 entity.RestoreResourceFraction(ability.EffectMagnitude);
@@ -1363,8 +1381,9 @@ public sealed class World
 
     private void DealDamage(ServerEntity attacker, ServerEntity target, AbilityDefinition ability)
     {
-        // A HIT breaks a utility channel (hearthstone): no teleporting out mid-fight.
-        if (target.CastAbilityId >= 200)
+        // A HIT breaks the victim's incantation — utility channel OR spell. Nothing was
+        // paid yet (cooldown and resource charge at completion), so the recast is immediate.
+        if (target.IsCasting && target.Kind == EntityKind.Player)
         {
             target.CancelCast();
         }
@@ -1439,25 +1458,62 @@ public sealed class World
         }
         else if (victim.IsMonster && killer.Kind == EntityKind.Player)
         {
-            // XP scales with the level difference: fighting up pays more, farming greys pays little.
             MonsterDefinition def = _gameData.GetMonster(victim.MonsterId);
-            float mult = _gameData.Progression.XpMultiplierForKill(killer.Level, def.Level);
-            ApplyXp(killer, (int)MathF.Round(def.XpReward * mult));
 
-            // Quest progress: the kill counts when it matches the active quest's target.
-            if (killer.ActiveQuestId != 0)
+            // THE HUNTING PARTY: the killer plus every party member alive, in this world and
+            // close enough (60 u) — tank, healer and dps all shared the fight, all get paid.
+            var hunters = new List<ServerEntity> { killer };
+            IReadOnlyList<int>? siblings = PartySiblingsOf?.Invoke(killer.Id);
+            if (siblings != null)
             {
-                QuestDefinition? quest = _gameData.GetQuest(killer.ActiveQuestId);
-                if (quest != null && quest.TargetMonsterId == victim.MonsterId &&
-                    killer.QuestKills < quest.RequiredKills)
+                foreach (int memberId in siblings)
                 {
-                    killer.QuestKills++;
-                    _questDirty.Add(killer.Id);
+                    if (_entities.TryGetValue(memberId, out ServerEntity? member) &&
+                        member.Kind == EntityKind.Player && member.IsAlive &&
+                        Vec2.DistanceSquared(member.Position, victim.Position) <= 60f * 60f)
+                    {
+                        hunters.Add(member);
+                    }
                 }
             }
 
-            // NOTHING is auto-looted: gold, body parts and gear all wait inside the corpse
-            // on the ground — right-click it (or press Interact) to open its loot window.
+            foreach (ServerEntity hunter in hunters)
+            {
+                // XP: level-scaled per member, SPLIT EQUALLY across the present group.
+                float mult = _gameData.Progression.XpMultiplierForKill(hunter.Level, def.Level);
+                ApplyXp(hunter, Math.Max(1,
+                    (int)MathF.Round(def.XpReward * mult / hunters.Count)));
+
+                // Quest progress: the kill counts for EVERY member hunting that monster.
+                if (hunter.ActiveQuestId != 0)
+                {
+                    QuestDefinition? quest = _gameData.GetQuest(hunter.ActiveQuestId);
+                    if (quest != null && quest.TargetMonsterId == victim.MonsterId &&
+                        hunter.QuestKills < quest.RequiredKills)
+                    {
+                        hunter.QuestKills++;
+                        _questDirty.Add(hunter.Id);
+                    }
+                }
+
+                // QUEST LOOT shared: the guaranteed body parts land straight in every OTHER
+                // member's bags (the killer loots the corpse itself, as always).
+                if (!ReferenceEquals(hunter, killer))
+                {
+                    foreach (LootEntry part in def.BodyParts)
+                    {
+                        if (_gameData.HasItem(part.ItemId) && part.Quantity > 0)
+                        {
+                            ItemDefinition item = _gameData.GetItem(part.ItemId);
+                            hunter.Inventory.TryAdd(part.ItemId, part.Quantity,
+                                item.Stackable, item.MaxStack);
+                        }
+                    }
+                }
+            }
+
+            // NOTHING is auto-looted for the killer: gold, body parts and gear all wait inside
+            // the corpse on the ground — right-click it to open its loot window.
             SpawnMonsterCorpse(victim, def);
         }
     }
@@ -1784,6 +1840,38 @@ public sealed class World
     /// Validates the looter is a living player within range. The corpse despawns once emptied.
     /// Returns true if anything was taken.
     /// </summary>
+    /// <summary>
+    /// AREA LOOT (WoW modern): « tout ramasser » on one corpse also empties every OTHER
+    /// lootable corpse within loot range — one click clears the battlefield.
+    /// </summary>
+    public bool TryLootAllNearby(int looterId, int corpseId)
+    {
+        bool any = TryLootCorpse(looterId, corpseId);
+        if (!_entities.TryGetValue(looterId, out ServerEntity? looter))
+        {
+            return any;
+        }
+
+        _aiScratch.Clear();
+        foreach (ServerEntity e in _entities.Values)
+        {
+            if ((e.Kind == EntityKind.Corpse || e.Kind == EntityKind.MonsterCorpse) &&
+                e.Id != corpseId && e.LootContainer is not null &&
+                Vec2.DistanceSquared(looter.Position, e.Position) <=
+                SimulationConstants.LootRange * SimulationConstants.LootRange)
+            {
+                _aiScratch.Add(e);
+            }
+        }
+
+        foreach (ServerEntity corpse in _aiScratch)
+        {
+            any |= TryLootCorpse(looterId, corpse.Id);
+        }
+
+        return any;
+    }
+
     public bool TryLootCorpse(int looterId, int corpseId)
     {
         if (!ValidateLooter(looterId, corpseId, out ServerEntity looter, out ServerEntity corpse))

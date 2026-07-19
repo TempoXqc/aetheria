@@ -768,6 +768,10 @@ public sealed class PartyMemberInfo
     public int Resource;
     public int MaxResource;
 
+    /// <summary>World position, so the maps can show every ally — even across the map.</summary>
+    public float X;
+    public float Y;
+
     /// <summary>Active timed effects: (effect type, seconds remaining).</summary>
     public (byte Type, float Seconds)[] Effects = System.Array.Empty<(byte, float)>();
 }
@@ -804,6 +808,8 @@ public readonly struct PartyState
             w.WriteInt(m.MaxHealth);
             w.WriteInt(m.Resource);
             w.WriteInt(m.MaxResource);
+            w.WriteFloat(m.X);
+            w.WriteFloat(m.Y);
             w.WriteByte((byte)m.Effects.Length);
             for (int e = 0; e < m.Effects.Length; e++)
             {
@@ -830,6 +836,8 @@ public readonly struct PartyState
                 MaxHealth = r.ReadInt(),
                 Resource = r.ReadInt(),
                 MaxResource = r.ReadInt(),
+                X = r.ReadFloat(),
+                Y = r.ReadFloat(),
             };
 
             int effects = r.ReadByte();

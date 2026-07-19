@@ -210,7 +210,7 @@ public sealed class GameData
             new AbilityDefinition { Id = 3, Name = "Shot",     BaseDamage = 20, Range = 10f,  CooldownTicks = 50, ResourceCost = 30, SkillLineId = 3 },
             new AbilityDefinition { Id = 4, Name = "Claw",     BaseDamage = 9,  Range = 2.5f, CooldownTicks = 36, ResourceCost = 0 },
             // Self-cast recovery, all classes: 4%/s of max health (and max mana) for 10s, 30s cooldown.
-            new AbilityDefinition { Id = 5, Name = "Renew", Range = 0f, CooldownTicks = 600, ResourceCost = 0, Effect = EffectType.Regen, EffectMagnitude = 0.04f, EffectDurationTicks = 200 },
+            new AbilityDefinition { Id = 5, Name = "Renew", Range = 12f, CooldownTicks = 600, ResourceCost = 0, Effect = EffectType.Regen, EffectMagnitude = 0.04f, EffectDurationTicks = 200 },
             // The Mage's WAND: a free, instant auto-attack (Firebolt stays a hand-cast spell).
             new AbilityDefinition { Id = 6, Name = "Wand Shot", BaseDamage = 10, Range = 12f, CooldownTicks = 30, ResourceCost = 0 },
             // Advanced abilities (unlock at level 3)
@@ -224,7 +224,7 @@ public sealed class GameData
             new AbilityDefinition { Id = 30, Name = "Wrath",    BaseDamage = 15, Range = 12f,  CooldownTicks = 30, ResourceCost = 12, SkillLineId = 4, CastTimeTicks = 24 },
             new AbilityDefinition { Id = 31, Name = "Maul",     BaseDamage = 22, Range = 2.5f, CooldownTicks = 44, ResourceCost = 0,  SkillLineId = 4 },
             new AbilityDefinition { Id = 32, Name = "Shred",    BaseDamage = 20, Range = 2.5f, CooldownTicks = 24, ResourceCost = 12, SkillLineId = 4 },
-            new AbilityDefinition { Id = 33, Name = "Regrowth", Range = 0f, CooldownTicks = 400, ResourceCost = 30, UnlockLevel = 3, Effect = EffectType.Heal, EffectMagnitude = 0.20f, EffectDurationTicks = 0 },
+            new AbilityDefinition { Id = 33, Name = "Regrowth", Range = 12f, CooldownTicks = 400, ResourceCost = 30, UnlockLevel = 3, Effect = EffectType.Heal, EffectMagnitude = 0.20f, EffectDurationTicks = 0 },
             // Racials (self-cast, no resource cost, long cooldown)
             new AbilityDefinition { Id = 10, Name = "Second Wind",       Range = 0f, CooldownTicks = 1200, Effect = EffectType.Heal,          EffectMagnitude = 0.25f, EffectDurationTicks = 0 },
             new AbilityDefinition { Id = 11, Name = "Stoneform",         Range = 0f, CooldownTicks = 1200, Effect = EffectType.BuffDefense,   EffectMagnitude = 0.50f, EffectDurationTicks = 160 },

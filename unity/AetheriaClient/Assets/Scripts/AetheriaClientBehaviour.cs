@@ -497,6 +497,8 @@ namespace Aetheria.UnityClient
 
             SyncViews();
             PlayCombatAnimations();
+            TrackCastCompletion();
+            AutoTargetTick();
             UpdateTargetRing();
 
             // WoW combat stance: as soon as a hostile is engaged, MY character raises the weapon.
@@ -1005,6 +1007,25 @@ namespace Aetheria.UnityClient
             for (int i = 0; i < feed.Count; i++)
             {
                 CombatEventMessage evt = feed[i];
+
+                // NEGATIVE damage = a HEAL: no swing, no flinch — a green « +N » floats up.
+                if (evt.Damage < 0)
+                {
+                    EntityView healed;
+                    if (_views.TryGetValue(evt.TargetId, out healed) && healed != null)
+                    {
+                        _floatTexts.Add(new FloatText
+                        {
+                            World = healed.transform.position + (Vector3.up * (healed.HeadHeight + 0.4f)),
+                            Text = "+" + (-evt.Damage),
+                            Color = new Color(0.35f, 1f, 0.4f),
+                            Born = Time.time,
+                        });
+                    }
+
+                    continue;
+                }
+
                 EntityView attacker;
                 if (_views.TryGetValue(evt.AttackerId, out attacker) && attacker != null)
                 {
@@ -1031,6 +1052,56 @@ namespace Aetheria.UnityClient
             }
 
             if (_floatTexts.Count > 60) { _floatTexts.RemoveRange(0, _floatTexts.Count - 60); }
+        }
+
+        // ------- OPTIONAL auto-targeting (Options → « Ciblage automatique ») : the nearest
+        // hostile inside your facing cone is selected for you, and re-selected as you turn —
+        // SELECTION ONLY, never an attack order, and a manual click always wins. -------
+        private float _nextAutoTargetCheck;
+        private bool _autoTargetPicked;
+
+        private void AutoTargetTick()
+        {
+            if (!_cfg.AutoTarget || Time.time < _nextAutoTargetCheck) { return; }
+
+            _nextAutoTargetCheck = Time.time + 0.25f;
+
+            // Never steal a MANUAL selection: only fill an empty slot, or move an earlier
+            // automatic pick as the player turns toward someone else.
+            if (_targetId >= 0 && !_autoTargetPicked) { return; }
+
+            EntitySnapshot self;
+            if (!_client.TryGetSelf(out self)) { return; }
+
+            const float MaxDist = 15f;
+            float fx = Mathf.Cos(_lastFacing);
+            float fy = Mathf.Sin(_lastFacing);
+            int best = -1;
+            float bestD = MaxDist * MaxDist;
+            IReadOnlyList<EntitySnapshot> visible = _client.Visible;
+            for (int i = 0; i < visible.Count; i++)
+            {
+                EntitySnapshot e = visible[i];
+                bool hostile = e.Kind == EntityKind.Monster ||
+                    (e.Kind == EntityKind.Player && e.Id != self.Id && e.Faction != self.Faction);
+                if (!hostile) { continue; }
+
+                float dx = e.Position.X - self.Position.X;
+                float dy = e.Position.Y - self.Position.Y;
+                float d = (dx * dx) + (dy * dy);
+                if (d > bestD || d < 0.01f) { continue; }
+                if (((fx * dx) + (fy * dy)) / Mathf.Sqrt(d) < 0.5f) { continue; } // ~60° cone
+
+                bestD = d;
+                best = e.Id;
+            }
+
+            if (best >= 0 && best != _targetId)
+            {
+                _targetId = best;
+                _targetHostile = true;
+                _autoTargetPicked = true;
+            }
         }
 
         /// <summary>Keep the SELECTION RING under the current target, WoW-style.</summary>
@@ -1456,9 +1527,9 @@ namespace Aetheria.UnityClient
             EntitySnapshot self;
             if (!_client.TryGetSelf(out self)) { return; }
 
+            // SELF is clickable too — a cleric targets himself to heal, WoW-style.
             EntitySnapshot? picked = PickEntityUnderMouse(e =>
-                e.Id != self.Id &&
-                (e.Kind == EntityKind.Monster || e.Kind == EntityKind.Player || e.Kind == EntityKind.Npc));
+                e.Kind == EntityKind.Monster || e.Kind == EntityKind.Player || e.Kind == EntityKind.Npc);
 
             if (picked == null)
             {
@@ -1468,9 +1539,10 @@ namespace Aetheria.UnityClient
             }
 
             EntitySnapshot target = picked.Value;
-            bool hostile = target.Kind == EntityKind.Monster ||
-                           (target.Kind == EntityKind.Player && target.Faction != self.Faction) ||
-                           target.Id == _client.DuelOpponentId;
+            bool hostile = target.Id != self.Id &&
+                           (target.Kind == EntityKind.Monster ||
+                            (target.Kind == EntityKind.Player && target.Faction != self.Faction) ||
+                            target.Id == _client.DuelOpponentId);
 
             if (hostile)
             {
@@ -1480,6 +1552,7 @@ namespace Aetheria.UnityClient
             else
             {
                 // Friendly selection: target frame + ring, but no attack order.
+                _autoTargetPicked = false;
                 _targetHostile = false;
                 _targetId = target.Id;
                 _client.SendAttackTarget(0);
@@ -1492,6 +1565,7 @@ namespace Aetheria.UnityClient
         /// </summary>
         private void SetAttackIntent(int targetId)
         {
+            _autoTargetPicked = false; // a manual choice: auto-targeting keeps its hands off
             _targetId = targetId;
             if (targetId >= 0) { _targetHostile = true; } // every attack intent is hostile by definition
             _client.SendAttackTarget(targetId < 0 ? 0 : targetId);
@@ -1615,7 +1689,9 @@ namespace Aetheria.UnityClient
                 if (healTarget < 0) { return; }
                 if (Time.time < _gcdReadyTime || IsOnCooldown(abilityId)) { ShowError("Pas encore prêt."); return; }
                 _client.SendUseAbility(abilityId, healTarget);
-                StartLocalCooldown(abilityId);
+                // Cast-time spells only pay their cooldown on COMPLETION (an interrupted
+                // incantation recasts immediately) — see TrackCastCompletion.
+                if (castDef.CastTimeTicks == 0) { StartLocalCooldown(abilityId); }
                 _gcdReadyTime = Time.time + (SimulationConstants.GlobalCooldownTicks * SimulationConstants.TickDelta);
                 return;
             }
@@ -1664,7 +1740,7 @@ namespace Aetheria.UnityClient
             }
 
             _client.SendUseAbility(abilityId, _targetId);
-            StartLocalCooldown(abilityId);
+            if (def.CastTimeTicks == 0) { StartLocalCooldown(abilityId); }
             _gcdReadyTime = Time.time + (SimulationConstants.GlobalCooldownTicks * SimulationConstants.TickDelta);
         }
 
@@ -1673,8 +1749,31 @@ namespace Aetheria.UnityClient
             if (!_client.EntityId.HasValue || Time.time < _gcdReadyTime) { return; }
             if (IsOnCooldown(abilityId)) { ShowError("Pas encore prêt."); return; }
             _client.SendUseAbility(abilityId, _client.EntityId.Value);
-            StartLocalCooldown(abilityId);
+            if (Data.GetAbility(abilityId).CastTimeTicks == 0) { StartLocalCooldown(abilityId); }
             _gcdReadyTime = Time.time + (SimulationConstants.GlobalCooldownTicks * SimulationConstants.TickDelta);
+        }
+
+        // ------- cast completion tracking: the cooldown clock starts when the incantation
+        // FINISHES, never when it starts — an interrupted cast costs nothing and recasts
+        // immediately (the user's rule). CastProgress is 0..255 over the cast. -------
+        private byte _watchedCastId;
+        private byte _watchedCastProgress;
+
+        private void TrackCastCompletion()
+        {
+            EntitySnapshot self;
+            byte castId = _client.TryGetSelf(out self) ? self.CastAbilityId : (byte)0;
+
+            if (castId != _watchedCastId && _watchedCastId != 0 && _watchedCastId < 200)
+            {
+                // The previous incantation ENDED: completed (progress ran its course) starts
+                // the cooldown; interrupted (cut short) leaves the button ready.
+                if (_watchedCastProgress >= 240) { StartLocalCooldown(_watchedCastId); }
+            }
+
+            _watchedCastId = castId;
+            if (castId != 0) { _watchedCastProgress = self.CastProgress; }
+            else { _watchedCastProgress = 0; }
         }
 
         private void TryUseRacial()
@@ -1812,7 +1911,8 @@ namespace Aetheria.UnityClient
                 case HudConfig.Frame.PartyFrames: return new Rect(12 + o.x, 116 + o.y, 180, 4 * 64);
                 case HudConfig.Frame.CharSheet: return new Rect(16 + o.x, 128 + o.y, 342, 396);
                 case HudConfig.Frame.Chat:
-                    return new Rect(8 + o.x, VirtH - 220 + o.y, 380, 186);
+                    return new Rect(8 + o.x, VirtH - 58 - (_chatLines * 17f) + o.y,
+                        _chatW, (_chatLines * 17f) + 24);
                 case HudConfig.Frame.MicroBar:
                     return new Rect(VirtW - 16 - (5 * 29f) + o.x, VirtH - 34 + o.y, 5 * 29f, 26);
                 case HudConfig.Frame.CastBar:
@@ -4568,6 +4668,20 @@ namespace Aetheria.UnityClient
             EntitySnapshot self;
             if (_client.TryGetSelf(out self))
             {
+                // PARTY MEMBERS first, under the player's arrow: blue blips with their names.
+                foreach (PartyMemberInfo ally in _client.PartyMembers)
+                {
+                    if (ally.EntityId == self.Id) { continue; }
+
+                    Vector2 ap = WorldMapView.ToMap(map, ally.X, ally.Y);
+                    Color prevAlly = GUI.color;
+                    GUI.color = new Color(0.25f, 0.55f, 1f);
+                    GUI.DrawTexture(new Rect(ap.x - 4, ap.y - 4, 8, 8), SolidDisc(), ScaleMode.StretchToFill);
+                    GUI.color = prevAlly;
+                    GUI.Label(new Rect(ap.x - 50, ap.y + 5, 100, 15),
+                        "<size=9><color=#5aa0ff><b>" + ally.Name + "</b></color></size>", RichCentered());
+                }
+
                 Vector2 p = WorldMapView.ToMap(map, self.Position.X, self.Position.Y);
 
                 float pulse = 10f + (Mathf.Sin(Time.time * 3f) * 2.5f);
@@ -5346,6 +5460,8 @@ namespace Aetheria.UnityClient
             GUILayout.Space(6);
             _cfg.ShowNameplates = GUILayout.Toggle(_cfg.ShowNameplates, " Noms et niveaux au-dessus des têtes");
             _cfg.ShowHealthBars = GUILayout.Toggle(_cfg.ShowHealthBars, " Barres de vie au-dessus des entités");
+            _cfg.AutoTarget = GUILayout.Toggle(_cfg.AutoTarget,
+                " Ciblage automatique (l'ennemi proche que tu regardes)");
             GUILayout.Space(10);
             if (GUILayout.Button("Raccourcis…", GUILayout.Height(24))) { _optionsTab = 1; }
             if (GUILayout.Button("Déplacer l'interface…", GUILayout.Height(24))) { _optionsTab = 2; }
@@ -5552,19 +5668,47 @@ namespace Aetheria.UnityClient
             return "<color=" + color + ">[" + label + "] <b>" + l.From + " :</b> " + l.Text + "</color>";
         }
 
+        // Chat window size (drag the grip): persisted outside the profile system on purpose —
+        // one chat size per machine, like the tab layout.
+        private float _chatW = 380f;
+        private int _chatLines = 9;
+        private bool _chatSizeLoaded;
+        private bool _chatResizing;
+
+        /// <summary>Click the channel tag: cycle through the SENDING channels (whisper via /w).</summary>
+        private static ChatChannel NextSendChannel(ChatChannel ch)
+        {
+            switch (ch)
+            {
+                case ChatChannel.Say: return ChatChannel.Party;
+                case ChatChannel.Party: return ChatChannel.Raid;
+                case ChatChannel.Raid: return ChatChannel.Guild;
+                case ChatChannel.Guild: return ChatChannel.Trade;
+                case ChatChannel.Trade: return ChatChannel.World;
+                default: return ChatChannel.Say;
+            }
+        }
+
         private void DrawChat()
         {
             EnsureChatTabs();
             if (_chatTabIndex >= _chatTabs.Count) { _chatTabIndex = 0; }
             ChatTab active = _chatTabs[_chatTabIndex];
 
-            const float W = 380f;
+            if (!_chatSizeLoaded)
+            {
+                _chatW = PlayerPrefs.GetFloat("aeth.chatw", 380f);
+                _chatLines = PlayerPrefs.GetInt("aeth.chatlines", 9);
+                _chatSizeLoaded = true;
+            }
+
+            float W = _chatW;
             const float LineH = 17f;
             Vector2 chatOff = _cfg.Offset(HudConfig.Frame.Chat);
 
             // Collect the ACTIVE TAB's last lines.
             var show = new List<ChatLine>();
-            for (int i = _chatHistory.Count - 1; i >= 0 && show.Count < 9; i--)
+            for (int i = _chatHistory.Count - 1; i >= 0 && show.Count < _chatLines; i--)
             {
                 if ((active.Mask & (1 << (int)_chatHistory[i].Channel)) != 0)
                 {
@@ -5574,7 +5718,7 @@ namespace Aetheria.UnityClient
 
             show.Reverse();
 
-            float historyH = Mathf.Max(show.Count, 1) * LineH;
+            float historyH = _chatLines * LineH; // fixed envelope: lines stick to the bottom
             float inputH = _chatInputActive ? 24f : 0f;
             float tabsH = 20f;
             float y0 = VirtH - 34f - inputH - historyH + chatOff.y;
@@ -5610,12 +5754,37 @@ namespace Aetheria.UnityClient
                 SaveChatTabs();
             }
 
-            // The history box.
+            // The history box (latest lines glued to the bottom, WoW-style).
             Dim(new Rect(8f + chatOff.x, y0 - 4f, W, historyH + 8f), 0.35f);
+            int firstRow = _chatLines - show.Count;
             for (int i = 0; i < show.Count; i++)
             {
-                GUI.Label(new Rect(14f + chatOff.x, y0 + (i * LineH), W - 12f, LineH + 2f),
+                GUI.Label(new Rect(14f + chatOff.x, y0 + ((firstRow + i) * LineH), W - 12f, LineH + 2f),
                     "<size=11>" + FormatChatLine(show[i]) + "</size>", Rich());
+            }
+
+            // RESIZE grip (top-right corner): drag to change the chat's width and height.
+            var grip = new Rect(8f + chatOff.x + W - 16f, y0 - 4f, 16f, 16f);
+            GUI.Label(grip, "<size=10><color=#c8c8c8>⤡</color></size>", RichCentered());
+            Event rev = Event.current;
+            if (rev.type == EventType.MouseDown && grip.Contains(rev.mousePosition))
+            {
+                _chatResizing = true;
+                rev.Use();
+            }
+            else if (_chatResizing && rev.type == EventType.MouseDrag)
+            {
+                float bottomY = VirtH - 34f - inputH + chatOff.y;
+                _chatW = Mathf.Clamp(rev.mousePosition.x - 8f - chatOff.x, 240f, 720f);
+                _chatLines = Mathf.Clamp(Mathf.RoundToInt((bottomY - rev.mousePosition.y) / LineH), 4, 20);
+                rev.Use();
+            }
+            else if (_chatResizing && rev.type == EventType.MouseUp)
+            {
+                _chatResizing = false;
+                PlayerPrefs.SetFloat("aeth.chatw", _chatW);
+                PlayerPrefs.SetInt("aeth.chatlines", _chatLines);
+                rev.Use();
             }
 
             // INPUT: the outgoing channel's coloured tag sits before the field.
@@ -5647,8 +5816,14 @@ namespace Aetheria.UnityClient
                 string tag = _chatChannel == ChatChannel.Whisper && _whisperTarget.Length > 0
                     ? "À " + _whisperTarget : chLabel;
                 float tagW = 20f + (tag.Length * 7f);
-                GUI.Label(new Rect(8f + chatOff.x, VirtH - 32f + chatOff.y, tagW, 24f),
-                    "<size=11><color=" + chColor + ">[" + tag + "]</color></size>", Rich());
+
+                // The coloured tag is a BUTTON: click it to cycle the outgoing channel
+                // (Dire → Groupe → Raid → Guilde → Commerce → Monde → Dire).
+                if (GUI.Button(new Rect(8f + chatOff.x, VirtH - 32f + chatOff.y, tagW, 24f),
+                    "<size=11><color=" + chColor + ">[" + tag + "]</color></size>", Rich()))
+                {
+                    _chatChannel = NextSendChannel(_chatChannel);
+                }
                 GUI.SetNextControlName("ChatInput");
                 _chatInput = GUI.TextField(new Rect(8f + tagW + chatOff.x, VirtH - 32f + chatOff.y, W - tagW, 24f), _chatInput, 200);
                 GUI.FocusControl("ChatInput");
@@ -5745,43 +5920,87 @@ namespace Aetheria.UnityClient
             var mapRect = new Rect(panel.x + 6, panel.y + 8, panel.width - 12, panel.width - 12);
             GUI.DrawTexture(mapRect, _minimap.Texture, ScaleMode.ScaleToFit);
 
-            // QUEST ZONE on the minimap: the hunting circle of the highlighted quest, clipped
-            // to the map square. Minimap camera: ortho size 26, centred on the player.
+            // OVERLAYS on the minimap, all clipped to the map square and relative to the player
+            // (the camera is centred on him). Ortho is the LIVE zoom level, not a constant.
             EntitySnapshot selfForZone;
-            Aetheria.Shared.Data.QuestDefinition? zone = HighlightedQuest();
-            if (zone != null && !_client.InInstance && _client.TryGetSelf(out selfForZone))
+            if (_client.TryGetSelf(out selfForZone))
             {
-                const float Ortho = 26f;
-                float pxPerUnit = mapRect.width / (2f * Ortho);
-                float cx = mapRect.x + (mapRect.width / 2f) + ((zone.ZoneX - selfForZone.Position.X) * pxPerUnit);
-                float cy = mapRect.y + (mapRect.height / 2f) - ((zone.ZoneY - selfForZone.Position.Y) * pxPerUnit);
-                float r = zone.ZoneRadius * pxPerUnit;
+                float ortho = _minimap.Ortho;
+                float pxPerUnit = mapRect.width / (2f * ortho);
                 GUI.BeginGroup(mapRect);
                 Color prevZone = GUI.color;
-                if (Time.time < _mapBlinkUntil)
+
+                // 1) Hunting circle of the highlighted quest + its monsters as red-gold dots.
+                Aetheria.Shared.Data.QuestDefinition? zone = HighlightedQuest();
+                if (zone != null && !_client.InInstance)
                 {
-                    GUI.color = new Color(1f, 1f, 1f, 0.55f + (Mathf.Abs(Mathf.Sin(Time.time * 6f)) * 0.45f));
+                    float cx = (mapRect.width / 2f) + ((zone.ZoneX - selfForZone.Position.X) * pxPerUnit);
+                    float cy = (mapRect.height / 2f) - ((zone.ZoneY - selfForZone.Position.Y) * pxPerUnit);
+                    float r = zone.ZoneRadius * pxPerUnit;
+                    if (Time.time < _mapBlinkUntil)
+                    {
+                        GUI.color = new Color(1f, 1f, 1f, 0.55f + (Mathf.Abs(Mathf.Sin(Time.time * 6f)) * 0.45f));
+                    }
+
+                    GUI.DrawTexture(new Rect(cx - r, cy - r, r * 2f, r * 2f),
+                        ZoneDisc(), ScaleMode.StretchToFill);
+                    GUI.color = prevZone;
+
+                    IReadOnlyList<EntitySnapshot> seen = _client.Visible;
+                    GUI.color = new Color(1f, 0.35f, 0.2f);
+                    for (int i = 0; i < seen.Count; i++)
+                    {
+                        if (seen[i].Kind == EntityKind.Monster && seen[i].RaceId == zone.TargetMonsterId)
+                        {
+                            float mx = (mapRect.width / 2f) + ((seen[i].Position.X - selfForZone.Position.X) * pxPerUnit);
+                            float my = (mapRect.height / 2f) - ((seen[i].Position.Y - selfForZone.Position.Y) * pxPerUnit);
+                            GUI.DrawTexture(new Rect(mx - 3, my - 3, 6, 6), Texture2D.whiteTexture);
+                        }
+                    }
+
+                    GUI.color = prevZone;
                 }
 
-                GUI.DrawTexture(new Rect(cx - mapRect.x - r, cy - mapRect.y - r, r * 2f, r * 2f),
-                    ZoneDisc(), ScaleMode.StretchToFill);
-                GUI.color = prevZone;
-
-                // Quest monsters in sight: red-gold dots, live, clipped to the map square.
-                IReadOnlyList<EntitySnapshot> seen = _client.Visible;
-                GUI.color = new Color(1f, 0.35f, 0.2f);
-                for (int i = 0; i < seen.Count; i++)
+                // 2) PARTY MEMBERS: blue dots, like WoW's party blips.
+                foreach (PartyMemberInfo ally in _client.PartyMembers)
                 {
-                    if (seen[i].Kind == EntityKind.Monster && seen[i].RaceId == zone.TargetMonsterId)
+                    if (ally.EntityId == selfForZone.Id) { continue; }
+
+                    float ax = (mapRect.width / 2f) + ((ally.X - selfForZone.Position.X) * pxPerUnit);
+                    float ay = (mapRect.height / 2f) - ((ally.Y - selfForZone.Position.Y) * pxPerUnit);
+                    GUI.color = new Color(0.25f, 0.55f, 1f);
+                    GUI.DrawTexture(new Rect(ax - 3.5f, ay - 3.5f, 7, 7), Texture2D.whiteTexture);
+                    GUI.color = prevZone;
+                }
+
+                // 3) The QUEST GIVER's « ! » / « ? » at Aldric's plaza (3.5, 3.5), open world only.
+                if (!_client.InInstance)
+                {
+                    string mark = QuestGiverMarker();
+                    if (mark.Length > 0)
                     {
-                        float mx = (mapRect.width / 2f) + ((seen[i].Position.X - selfForZone.Position.X) * pxPerUnit);
-                        float my = (mapRect.height / 2f) - ((seen[i].Position.Y - selfForZone.Position.Y) * pxPerUnit);
-                        GUI.DrawTexture(new Rect(mx - 3, my - 3, 6, 6), Texture2D.whiteTexture);
+                        float gx = (mapRect.width / 2f) + ((3.5f - selfForZone.Position.X) * pxPerUnit);
+                        float gy = (mapRect.height / 2f) - ((3.5f - selfForZone.Position.Y) * pxPerUnit);
+                        if (gx > -20f && gx < mapRect.width + 20f && gy > -20f && gy < mapRect.height + 20f)
+                        {
+                            GUI.Label(new Rect(gx - 15, gy - 22, 30, 26), mark, RichCentered());
+                        }
                     }
                 }
 
-                GUI.color = prevZone;
                 GUI.EndGroup();
+            }
+
+            // ZOOM: +/- buttons on the map's edge, and the scroll wheel while hovering it.
+            var zoomIn = new Rect(mapRect.xMax - 20, mapRect.yMax - 44, 18, 18);
+            var zoomOut = new Rect(mapRect.xMax - 20, mapRect.yMax - 22, 18, 18);
+            if (GUI.Button(zoomIn, "<b>+</b>", RichCentered())) { _minimap.Zoom(-1f); }
+            if (GUI.Button(zoomOut, "<b>−</b>", RichCentered())) { _minimap.Zoom(+1f); }
+            Event ev = Event.current;
+            if (ev != null && ev.type == EventType.ScrollWheel && mapRect.Contains(ev.mousePosition))
+            {
+                _minimap.Zoom(ev.delta.y > 0f ? +0.5f : -0.5f);
+                ev.Use();
             }
 
             // The player is always dead-centre: a golden arrow-dot.
