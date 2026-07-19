@@ -48,6 +48,7 @@ namespace Aetheria.UnityClient
         {
             public string Host;
             public int Port;
+            public string Label = ""; // realm name shown before (and instead of) the probe's
             public ServerProbe Probe;
             public bool HasInfo;
             public ServerInfo Info;
@@ -84,7 +85,6 @@ namespace Aetheria.UnityClient
         private string _chatInput = "";
         private bool _chatInputActive;
         private readonly List<ServerEntry> _servers = new List<ServerEntry>();
-        private string _newServerAddress = ""; // the browser's add-a-server field
         private bool _lastServerSaved;
         private int _previewKey = -1;
 
@@ -547,26 +547,24 @@ namespace Aetheria.UnityClient
         }
 
         /// <summary>
-        /// The OFFICIAL server list — predefined, players cannot add their own entries.
-        /// Extend this array when new realms open.
+        /// The OFFICIAL realm list — players just CLICK a named realm, WoW-style; nobody types
+        /// addresses. Each entry: realm name shown in the list + where it lives. To open your
+        /// realm to the internet, put your PUBLIC IP here (and port-forward UDP 27015) — or ship
+        /// a servers.txt beside the .exe ("Zul'jin|82.65.12.34:27015" per line) to override
+        /// without rebuilding.
         /// </summary>
-        private static readonly string[] PredefinedServers =
+        private static readonly (string Label, string Address)[] PredefinedServers =
         {
-            "127.0.0.1:27015",
-            "127.0.0.1:27016",
+            ("Zul'jin", "127.0.0.1:27015"),
+            ("Elunaria", "127.0.0.1:27016"),
         };
 
         private void LoadServerList()
         {
             if (_servers.Count > 0) { return; }
 
-            foreach (string address in PredefinedServers)
-            {
-                AddServerEntry(address);
-            }
-
-            // servers.txt next to the game (one ip:port per line): ship a build pre-pointed at
-            // YOUR server — drop the file beside the .exe, no rebuild needed.
+            // servers.txt beside the game overrides the built-in realms entirely when present.
+            bool fromFile = false;
             try
             {
                 string path = System.IO.Path.Combine(Application.dataPath, "..", "servers.txt");
@@ -574,34 +572,47 @@ namespace Aetheria.UnityClient
                 {
                     foreach (string line in System.IO.File.ReadAllLines(path))
                     {
-                        AddServerEntry(line.Trim());
+                        fromFile |= AddServerEntry(ParseRealmLine(line));
                     }
                 }
             }
-            catch (System.Exception) { /* unreadable file: the predefined list still works */ }
+            catch (System.Exception) { /* unreadable file: fall back to the built-in list */ }
 
-            // Servers the player added by hand in the browser (saved locally).
-            foreach (string address in PlayerPrefs.GetString("aeth.customServers", "")
-                         .Split(';'))
+            if (!fromFile)
             {
-                AddServerEntry(address);
+                foreach ((string label, string address) in PredefinedServers)
+                {
+                    AddServerEntry((label, address));
+                }
             }
         }
 
-        /// <summary>Add one ip:port to the list (ignoring blanks and duplicates).</summary>
-        private void AddServerEntry(string address)
+        /// <summary>"Zul'jin|82.65.12.34:27015" → (name, address); a bare address names itself.</summary>
+        private static (string, string) ParseRealmLine(string line)
         {
-            if (string.IsNullOrEmpty(address) || !SplitAddress(address, out string host, out int port))
+            line = line.Trim();
+            int bar = line.IndexOf('|');
+            return bar > 0
+                ? (line.Substring(0, bar).Trim(), line.Substring(bar + 1).Trim())
+                : (line, line);
+        }
+
+        /// <summary>Add one named realm to the list (ignoring blanks and duplicates).</summary>
+        private bool AddServerEntry((string Label, string Address) realm)
+        {
+            if (string.IsNullOrEmpty(realm.Address) ||
+                !SplitAddress(realm.Address, out string host, out int port))
             {
-                return;
+                return false;
             }
 
             foreach (ServerEntry existing in _servers)
             {
-                if (existing.Host == host && existing.Port == port) { return; }
+                if (existing.Host == host && existing.Port == port) { return false; }
             }
 
-            _servers.Add(new ServerEntry { Host = host, Port = port });
+            _servers.Add(new ServerEntry { Host = host, Port = port, Label = realm.Label });
+            return true;
         }
 
         /// <summary>(Re)query every listed server: name, population, your character there.</summary>
@@ -1669,11 +1680,15 @@ namespace Aetheria.UnityClient
             {
                 GUILayout.BeginHorizontal(GUI.skin.box);
 
-                // Column 1: name + address.
+                // Column 1: the REALM NAME (players never deal with addresses).
                 GUILayout.BeginVertical(GUILayout.Width(190));
-                string name = e.HasInfo ? e.Info.Name : e.Failed ? "(injoignable)" : "(interrogation…)";
-                GUILayout.Label("<b>" + name + "</b>", Rich());
-                GUILayout.Label("<size=9>" + e.Address + "</size>", Rich());
+                string name = !string.IsNullOrEmpty(e.Label) ? e.Label
+                    : e.HasInfo ? e.Info.Name : "?";
+                GUILayout.Label("<size=14><b>" + name + "</b></size>", Rich());
+                GUILayout.Label(e.Failed
+                    ? "<size=9><color=#ff7070>Hors ligne</color></size>"
+                    : e.HasInfo ? "<size=9><color=#60e070>En ligne</color></size>"
+                    : "<size=9><color=#909090>Interrogation…</color></size>", Rich());
                 GUILayout.EndVertical();
 
                 // Column 2: population badge.
@@ -1724,29 +1739,6 @@ namespace Aetheria.UnityClient
                 GUI.enabled = true;
                 GUILayout.EndHorizontal();
             }
-
-            // Add a server by address — how a friend joins YOUR server across the internet.
-            GUILayout.Space(8);
-            GUILayout.BeginHorizontal();
-            GUILayout.Label("<size=11>Ajouter :</size>", Rich(), GUILayout.Width(58));
-            _newServerAddress = GUILayout.TextField(_newServerAddress, GUILayout.Width(190));
-            if (GUILayout.Button("＋ Ajouter", GUILayout.Width(84)))
-            {
-                string address = _newServerAddress.Trim();
-                if (SplitAddress(address, out string _, out int _) && address.Length > 0)
-                {
-                    AddServerEntry(address);
-                    string saved = PlayerPrefs.GetString("aeth.customServers", "");
-                    PlayerPrefs.SetString("aeth.customServers",
-                        string.IsNullOrEmpty(saved) ? address : saved + ";" + address);
-                    PlayerPrefs.Save();
-                    _newServerAddress = "";
-                    RefreshServers();
-                }
-            }
-
-            GUILayout.Label("<size=9><color=#909090>ex : 82.65.12.34:27015</color></size>", Rich());
-            GUILayout.EndHorizontal();
 
             GUILayout.Space(6);
             GUILayout.BeginHorizontal();
