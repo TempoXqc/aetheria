@@ -1783,6 +1783,14 @@ namespace Aetheria.UnityClient
             return at > 0 ? label.Substring(0, at) : label;
         }
 
+        /// <summary>"Warrior (Rage)" → "Rage" — the parenthetical detail alone.</summary>
+        private static string ParenPart(string label)
+        {
+            int open = label.IndexOf('(');
+            int close = label.IndexOf(')');
+            return open >= 0 && close > open ? label.Substring(open + 1, close - open - 1) : "";
+        }
+
         /// <summary>HARDCORE-worthy confirmation: deletion is forever, say it plainly.</summary>
         private void DrawDeleteCharacterDialog()
         {
@@ -1948,12 +1956,22 @@ namespace Aetheria.UnityClient
             return index;
         }
 
+        // Index-aligned with Races: Human, Dwarf, Orc, Elf.
         private static readonly string[] RaceLore =
         {
             "Fiers et adaptables, les Humains de l'Alliance tiennent la ligne du sanctuaire depuis la première nuit.",
+            "Courts sur pattes, durs comme la pierre : les Nains de l'Alliance ne reculent JAMAIS.",
             "Les Orcs de la Horde vivent pour l'honneur du combat ; leur fureur fait plier les armures.",
             "Les Elfes de la Horde sont vifs et précis — flèches et sorts trouvent toujours leur cible.",
-            "Courts sur pattes, durs comme la pierre : les Nains de l'Alliance ne reculent JAMAIS.",
+        };
+
+        // Index-aligned with Races: the racial ability, as a perk line.
+        private static readonly string[] RacialLore =
+        {
+            "Second souffle : récupère de la vie dans un dernier sursaut.",
+            "Forme de pierre : la peau devient roc, les coups glissent.",
+            "Furie sanguinaire : la rage monte, les dégâts aussi.",
+            "Célérité naturelle : le prochain sort part instantanément.",
         };
 
         private static readonly string[] ClassLore =
@@ -1963,6 +1981,15 @@ namespace Aetheria.UnityClient
             "Le Chasseur harcèle à l'arc et ne laisse aucune proie s'échapper.",
             "Le Druide épouse la nature : ours pour encaisser, hibou pour foudroyer à distance, tigre pour lacérer.",
         };
+
+        private static readonly string[] FactionLore =
+        {
+            "L'Alliance rassemble les Humains et les Nains : la discipline, la pierre et la foi, dressées contre la nuit.",
+            "La Horde unit les Orcs et les Elfes : la fureur et l'instinct, libres et indomptés.",
+        };
+
+        // Index-aligned with Classes: the item icon that represents each class.
+        private static readonly byte[] ClassIconItem = { 2, 8, 7, 40 }; // épée, bâton, arc, patte
 
         /// <summary>A rect-based "◀ valeur ▶" appearance row (WoW's arrow pickers).</summary>
         private int ArrowPicker(float x, ref float y, string label, int index, string[] options, Color? swatch)
@@ -1999,59 +2026,108 @@ namespace Aetheria.UnityClient
             }
         }
 
-        private void DrawCreationScreen()
+        /// <summary>An image button: portrait/icon, gold frame, selection glow. Returns clicked.</summary>
+        private static bool IconButton(Rect r, Texture image, bool selected, bool enabled)
         {
-            // LEFT: factions, races, class, sex, appearance — the WoW creation column.
-            Rect left = new Rect(20, 24, 288, VirtH - 150);
-            WowUi.Panel(left);
-            float x = left.x + 16;
-            float y = left.y + 12;
-
-            // Factions side by side, their races below (Alliance blue / Horde red).
-            WowUi.Gold(new Rect(x, y, 120, 20), "<color=#4a7bd0>Alliance</color>");
-            WowUi.Gold(new Rect(x + 132, y, 120, 20), "<color=#c04040>Horde</color>");
-            y += 24f;
-
-            int[] allianceRaces = { 0, 3 }; // Humain, Nain
-            int[] hordeRaces = { 1, 2 };    // Orc, Elfe
-            for (int row = 0; row < 2; row++)
+            if (selected)
             {
-                Rect a = new Rect(x, y, 118, 26);
-                if (_raceIndex == allianceRaces[row]) { WowUi.Highlight(new Rect(a.x - 2, a.y - 2, a.width + 4, a.height + 4)); }
-                if (WowUi.Button(a, Races[allianceRaces[row]].label)) { SelectRace(allianceRaces[row]); }
-
-                Rect h = new Rect(x + 132, y, 118, 26);
-                if (_raceIndex == hordeRaces[row]) { WowUi.Highlight(new Rect(h.x - 2, h.y - 2, h.width + 4, h.height + 4)); }
-                if (WowUi.Button(h, Races[hordeRaces[row]].label)) { SelectRace(hordeRaces[row]); }
-
-                y += 32f;
+                WowUi.Highlight(new Rect(r.x - 3, r.y - 3, r.width + 6, r.height + 6));
             }
 
-            y += 6f;
-            WowUi.Gold(new Rect(x, y, 200, 20), "Classe");
-            y += 22f;
+            Color prev = GUI.color;
+            GUI.color = new Color(0.75f, 0.60f, 0.22f); // gold frame
+            GUI.DrawTexture(new Rect(r.x - 1, r.y - 1, r.width + 2, r.height + 2), Texture2D.whiteTexture);
+            GUI.color = enabled ? Color.white : new Color(0.35f, 0.35f, 0.35f);
+            if (image != null)
+            {
+                GUI.DrawTexture(r, image);
+            }
+
+            GUI.color = prev;
+            return enabled && GUI.Button(r, GUIContent.none, GUIStyle.none);
+        }
+
+        private void DrawCreationScreen()
+        {
+            Gender gender = _genderIndex == 1 ? Gender.Female : Gender.Male;
+
+            // LEFT: factions, races, sex, class, appearance — the WoW creation column.
+            Rect left = new Rect(20, 24, 288, VirtH - 140);
+            WowUi.Panel(left);
+            float x = left.x + 16;
+            float y = left.y + 14;
+
+            // Faction banners side by side, their race PORTRAITS below.
+            Color prevColor = GUI.color;
+            GUI.color = new Color(0.16f, 0.28f, 0.55f);
+            GUI.DrawTexture(new Rect(x, y, 118, 22), Texture2D.whiteTexture);
+            GUI.color = new Color(0.55f, 0.14f, 0.12f);
+            GUI.DrawTexture(new Rect(x + 132, y, 118, 22), Texture2D.whiteTexture);
+            GUI.color = prevColor;
+            WowUi.GoldCentered(new Rect(x, y + 2, 118, 20), "Alliance");
+            WowUi.GoldCentered(new Rect(x + 132, y + 2, 118, 20), "Horde");
+            y += 30f;
+
+            int[] allianceRaces = { 0, 1 }; // Humain, Nain
+            int[] hordeRaces = { 2, 3 };    // Orc, Elfe
+            for (int row = 0; row < 2; row++)
+            {
+                Rect a = new Rect(x + 27, y, 64, 64);
+                if (IconButton(a, RacePortraits.Head(Races[allianceRaces[row]].id, gender),
+                    _raceIndex == allianceRaces[row], true))
+                {
+                    SelectRace(allianceRaces[row]);
+                }
+
+                Rect h = new Rect(x + 132 + 27, y, 64, 64);
+                if (IconButton(h, RacePortraits.Head(Races[hordeRaces[row]].id, gender),
+                    _raceIndex == hordeRaces[row], true))
+                {
+                    SelectRace(hordeRaces[row]);
+                }
+
+                y += 74f;
+            }
+
+            byte raceId = Races[_raceIndex].id;
+
+            // Sex: the selected race, full body, in both genders — click the silhouette.
+            float gx = x + ((250f - 148f) / 2f);
+            if (IconButton(new Rect(gx, y, 66, 100), RacePortraits.Body(raceId, Gender.Male),
+                _genderIndex == 0, true) && _genderIndex != 0)
+            {
+                _genderIndex = 0;
+                _hairStyle = 0;
+            }
+
+            if (IconButton(new Rect(gx + 82, y, 66, 100), RacePortraits.Body(raceId, Gender.Female),
+                _genderIndex == 1, true) && _genderIndex != 1)
+            {
+                _genderIndex = 1;
+                _hairStyle = 1;
+            }
+
+            y += 112f;
+
+            // Classes as ICONS (sword, staff, bow, paw) — greyed when the race can't play them.
+            float cx0 = x + ((250f - ((4 * 46) + (3 * 10))) / 2f);
             for (int i = 0; i < Classes.Length; i++)
             {
                 bool allowed = System.Array.IndexOf(Races[_raceIndex].classes, Classes[i].id) >= 0;
-                Rect r = new Rect(x + (i * 84), y, 78, 26);
-                GUI.enabled = allowed;
-                if (_classIndex == i) { WowUi.Highlight(new Rect(r.x - 2, r.y - 2, r.width + 4, r.height + 4)); }
-                if (WowUi.Button(r, Classes[i].label) && allowed) { _classIndex = i; }
-                GUI.enabled = true;
+                Rect r = new Rect(cx0 + (i * 56), y, 46, 46);
+                if (IconButton(r, IconFor(ClassIconItem[i]), _classIndex == i, allowed) && allowed)
+                {
+                    _classIndex = i;
+                }
             }
 
-            y += 34f;
-            WowUi.Gold(new Rect(x, y, 200, 20), "Sexe");
-            y += 22f;
-            if (_genderIndex == 0) { WowUi.Highlight(new Rect(x - 2, y - 2, 122, 30)); }
-            if (WowUi.Button(new Rect(x, y, 118, 26), "Homme") && _genderIndex != 0) { _genderIndex = 0; _hairStyle = 0; }
-            if (_genderIndex == 1) { WowUi.Highlight(new Rect(x + 130, y - 2, 122, 30)); }
-            if (WowUi.Button(new Rect(x + 132, y, 118, 26), "Femme") && _genderIndex != 1) { _genderIndex = 1; _hairStyle = 1; }
+            y += 50f;
+            WowUi.GoldCentered(new Rect(x, y, 250, 18),
+                "<size=12>" + StripParen(Classes[_classIndex].label) + "</size>");
+            y += 26f;
 
-            y += 38f;
             WowUi.Gold(new Rect(x, y, 200, 20), "Apparence");
             y += 24f;
-            byte raceId = Races[_raceIndex].id;
             _skinTone = ArrowPicker(x, ref y, "Teint", _skinTone, SkinLabels,
                 CharacterModelBuilder.SkinColor(raceId, (byte)_skinTone));
             _faceIndex = ArrowPicker(x, ref y, "Visage", _faceIndex, FaceLabels, null);
@@ -2073,16 +2149,57 @@ namespace Aetheria.UnityClient
                 }
             }
 
-            // RIGHT: lore panels for the selected race and class, WoW-style.
-            Rect racePanel = new Rect(VirtW - 320, 24, 296, 150);
-            WowUi.Panel(racePanel, Races[_raceIndex].label);
-            WowUi.Body(new Rect(racePanel.x + 14, racePanel.y + 44, racePanel.width - 28, racePanel.height - 56),
-                RaceLore[_raceIndex]);
+            y += 8f;
+            if (WowUi.Button(new Rect(x + 45, y, 160, 26), "Aléatoire"))
+            {
+                _skinTone = Random.Range(0, SkinLabels.Length);
+                _faceIndex = Random.Range(0, FaceLabels.Length);
+                _hairStyle = Random.Range(0, HairStyleLabels.Length);
+                _hairColor = Random.Range(0, HairColorLabels.Length);
+                _beardStyle = beardAllowed ? Random.Range(0, BeardStyleLabels.Length) : 0;
+                _beardColor = Random.Range(0, HairColorLabels.Length);
+            }
 
-            Rect classPanel = new Rect(VirtW - 320, 186, 296, 150);
-            WowUi.Panel(classPanel, Classes[_classIndex].label);
-            WowUi.Body(new Rect(classPanel.x + 14, classPanel.y + 44, classPanel.width - 28, classPanel.height - 56),
+            // RIGHT: faction, race and class panels, each headed by its icon — WoW-style.
+            bool horde = _raceIndex >= 2;
+            Rect factionPanel = new Rect(VirtW - 320, 24, 296, 108);
+            WowUi.Panel(factionPanel);
+            Color prev2 = GUI.color;
+            GUI.color = horde ? new Color(0.55f, 0.14f, 0.12f) : new Color(0.16f, 0.28f, 0.55f);
+            GUI.DrawTexture(new Rect(factionPanel.x + 14, factionPanel.y + 12, 34, 34), Texture2D.whiteTexture);
+            GUI.color = prev2;
+            WowUi.GoldCentered(new Rect(factionPanel.x + 14, factionPanel.y + 18, 34, 22),
+                "<size=16><b>" + (horde ? "H" : "A") + "</b></size>");
+            WowUi.Gold(new Rect(factionPanel.x + 58, factionPanel.y + 18, 220, 22),
+                "<size=14>" + (horde ? "Horde" : "Alliance") + "</size>");
+            WowUi.Body(new Rect(factionPanel.x + 14, factionPanel.y + 52, factionPanel.width - 28, 50),
+                FactionLore[horde ? 1 : 0]);
+
+            Rect racePanel = new Rect(VirtW - 320, 142, 296, 158);
+            WowUi.Panel(racePanel);
+            GUI.DrawTexture(new Rect(racePanel.x + 14, racePanel.y + 12, 40, 40),
+                RacePortraits.Head(raceId, gender));
+            WowUi.Gold(new Rect(racePanel.x + 64, racePanel.y + 22, 214, 22),
+                "<size=14>" + StripParen(Races[_raceIndex].label) + "</size>");
+            WowUi.Body(new Rect(racePanel.x + 14, racePanel.y + 58, racePanel.width - 28, 56),
+                RaceLore[_raceIndex]);
+            WowUi.Body(new Rect(racePanel.x + 14, racePanel.y + 112, racePanel.width - 28, 40),
+                "<color=#e8c15a>Racial — " + RacialLore[_raceIndex] + "</color>");
+
+            Rect classPanel = new Rect(VirtW - 320, 310, 296, 158);
+            WowUi.Panel(classPanel);
+            Texture classIcon = IconFor(ClassIconItem[_classIndex]);
+            if (classIcon != null)
+            {
+                GUI.DrawTexture(new Rect(classPanel.x + 14, classPanel.y + 12, 40, 40), classIcon);
+            }
+
+            WowUi.Gold(new Rect(classPanel.x + 64, classPanel.y + 22, 214, 22),
+                "<size=14>" + StripParen(Classes[_classIndex].label) + "</size>");
+            WowUi.Body(new Rect(classPanel.x + 14, classPanel.y + 58, classPanel.width - 28, 56),
                 ClassLore[_classIndex]);
+            WowUi.Body(new Rect(classPanel.x + 14, classPanel.y + 112, classPanel.width - 28, 40),
+                "<color=#e8c15a>Ressource — " + ParenPart(Classes[_classIndex].label) + "</color>");
 
             // BOTTOM CENTRE: name + accept, like WoW's Name / Accept row.
             float cx = VirtW / 2f;
