@@ -62,15 +62,20 @@ public static class HostMode
             return;
         }
 
-        Log("── Pilote automatique : démarrage des serveurs…");
-        ServerAction("patch", "start");
-        ServerAction("prod", "start");
-        ServerAction("tts", "start");
-
         _ = Task.Run(async () =>
         {
             try
             {
+                // Binaries FIRST (nothing runs yet: zero lock risk), then the servers — each
+                // from its own copy, so later rebuilds never collide with them.
+                if (await BuildHostBinaries())
+                {
+                    Log("── Pilote automatique : démarrage des serveurs…");
+                    ServerAction("patch", "start");
+                    ServerAction("prod", "start");
+                    ServerAction("tts", "start");
+                }
+
                 await Git("fetch", "--quiet");
                 _lastFetch = DateTime.UtcNow;
                 _behind = int.TryParse((await Git("rev-list", "HEAD..origin/master", "--count")).output.Trim(),
@@ -214,11 +219,24 @@ public static class HostMode
                 foreach (string channel in channels)
                 {
                     Log($"── Publication sur le canal « {channel} » (version {version})…");
-                    (int pubCode, string pubOut) = await RunDotnet(
-                        $"run -c Release --project tools{Path.DirectorySeparatorChar}PatchServer -- " +
-                        $"publish \"{buildDir}\" {channel} {version} Mise à jour automatique");
-                    Log(pubOut);
-                    if (pubCode != 0) { Fail($"Publication {channel} échouée."); return; }
+                    PublishChannel(buildDir, channel, version); // in-process: no compile, no locks
+                }
+
+                // Refresh the server binaries (the pull may have changed server code), then
+                // restart ONLY the realm(s) whose channel was published so the server matches
+                // the new client (protocol!). Seconds of downtime; the 5-second autosave plus
+                // position persistence mean players reconnect exactly where they were.
+                if (!await BuildHostBinaries()) { Fail("Compilation des serveurs échouée."); return; }
+                foreach (string channel in channels)
+                {
+                    string realm = channel == "prod" ? "prod" : "tts";
+                    if (IsServerRunning(realm))
+                    {
+                        Log($"── Redémarrage du serveur « {realm} » (nouvelle version)…");
+                        ServerAction(realm, "stop");
+                        await Task.Delay(1500);
+                        ServerAction(realm, "start");
+                    }
                 }
 
                 _behind = 0;
@@ -231,6 +249,51 @@ public static class HostMode
             }
         });
         return true;
+    }
+
+    /// <summary>Copy the build into builds/{channel} and write its manifest — pure file work,
+    /// done IN THIS PROCESS so nothing recompiles while realms run.</summary>
+    private static void PublishChannel(string buildDir, string channel, string version)
+    {
+        string target = Path.Combine(RepoRoot!, "builds", channel);
+        Directory.CreateDirectory(target);
+
+        var files = new JsonArray();
+        int copied = 0;
+        foreach (string file in Directory.EnumerateFiles(buildDir, "*", SearchOption.AllDirectories))
+        {
+            string rel = Path.GetRelativePath(buildDir, file).Replace('\\', '/');
+            if (rel.Contains("DoNotShip", StringComparison.OrdinalIgnoreCase)) { continue; }
+
+            string dest = Path.Combine(target, rel);
+            Directory.CreateDirectory(Path.GetDirectoryName(dest)!);
+            File.Copy(file, dest, overwrite: true);
+            copied++;
+
+            using FileStream stream = File.OpenRead(dest);
+            string hash = Convert.ToHexString(
+                System.Security.Cryptography.SHA256.HashData(stream)).ToLowerInvariant();
+            files.Add(new JsonObject
+            {
+                ["path"] = rel,
+                ["sha256"] = hash,
+                ["size"] = new FileInfo(dest).Length,
+            });
+        }
+
+        var manifest = new JsonObject
+        {
+            ["version"] = version,
+            ["channel"] = channel,
+            ["publishedAt"] = DateTime.UtcNow.ToString("yyyy-MM-dd HH:mm") + " UTC",
+            ["notes"] = "Mise à jour automatique",
+            ["files"] = files,
+        };
+
+        File.WriteAllText(Path.Combine(target, "manifest.json"),
+            manifest.ToJsonString(new System.Text.Json.JsonSerializerOptions { WriteIndented = true }),
+            new UTF8Encoding(false));
+        Log($"Canal « {channel} » publié : version {version}, {copied} fichiers.");
     }
 
     /// <summary>servers.txt with every route to both realms (replaces Preparer-Build.bat).</summary>
@@ -289,18 +352,53 @@ public static class HostMode
 
     // ------------------------------------------------------------- game servers
 
+    public static bool IsServerRunning(string name)
+    {
+        lock (Gate)
+        {
+            return Servers.TryGetValue(name, out Process? p) && p is { HasExited: false };
+        }
+    }
+
+    /// <summary>
+    /// Compile the server binaries ONCE (game server + patch server). Realms run from COPIES
+    /// (see ServerAction), so this never fights a running process over a locked DLL.
+    /// </summary>
+    private static async Task<bool> BuildHostBinaries()
+    {
+        Log("── Compilation des serveurs (une fois, avant démarrage)…");
+        foreach (string project in new[] { "src/Aetheria.Server", "tools/PatchServer" })
+        {
+            (int code, string output) = await RunDotnet($"build -c Release {project}");
+            if (code != 0)
+            {
+                Log(TailOf(output, 1500));
+                Log($"ERREUR : compilation de {project} échouée.");
+                return false;
+            }
+        }
+
+        return true;
+    }
+
+    /// <summary>
+    /// Servers execute from a per-realm COPY of the build output — never from artifacts/ —
+    /// so recompiling (updates!) NEVER hits "file locked by a running server".
+    /// </summary>
     public static string ServerAction(string name, string action)
     {
-        (string project, string arguments) = name switch
+        string stateDir = Path.Combine(RepoRoot!, "state");
+        (string artifactDir, string dll, string arguments) = name switch
         {
-            "prod" => ("src/Aetheria.Server", "--name \"Zul'jin\" --port 27015"),
-            "tts" => ("src/Aetheria.Server",
-                "--name \"Zul'jin TTS\" --port 27016 --state state/aetheria-tts.json"),
-            "patch" => ("tools/PatchServer", ""),
-            _ => (string.Empty, string.Empty),
+            "prod" => (Path.Combine("artifacts", "bin", "Aetheria.Server", "release"), "Aetheria.Server.dll",
+                $"--name \"Zul'jin\" --port 27015 --state \"{Path.Combine(stateDir, "aetheria-prod.json")}\""),
+            "tts" => (Path.Combine("artifacts", "bin", "Aetheria.Server", "release"), "Aetheria.Server.dll",
+                $"--name \"Zul'jin TTS\" --port 27016 --state \"{Path.Combine(stateDir, "aetheria-tts.json")}\""),
+            "patch" => (Path.Combine("artifacts", "bin", "PatchServer", "release"), "PatchServer.dll", ""),
+            _ => (string.Empty, string.Empty, string.Empty),
         };
 
-        if (project.Length == 0)
+        if (artifactDir.Length == 0)
         {
             return "serveur inconnu";
         }
@@ -326,8 +424,28 @@ public static class HostMode
                 return "déjà en route";
             }
 
+            string sourceDir = Path.Combine(RepoRoot!, artifactDir);
+            if (!File.Exists(Path.Combine(sourceDir, dll)))
+            {
+                Log($"[{name}] binaires absents — compilation pas encore faite ?");
+                return "binaires absents";
+            }
+
+            // One-time migration: the old prod state lived under artifacts/ — carry it over.
+            Directory.CreateDirectory(stateDir);
+            string prodState = Path.Combine(stateDir, "aetheria-prod.json");
+            string legacyState = Path.Combine(sourceDir, "state", "aetheria-state.json");
+            if (name == "prod" && !File.Exists(prodState) && File.Exists(legacyState))
+            {
+                File.Copy(legacyState, prodState);
+                Log("[prod] anciennes sauvegardes migrées vers state/aetheria-prod.json.");
+            }
+
+            string runDir = Path.Combine(RepoRoot!, "run", name);
+            CopyDirectory(sourceDir, runDir);
+
             var psi = new ProcessStartInfo("dotnet",
-                $"run -c Release --project {project} -- {arguments}".Replace("--  ", "-- ").TrimEnd())
+                ($"\"{Path.Combine(runDir, dll)}\" {arguments}").TrimEnd())
             {
                 WorkingDirectory = RepoRoot!,
                 UseShellExecute = false,
@@ -335,10 +453,6 @@ public static class HostMode
                 RedirectStandardOutput = true,
                 RedirectStandardError = true,
             };
-            if (arguments.Length == 0)
-            {
-                psi.Arguments = $"run -c Release --project {project}";
-            }
 
             Process process = Process.Start(psi)!;
             process.OutputDataReceived += (_, e) => { if (e.Data != null) { Log($"[{name}] {e.Data}"); } };
@@ -347,6 +461,24 @@ public static class HostMode
             process.BeginErrorReadLine();
             Servers[name] = process;
             return "démarré";
+        }
+    }
+
+    private static void CopyDirectory(string source, string target)
+    {
+        Directory.CreateDirectory(target);
+        foreach (string file in Directory.EnumerateFiles(source, "*", SearchOption.AllDirectories))
+        {
+            string rel = Path.GetRelativePath(source, file);
+            if (rel.StartsWith("state", StringComparison.OrdinalIgnoreCase))
+            {
+                continue; // never duplicate save files into run copies
+            }
+
+            string dest = Path.Combine(target, rel);
+            Directory.CreateDirectory(Path.GetDirectoryName(dest)!);
+            try { File.Copy(file, dest, overwrite: true); }
+            catch (IOException) { /* file busy from a lingering process: keep the old copy */ }
         }
     }
 

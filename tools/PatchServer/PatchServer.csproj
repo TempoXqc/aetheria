@@ -8,7 +8,9 @@
   </PropertyGroup>
 
   <ItemGroup>
-    <ProjectReference Include="..\..\src\Aetheria.Server\Aetheria.Server.csproj" />
+    <!-- The UPnP helper is COMPILED IN (not project-referenced): building the patch server
+         must never rebuild the game server, whose DLLs are locked while realms run. -->
+    <Compile Include="..\..\src\Aetheria.Server\Net\UpnpPortOpener.cs" Link="UpnpPortOpener.cs" />
   </ItemGroup>
 
 </Project>
