@@ -19,6 +19,7 @@ public static class HostMode
     private static string _jobPhase = "idle"; // idle | pull | build | publish | done | error
     private static DateTime _lastFetch = DateTime.MinValue;
     private static int _behind = -1;
+    private static readonly string[] StagingOnly = { "staging" };
 
     public static string? RepoRoot { get; private set; }
 
@@ -103,7 +104,7 @@ public static class HostMode
                 if (needBuild)
                 {
                     Log($"── Pilote automatique : construction nécessaire ({reason}).");
-                    StartUpdateJob(new[] { "staging" });
+                    StartUpdateJob(StagingOnly);
                 }
                 else
                 {
