@@ -141,10 +141,29 @@ app.MapPost("/api/update", async (HttpRequest request) =>
         bytes += data.Length;
     }
 
+    // PRUNE: delete local files the manifest no longer lists (renamed/removed content — e.g.
+    // the old servers.txt). The install dir is fully launcher-managed, so this is safe.
+    var keep = new HashSet<string>(StringComparer.OrdinalIgnoreCase) { ".manifest.json" };
+    foreach (JsonNode? entry in remote["files"]!.AsArray())
+    {
+        keep.Add(entry!["path"]!.GetValue<string>().Replace('\\', '/'));
+    }
+
+    int pruned = 0;
+    foreach (string file in Directory.EnumerateFiles(installDir, "*", SearchOption.AllDirectories))
+    {
+        string rel = Path.GetRelativePath(installDir, file).Replace('\\', '/');
+        if (!keep.Contains(rel))
+        {
+            try { File.Delete(file); pruned++; } catch (IOException) { /* in use: next time */ }
+        }
+    }
+
     File.WriteAllText(Path.Combine(installDir, ".manifest.json"), remote.ToJsonString(jsonOptions));
     return Results.Ok(new
     {
         updated = downloaded,
+        pruned,
         megabytes = Math.Round(bytes / 1048576.0, 1),
         version = remote["version"]!.GetValue<string>(),
     });

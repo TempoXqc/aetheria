@@ -366,7 +366,7 @@ public static class HostMode
     }
 
     /// <summary>
-    /// servers.txt for ONE channel: the Aetheria channel ships only Zul'jin, the PTR channel
+    /// realms.txt for ONE channel: the Aetheria channel ships only Zul'jin, the PTR channel
     /// only PTR — each installed game sees exactly its own realm.
     /// </summary>
     private static async Task WriteServersFile(string buildDir, string channel)
@@ -403,8 +403,8 @@ public static class HostMode
         string content = channel == "prod"
             ? $"Zul'jin|{Routes(publicIp, lanIp, 27015)}\n"
             : $"PTR|{Routes(publicIp, lanIp, 27016)}\n";
-        await File.WriteAllTextAsync(Path.Combine(buildDir, "servers.txt"), content);
-        Log("── servers.txt généré (" + (publicIp.Length > 0 ? "IP publique " + publicIp : "sans IP publique") + ").");
+        await File.WriteAllTextAsync(Path.Combine(buildDir, "realms.txt"), content);
+        Log("── realms.txt généré (" + (publicIp.Length > 0 ? "IP publique " + publicIp : "sans IP publique") + ").");
     }
 
     private static async Task<string> GameVersion()

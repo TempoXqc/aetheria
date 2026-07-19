@@ -651,11 +651,12 @@ namespace Aetheria.UnityClient
         {
             if (_servers.Count > 0) { return; }
 
-            // servers.txt beside the game overrides the built-in realms entirely when present.
+            // realms.txt beside the game overrides the built-in realms entirely when present.
+            // (Renamed from servers.txt so STALE old files lying around are simply ignored.)
             bool fromFile = false;
             try
             {
-                string path = System.IO.Path.Combine(Application.dataPath, "..", "servers.txt");
+                string path = System.IO.Path.Combine(Application.dataPath, "..", "realms.txt");
                 if (System.IO.File.Exists(path))
                 {
                     foreach (string line in System.IO.File.ReadAllLines(path))
@@ -1849,88 +1850,121 @@ namespace Aetheria.UnityClient
         }
 
         /// <summary>The server browser: NAMED realms, their population, and your character there.</summary>
+        private int _realmSelected;
+
+        /// <summary>WoW's Realm Selection: a real TABLE — name / type / characters / population —
+        /// with the selected row highlighted green. Click selects, double-click joins.</summary>
         private void DrawServerBrowser()
         {
             List<ServerEntry> rows = RealmRows();
-            float height = 150f + (rows.Count * 54f) + 70f;
-            DrawTitledBox(out Rect box, Mathf.Min(height, VirtH * 0.8f), "Liste des serveurs", 560f);
-            GUILayout.BeginArea(new Rect(box.x + 15, box.y + 48, box.width - 30, box.height - 60));
+            if (_realmSelected >= rows.Count) { _realmSelected = 0; }
 
-            GUILayout.Space(6);
+            float height = 118f + (rows.Count * 30f) + 96f;
+            DrawTitledBox(out Rect box, Mathf.Min(height, VirtH * 0.85f), "Sélection du royaume", 640f);
 
-            foreach (ServerEntry e in rows)
+            float x = box.x + 18;
+            float w = box.width - 36;
+            float y = box.y + 52;
+            float cType = x + (w * 0.40f);
+            float cChar = x + (w * 0.64f);
+            float cPop = x + (w * 0.83f);
+
+            // Column headers on a darker strip.
+            Color prev = GUI.color;
+            GUI.color = new Color(0.13f, 0.12f, 0.10f);
+            GUI.DrawTexture(new Rect(x - 6, y, w + 12, 24), Texture2D.whiteTexture);
+            GUI.color = prev;
+            GUI.Label(new Rect(x + 4, y + 3, 220, 18), "<b>Nom du royaume</b>", Rich());
+            GUI.Label(new Rect(cType, y + 3, 140, 18), "<b>Type</b>", Rich());
+            GUI.Label(new Rect(cChar, y + 3, 120, 18), "<b>Personnages</b>", Rich());
+            GUI.Label(new Rect(cPop, y + 3, 100, 18), "<b>Population</b>", Rich());
+            y += 28f;
+
+            for (int i = 0; i < rows.Count; i++)
             {
-                GUILayout.BeginHorizontal(GUI.skin.box);
+                ServerEntry e = rows[i];
+                var line = new Rect(x - 6, y, w + 12, 28);
 
-                // Column 1: the REALM NAME (players never deal with addresses).
-                GUILayout.BeginVertical(GUILayout.Width(190));
+                // Selected row: the green WoW highlight bar.
+                if (i == _realmSelected)
+                {
+                    GUI.color = new Color(0.09f, 0.38f, 0.10f, 0.90f);
+                    GUI.DrawTexture(line, Texture2D.whiteTexture);
+                    GUI.color = prev;
+                }
+
                 string name = !string.IsNullOrEmpty(e.Label) ? e.Label
                     : e.HasInfo ? e.Info.Name : "?";
-                GUILayout.Label("<size=14><b>" + name + "</b></size>", Rich());
-                GUILayout.Label(e.Failed
-                    ? "<size=9><color=#ff7070>Hors ligne</color></size>"
-                    : e.HasInfo ? "<size=9><color=#60e070>En ligne</color></size>"
-                    : "<size=9><color=#909090>Interrogation…</color></size>", Rich());
-                GUILayout.EndVertical();
+                string nameColor = e.Failed ? "#8a8a8a"
+                    : e.HasInfo && e.Info.HasCharacter ? "#30e030"   // you live there → green
+                    : "#ffd100";                                      // gold, like WoW
+                GUI.Label(new Rect(x + 4, y + 5, cType - x - 10, 20),
+                    "<size=13><color=" + nameColor + "><b>" + name + "</b></color></size>", Rich());
 
-                // Column 2: population badge.
-                GUILayout.BeginVertical(GUILayout.Width(130));
-                if (e.HasInfo)
-                {
-                    float fill = e.Info.Capacity > 0 ? e.Info.Online / (float)e.Info.Capacity : 0f;
-                    string badge = fill >= 1f ? "<color=#ff5050>Complet</color>"
-                        : fill >= 0.8f ? "<color=#ffa040>Presque complet</color>"
-                        : fill >= 0.3f ? "<color=#ffe060>Moyenne</color>"
-                        : "<color=#60e070>Faible</color>";
-                    GUILayout.Label(badge, Rich());
-                    GUILayout.Label("<size=9>" + e.Info.Online + " / " + e.Info.Capacity + " joueurs</size>", Rich());
-                }
+                string type = "<color=#30d040>Hardcore</color>" +
+                    (name == "PTR" ? " <color=#a0a0a0>(test)</color>" : "");
+                GUI.Label(new Rect(cType, y + 5, cChar - cType - 8, 20), type, Rich());
+
+                string chars = e.HasInfo && e.Info.HasCharacter
+                    ? e.Info.CharacterName + " <color=#a0a0a0>(" + e.Info.CharacterLevel + ")</color>"
+                    : e.HasInfo && !e.Info.AcceptsNewCharacters ? "<color=#ff7070>complet</color>"
+                    : "—";
+                GUI.Label(new Rect(cChar, y + 5, cPop - cChar - 8, 20), "<size=11>" + chars + "</size>", Rich());
+
+                string pop;
+                if (e.Failed) { pop = "<color=#ff6060>Hors ligne</color>"; }
+                else if (!e.HasInfo) { pop = "<color=#909090>…</color>"; }
                 else
                 {
-                    GUILayout.Label("<size=9>—</size>", Rich());
+                    float fill = e.Info.Capacity > 0 ? e.Info.Online / (float)e.Info.Capacity : 0f;
+                    pop = fill >= 1f ? "<color=#ff5050>Complet</color>"
+                        : fill >= 0.8f ? "<color=#ffa040>Élevée</color>"
+                        : fill >= 0.3f ? "<color=#ffe060>Moyenne</color>"
+                        : "<color=#30e030>Faible</color>";
                 }
 
-                GUILayout.EndVertical();
+                GUI.Label(new Rect(cPop, y + 5, 100, 20), pop, Rich());
 
-                // Column 3: your character on this server.
-                GUILayout.BeginVertical(GUILayout.Width(130));
-                if (e.HasInfo && e.Info.HasCharacter)
+                // Click selects; double-click joins (WoW muscle memory).
+                Event evt = Event.current;
+                if (evt != null && evt.type == EventType.MouseDown && line.Contains(evt.mousePosition))
                 {
-                    GUILayout.Label("<size=10>" + e.Info.CharacterName + " (niv. " + e.Info.CharacterLevel + ")</size>", Rich());
-                }
-                else if (e.HasInfo)
-                {
-                    bool blocked = !e.Info.AcceptsNewCharacters;
-                    GUILayout.Label(blocked
-                        ? "<size=10><color=#ff7070>Création bloquée (complet)</color></size>"
-                        : "<size=10>Aucun personnage</size>", Rich());
-                }
+                    _realmSelected = i;
+                    if (evt.clickCount == 2)
+                    {
+                        TryJoinRealm(e);
+                    }
 
-                GUILayout.EndVertical();
-
-                // Column 4: join. A full server still lets an EXISTING character play,
-                // but refuses newcomers (no character there + no room to create one).
-                bool canJoin = e.HasInfo && (e.Info.HasCharacter || e.Info.AcceptsNewCharacters);
-                GUI.enabled = canJoin;
-                if (GUILayout.Button("REJOINDRE", GUILayout.Width(90), GUILayout.Height(36)))
-                {
-                    // First visit on this realm: the account is created there automatically.
-                    Connect(e.Address, createAccount: !e.Info.HasAccount, fromBrowser: true);
+                    evt.Use();
                 }
 
-                GUI.enabled = true;
-                GUILayout.EndHorizontal();
+                y += 30f;
             }
 
-            GUILayout.Space(6);
-            GUILayout.BeginHorizontal();
-            GUILayout.FlexibleSpace();
-            if (GUILayout.Button("Actualiser", GUILayout.Width(90))) { RefreshServers(); }
-            if (GUILayout.Button("Retour", GUILayout.Width(80))) { _lobbyScreen = LobbyScreen.Auth; }
-            GUILayout.EndHorizontal();
+            float by = box.yMax - 44f;
+            DrawErrorsAt(new Rect(box.x, by - 26, box.width, 22));
+            if (WowUi.Button(new Rect(x, by, 110, 30), "Actualiser")) { RefreshServers(); }
 
-            DrawErrors();
-            GUILayout.EndArea();
+            ServerEntry sel = rows.Count > 0 ? rows[Mathf.Clamp(_realmSelected, 0, rows.Count - 1)] : null;
+            bool canJoin = sel != null && sel.HasInfo &&
+                           (sel.Info.HasCharacter || sel.Info.AcceptsNewCharacters);
+            GUI.enabled = canJoin;
+            if (WowUi.Button(new Rect(x + w - 236, by, 112, 30), "Rejoindre") && canJoin)
+            {
+                TryJoinRealm(sel);
+            }
+
+            GUI.enabled = true;
+            if (WowUi.Button(new Rect(x + w - 112, by, 112, 30), "Retour")) { _lobbyScreen = LobbyScreen.Auth; }
+        }
+
+        /// <summary>Join a realm from the browser (first visit auto-creates the account there).</summary>
+        private void TryJoinRealm(ServerEntry e)
+        {
+            if (e != null && e.HasInfo && (e.Info.HasCharacter || e.Info.AcceptsNewCharacters))
+            {
+                Connect(e.Address, createAccount: !e.Info.HasAccount, fromBrowser: true);
+            }
         }
 
         private void DrawWaitScreen(string message)
