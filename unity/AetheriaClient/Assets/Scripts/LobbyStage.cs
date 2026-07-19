@@ -29,6 +29,8 @@ namespace Aetheria.UnityClient
             new System.Collections.Generic.List<Transform>();
         private readonly System.Collections.Generic.List<Vector3> _flameBase =
             new System.Collections.Generic.List<Vector3>();
+        private readonly System.Collections.Generic.List<Renderer> _bannerCloths =
+            new System.Collections.Generic.List<Renderer>();
 
         private IsoCameraRig _rig;
         private float _t;
@@ -111,11 +113,14 @@ namespace Aetheria.UnityClient
             Torch(r, new Vector3(-2.2f, 0f, 1.6f));
             Torch(r, new Vector3(2.2f, 0f, 1.6f));
 
-            // Banners behind the dais, framing the character like a hero podium.
+            // Banners behind the dais, framing the character like a hero podium. Their cloth
+            // takes the FACTION colour of the previewed character — the faction lives in the
+            // scene, not in a line of text.
+            _bannerCloths.Clear();
             if (PropModels.Available)
             {
-                PropModels.Spawn(r, "Banner_1", new Vector3(-1.5f, 0f, 2.6f), 3.0f, 180f);
-                PropModels.Spawn(r, "Banner_2", new Vector3(1.5f, 0f, 2.6f), 3.0f, 180f);
+                CollectCloth(PropModels.Spawn(r, "Banner_1", new Vector3(-1.5f, 0f, 2.6f), 3.0f, 180f));
+                CollectCloth(PropModels.Spawn(r, "Banner_2", new Vector3(1.5f, 0f, 2.6f), 3.0f, 180f));
 
                 // Camp life around the fire: somewhere to sit, supplies, an adventurer's chest.
                 PropModels.Spawn(r, "Bench", new Vector3(4.1f, 0f, -0.6f), 0.85f, 245f);
@@ -220,14 +225,30 @@ namespace Aetheria.UnityClient
             }
 
             // Tint the tunic with the faction colour so the camp choice reads instantly.
+            Color factionColor = faction == Faction.Horde
+                ? new Color(0.75f, 0.22f, 0.18f)
+                : new Color(0.20f, 0.40f, 0.80f);
             if (_previewRig.TintTargets.Length > 0)
             {
-                Color tunic = faction == Faction.Horde
-                    ? new Color(0.75f, 0.22f, 0.18f)
-                    : new Color(0.20f, 0.40f, 0.80f);
                 for (int i = 0; i < _previewRig.TintTargets.Length; i++)
                 {
-                    _previewRig.TintTargets[i].material.color = tunic;
+                    _previewRig.TintTargets[i].material.color = factionColor;
+                }
+            }
+
+            // The banner cloths behind the dais fly the same colours — the scene IS the
+            // faction badge, no text needed.
+            for (int i = 0; i < _bannerCloths.Count; i++)
+            {
+                if (_bannerCloths[i] != null)
+                {
+                    foreach (Material m in _bannerCloths[i].materials)
+                    {
+                        if (m != null && m.name.Contains("Cloth"))
+                        {
+                            m.color = factionColor;
+                        }
+                    }
                 }
             }
         }
@@ -502,6 +523,27 @@ namespace Aetheria.UnityClient
                 new Vector3(s, s * 0.9f, s), new Color(0.16f, 0.17f, 0.22f));
             Tex.Apply(m, "stone", 4f, 4f, new Color(0.30f, 0.32f, 0.40f));
             m.transform.localRotation = Quaternion.Euler(0f, 45f, 0f);
+        }
+
+        /// <summary>Remember every cloth renderer of a spawned banner for faction tinting.</summary>
+        private void CollectCloth(GameObject banner)
+        {
+            if (banner == null)
+            {
+                return;
+            }
+
+            foreach (Renderer rend in banner.GetComponentsInChildren<Renderer>(true))
+            {
+                foreach (Material m in rend.materials)
+                {
+                    if (m != null && m.name.Contains("Cloth"))
+                    {
+                        _bannerCloths.Add(rend);
+                        break;
+                    }
+                }
+            }
         }
 
         private Transform FlameOrb(Transform r, Vector3 pos, Vector3 scale, Color color)

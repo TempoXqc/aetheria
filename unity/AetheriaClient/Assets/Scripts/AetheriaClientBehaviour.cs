@@ -1731,9 +1731,11 @@ namespace Aetheria.UnityClient
             // BOTTOM CENTRE: name, class and level over the big enter button.
             WowUi.GoldCentered(new Rect((VirtW / 2f) - 220, VirtH - 152, 440, 26),
                 "<size=17>" + _client.CharacterName + "</size>");
+            // Just class, level, race — no resource type, no faction (the scene's banners wear
+            // the faction colour), no server address.
             WowUi.GoldCentered(new Rect((VirtW / 2f) - 220, VirtH - 128, 440, 20),
-                "<size=12><color=#c8c8c8>" + cls + " niveau " + _client.CharacterLevel +
-                " — " + race + " · " + _host + "</color></size>");
+                "<size=12><color=#c8c8c8>" + StripParen(cls) + " niveau " + _client.CharacterLevel +
+                " — " + StripParen(race) + "</color></size>");
             // Enter = enter the world, same as the big button.
             if (!_confirmDeleteChar &&
                 (WowUi.Button(new Rect((VirtW / 2f) - 150, VirtH - 100, 300, 42), "Entrer dans le monde") ||
@@ -1772,6 +1774,13 @@ namespace Aetheria.UnityClient
             }
 
             DrawErrorsAt(new Rect((VirtW / 2f) - 240, VirtH - 188, 480, 30));
+        }
+
+        /// <summary>"Warrior (Rage)" → "Warrior" — labels without their parenthetical detail.</summary>
+        private static string StripParen(string label)
+        {
+            int at = label.IndexOf(" (", System.StringComparison.Ordinal);
+            return at > 0 ? label.Substring(0, at) : label;
         }
 
         /// <summary>HARDCORE-worthy confirmation: deletion is forever, say it plainly.</summary>
@@ -2769,7 +2778,13 @@ namespace Aetheria.UnityClient
             if (def.DefenseBonus > 0) { sb.Append("\n<color=#ffffff>+").Append(def.DefenseBonus).Append(" Défense</color>"); }
             if (def.HealthBonus > 0) { sb.Append("\n<color=#20ff20>+").Append(def.HealthBonus).Append(" PV</color>"); }
             if (def.Stackable && def.MaxStack > 1) { sb.Append("\n<color=#a0a0a0>Se cumule par ").Append(def.MaxStack).Append("</color>"); }
-            if (def.GoldValue > 0) { sb.Append("\nPrix de vente : ").Append(FormatMoney(def.GoldValue)); }
+            // « Prix de vente » = what the merchant ACTUALLY pays (WoW semantics) — computed by
+            // the same shared formula as the server, so the credited money always matches.
+            if (def.GoldValue > 0)
+            {
+                sb.Append("\nPrix de vente : ")
+                  .Append(FormatMoney(SimulationConstants.VendorSellPrice(def.GoldValue)));
+            }
 
             return sb.ToString();
         }

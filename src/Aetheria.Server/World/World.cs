@@ -387,7 +387,7 @@ public sealed class World
 
     /// <summary>The merchant's buy-back rate: a quarter of the item's value, at least 1 copper.</summary>
     public static int VendorSellPrice(ItemDefinition def)
-        => System.Math.Max(1, def.GoldValue / SimulationConstants.VendorSellDivisor);
+        => SimulationConstants.VendorSellPrice(def.GoldValue);
 
     /// <summary>
     /// Buy from or sell to a merchant NPC. Validated: proximity, stock (for buys), ownership

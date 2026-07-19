@@ -86,6 +86,13 @@ public static class SimulationConstants
     /// <summary>What the merchant BUYS BACK at, as a fraction denominator of GoldValue (WoW: 1/4).</summary>
     public const int VendorSellDivisor = 4;
 
+    /// <summary>
+    /// The EXACT price a merchant pays for one unit of an item worth <paramref name="goldValue"/>.
+    /// Shared so the tooltip's « Prix de vente » and the server's credit can never disagree.
+    /// </summary>
+    public static int VendorSellPrice(int goldValue)
+        => System.Math.Max(1, goldValue / VendorSellDivisor);
+
     /// <summary>The merchant's stock (item ids from the item registry): basics + consumables.</summary>
     public static readonly byte[] VendorStock = { 20, 1, 5, 6, 13, 15, 17, 19, 21, 12 };
 
@@ -124,5 +131,5 @@ public static class SimulationConstants
     /// in the in-game HUD, and in the server startup log, so "am I up to date?" has a one-glance
     /// answer on both sides.
     /// </summary>
-    public const string GameVersion = "0.45.1";
+    public const string GameVersion = "0.45.2";
 }
