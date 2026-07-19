@@ -50,3 +50,7 @@ secrets.json
 builds/
 aetheria-launcher-data/
 derniere-publication.txt
+builds-auto/
+builds-auto-log.txt
+unity/AetheriaClient/Assets/Scenes/Auto.unity
+unity/AetheriaClient/Assets/Scenes/Auto.unity.meta

@@ -165,8 +165,46 @@ app.MapPost("/api/play", (HttpRequest request) =>
     return Results.Ok(new { launched = true });
 });
 
+// ---------------------------------------------------------------- HOST MODE
+// When the launcher runs from the game's repo (the owner's PC), it also drives the whole
+// pipeline: git watch → one-click pull + headless Unity build + publish — and the servers.
+Aetheria.Launcher.HostMode.Detect();
+
+app.MapGet("/api/host", async () =>
+    Results.Content((await Aetheria.Launcher.HostMode.State()).ToJsonString(jsonOptions),
+        "application/json; charset=utf-8"));
+
+app.MapPost("/api/host/update", async (HttpRequest request) =>
+{
+    JsonNode? body = JsonNode.Parse(await new StreamReader(request.Body).ReadToEndAsync());
+    var channels = new List<string>();
+    if (body?["channels"] is JsonArray list)
+    {
+        foreach (JsonNode? c in list)
+        {
+            string name = c?.GetValue<string>() ?? "";
+            if (name is "prod" or "staging") { channels.Add(name); }
+        }
+    }
+
+    if (channels.Count == 0) { channels.Add("staging"); }
+    bool started = Aetheria.Launcher.HostMode.StartUpdateJob(channels.ToArray());
+    return started ? Results.Ok(new { started = true }) : Results.BadRequest(new { error = "Déjà en cours." });
+});
+
+app.MapPost("/api/host/server", (HttpRequest request) =>
+{
+    string name = request.Query["name"].ToString();
+    string action = request.Query["action"].ToString();
+    string result = Aetheria.Launcher.HostMode.ServerAction(name, action);
+    return Results.Ok(new { result });
+});
+
+AppDomain.CurrentDomain.ProcessExit += (_, _) => Aetheria.Launcher.HostMode.StopAll();
+
 Console.WriteLine();
-Console.WriteLine("  Launcher Aetheria — http://localhost:5180");
+Console.WriteLine("  Launcher Aetheria — http://localhost:5180" +
+    (Aetheria.Launcher.HostMode.IsHost ? "  (mode hébergeur actif)" : ""));
 Console.WriteLine();
 OpenBrowser("http://localhost:5180");
 app.Run();

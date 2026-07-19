@@ -126,6 +126,27 @@
   </div>
 
   <div class="col-right">
+    <div class="panel" id="hostPanel" style="display:none">
+      <h2>Hébergement (ce PC)</h2>
+      <div id="gitState" style="font-size:13px; color: var(--muted); margin-bottom: 8px;">…</div>
+      <button id="buildBtn" onclick="hostUpdate()" style="width:100%; padding:9px; border-radius:7px; cursor:pointer;
+        background: linear-gradient(180deg,#2e6b33,#1d4a22); border:1px solid #3f8a46; color:#e7ffe8; font-weight:600; display:none;">
+        ⟳ Télécharger + construire + publier
+      </button>
+      <label style="display:none" id="prodAlso"><input type="checkbox" id="pubProd" style="width:auto"> publier aussi en prod</label>
+      <div style="display:flex; gap:6px; margin-top:10px;">
+        <button class="srv" id="srv-prod" onclick="toggleServer('prod')">Zul'jin</button>
+        <button class="srv" id="srv-tts" onclick="toggleServer('tts')">TTS</button>
+        <button class="srv" id="srv-patch" onclick="toggleServer('patch')">Patchs</button>
+      </div>
+      <div class="hint">Un clic démarre/arrête chaque serveur. Ils vivent tant que le launcher est ouvert.</div>
+      <pre id="hostLog" style="max-height:130px; overflow-y:auto; font-size:10.5px; color:#8a93a6; white-space:pre-wrap; margin:8px 0 0;"></pre>
+    </div>
+    <style>
+      .srv { flex:1; padding:8px 4px; border-radius:7px; cursor:pointer; background:var(--panel2);
+             border:1px solid var(--border); color:var(--muted); font-weight:600; font-size:12px; }
+      .srv.on { border-color:#3f8a46; color:#7de582; box-shadow:0 0 0 1px #3f8a46; }
+    </style>
     <div class="panel">
       <h2>Connexion</h2>
       <label>Nom de compte</label>
@@ -269,10 +290,70 @@ async function loadNews() {
   } catch (e) { /* keep the placeholder */ }
 }
 
+/* ------------------------------------------------------------- host mode */
+let HOST = null;
+
+async function refreshHost() {
+  try { HOST = await (await fetch('/api/host')).json(); } catch (e) { return; }
+  const panel = document.getElementById('hostPanel');
+  if (!HOST.isHost) { panel.style.display = 'none'; return; }
+  panel.style.display = 'block';
+
+  const git = document.getElementById('gitState');
+  const btn = document.getElementById('buildBtn');
+  const prodAlso = document.getElementById('prodAlso');
+  const working = ['pull','build','publish'].includes(HOST.phase);
+
+  if (working) {
+    const label = { pull: 'Téléchargement des changements…', build: 'Construction Unity en cours…', publish: 'Publication…' }[HOST.phase];
+    git.innerHTML = '<span class="spin"></span>' + label;
+    btn.style.display = 'none'; prodAlso.style.display = 'none';
+  } else if (HOST.behind > 0) {
+    git.innerHTML = '<span class="status-warn">⬤</span> <b>' + HOST.behind + ' nouveau(x) changement(s)</b> de Claude sur le dépôt !';
+    btn.style.display = 'block';
+    prodAlso.style.display = 'block';
+    if (!HOST.unityFound) { git.innerHTML += '<br><span class="status-err">Unity introuvable — installe-le via Unity Hub.</span>'; }
+  } else if (HOST.phase === 'error') {
+    git.innerHTML = '<span class="status-err">La dernière construction a échoué (voir le journal).</span>';
+    btn.style.display = 'block'; btn.textContent = '⟳ Réessayer'; prodAlso.style.display = 'block';
+  } else if (HOST.phase === 'done') {
+    git.innerHTML = '<span class="status-ok">✔ Construit et publié — les launchers voient la mise à jour.</span>';
+    btn.style.display = 'none'; prodAlso.style.display = 'none';
+  } else {
+    git.innerHTML = '<span class="status-ok">✔ À jour avec le dépôt.</span>';
+    btn.style.display = 'none'; prodAlso.style.display = 'none';
+  }
+
+  for (const name of ['prod','tts','patch']) {
+    document.getElementById('srv-' + name).classList.toggle('on', !!HOST.servers[name]);
+  }
+
+  const log = document.getElementById('hostLog');
+  if (HOST.log && HOST.log.trim()) { log.textContent = HOST.log; log.scrollTop = log.scrollHeight; }
+}
+
+async function hostUpdate() {
+  const channels = ['staging'];
+  if (document.getElementById('pubProd').checked) { channels.push('prod'); }
+  await fetch('/api/host/update', {
+    method: 'POST', headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ channels }),
+  });
+  await refreshHost();
+}
+
+async function toggleServer(name) {
+  const running = HOST && HOST.servers[name];
+  await fetch('/api/host/server?name=' + name + '&action=' + (running ? 'stop' : 'start'), { method: 'POST' });
+  setTimeout(refreshHost, 800);
+}
+
 document.getElementById('host').addEventListener('change', async () => { await saveConfig(); await refresh(); await loadNews(); });
 refresh();
 loadNews();
-setInterval(refresh, 15000); // the PLAY button flips to METTRE À JOUR by itself
+refreshHost();
+setInterval(refresh, 15000);  // the PLAY button flips to METTRE À JOUR by itself
+setInterval(refreshHost, 5000); // host: git watch + build progress + server dots
 </script>
 </body>
 </html>
