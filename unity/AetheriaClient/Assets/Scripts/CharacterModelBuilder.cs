@@ -174,8 +174,15 @@ namespace Aetheria.UnityClient
                 case EntityKind.MonsterCorpse:
                     return BuildMonsterRemains(parent, snapshot.RaceId);
                 case EntityKind.Npc:
-                    // Npc "race" is a TYPE: 1 = bank chest, 2 = quest giver, 3+ = villager.
-                    return snapshot.RaceId >= 2 ? BuildVillager(parent, snapshot) : BuildBankChest(parent);
+                    // Npc "race" is a TYPE: 1 = bank chest, 2 = quest giver, 3-4 = villagers,
+                    // 5 = instance portal, 6 = meeting stone.
+                    return snapshot.RaceId switch
+                    {
+                        5 => BuildPortal(parent),
+                        6 => BuildMeetingStone(parent),
+                        >= 2 => BuildVillager(parent, snapshot),
+                        _ => BuildBankChest(parent),
+                    };
                 default:
                     // Real modular meshes (Quaternius pack) when imported; procedural otherwise.
                     if (QuaterniusCharacters.Available)
@@ -281,6 +288,53 @@ namespace Aetheria.UnityClient
         }
 
         /// <summary>The sanctuary's bank chest: sturdy wood, iron bands, a golden lock.</summary>
+        /// <summary>
+        /// An instance GATE: two stone pillars, a lintel, and a glowing swirl you walk into —
+        /// the entrance to a dungeon or raid, WoW-style. Pure primitives, always renders.
+        /// </summary>
+        private static ModelRig BuildPortal(Transform parent)
+        {
+            Color stone = new Color(0.36f, 0.36f, 0.42f);
+            Cube(parent, "PillarL", new Vector3(-1.1f, 1.4f, 0f), new Vector3(0.5f, 2.8f, 0.5f), stone);
+            Cube(parent, "PillarR", new Vector3(1.1f, 1.4f, 0f), new Vector3(0.5f, 2.8f, 0.5f), stone);
+            Cube(parent, "Lintel", new Vector3(0f, 2.95f, 0f), new Vector3(3.0f, 0.5f, 0.6f), stone);
+
+            // The swirl: a flattened glowing disc between the pillars.
+            GameObject swirl = Ball(parent, "Swirl", new Vector3(0f, 1.45f, 0f),
+                new Vector3(1.7f, 2.4f, 0.25f), new Color(0.35f, 0.55f, 1f));
+            var glowGo = new GameObject("PortalGlow");
+            glowGo.transform.SetParent(swirl.transform, false);
+            Light glow = glowGo.AddComponent<Light>();
+            glow.type = LightType.Point;
+            glow.color = new Color(0.45f, 0.6f, 1f);
+            glow.range = 7f;
+            glow.intensity = 1.6f;
+
+            return new ModelRig { HeadHeight = 3.4f };
+        }
+
+        /// <summary>The meeting stone: a tall rune-stone that summons the missing party members.</summary>
+        private static ModelRig BuildMeetingStone(Transform parent)
+        {
+            GameObject rock = Caps(parent, "Stone", new Vector3(0f, 0.9f, 0f),
+                new Vector3(0.9f, 0.9f, 0.7f), new Color(0.30f, 0.32f, 0.38f));
+            rock.transform.localRotation = Quaternion.Euler(0f, 25f, 4f);
+
+            // Rune band, faintly luminous.
+            Cube(parent, "Runes", new Vector3(0f, 1.05f, 0f),
+                new Vector3(0.95f, 0.18f, 0.75f), new Color(0.35f, 0.75f, 1f));
+            var glowGo = new GameObject("StoneGlow");
+            glowGo.transform.SetParent(parent, false);
+            glowGo.transform.localPosition = new Vector3(0f, 1.2f, 0f);
+            Light glow = glowGo.AddComponent<Light>();
+            glow.type = LightType.Point;
+            glow.color = new Color(0.4f, 0.7f, 1f);
+            glow.range = 4f;
+            glow.intensity = 1.0f;
+
+            return new ModelRig { HeadHeight = 2.1f };
+        }
+
         private static ModelRig BuildBankChest(Transform parent)
         {
             var rig = new ModelRig { HeadHeight = 1.6f };

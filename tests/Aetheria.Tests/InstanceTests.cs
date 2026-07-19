@@ -25,7 +25,7 @@ public static class InstanceTests
     public static void RaidGate_EnforcesGroupSize()
     {
         Assert.False(WorldManager.CanEnter(Raid, 1, out string reason1));
-        Assert.True(reason1.Contains("at least"));
+        Assert.True(reason1.Contains("au moins"));
 
         Assert.False(WorldManager.CanEnter(Raid, 5, out _));
         Assert.True(WorldManager.CanEnter(Raid, 6, out _));

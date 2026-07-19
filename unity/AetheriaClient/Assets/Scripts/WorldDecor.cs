@@ -894,6 +894,80 @@ namespace Aetheria.UnityClient
     }
 
     /// <summary>
+    /// The WORLD MAP (M key): a high orthographic camera over the whole playable area, rendered
+    /// into a big RenderTexture only while the map window is open. The GUI overlays the player
+    /// arrow and quest-zone circles on top.
+    /// </summary>
+    public sealed class WorldMapView
+    {
+        /// <summary>Half-size of the mapped square, world units (the camera's ortho size).</summary>
+        public const float Extent = 120f;
+
+        private GameObject _root;
+        private Camera _camera;
+
+        public RenderTexture Texture { get; private set; }
+
+        public void EnsureBuilt()
+        {
+            if (_root != null)
+            {
+                return;
+            }
+
+            _root = new GameObject("WorldMapCam");
+            Texture = new RenderTexture(768, 768, 16);
+            _camera = _root.AddComponent<Camera>();
+            _camera.orthographic = true;
+            _camera.orthographicSize = Extent;
+            _camera.targetTexture = Texture;
+            _camera.clearFlags = CameraClearFlags.SolidColor;
+            _camera.backgroundColor = new Color(0.16f, 0.24f, 0.14f);
+            _root.transform.position = new Vector3(0f, 120f, 0f);
+            _root.transform.rotation = Quaternion.Euler(90f, 0f, 0f);
+        }
+
+        /// <summary>Render only while open — a whole-world pass is not free.</summary>
+        public void SetActive(bool active)
+        {
+            if (active)
+            {
+                EnsureBuilt();
+            }
+
+            if (_camera != null)
+            {
+                _camera.enabled = active;
+            }
+        }
+
+        /// <summary>World position → pixel inside the given on-screen map rect.</summary>
+        public static Vector2 ToMap(Rect rect, float worldX, float worldZ)
+        {
+            float u = (worldX + Extent) / (2f * Extent);
+            float v = (worldZ + Extent) / (2f * Extent);
+            return new Vector2(rect.x + (u * rect.width), rect.y + ((1f - v) * rect.height));
+        }
+
+        public void Teardown()
+        {
+            if (_root != null)
+            {
+                Object.Destroy(_root);
+                _root = null;
+                _camera = null;
+            }
+
+            if (Texture != null)
+            {
+                Texture.Release();
+                Object.Destroy(Texture);
+                Texture = null;
+            }
+        }
+    }
+
+    /// <summary>
     /// The character sheet's live 3D portrait: the player's model on a tiny hidden stage far from
     /// the world, rendered by its own camera into a RenderTexture the OnGUI sheet displays.
     /// </summary>

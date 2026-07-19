@@ -659,6 +659,9 @@ public readonly struct QuestCatalogMessage
             w.WriteString(q.Name);
             w.WriteString(q.Description);
             w.WriteString(q.TurnInText);
+            w.WriteFloat(q.ZoneX);
+            w.WriteFloat(q.ZoneY);
+            w.WriteFloat(q.ZoneRadius);
         }
     }
 
@@ -678,11 +681,15 @@ public readonly struct QuestCatalogMessage
             string name = r.ReadString();
             string description = r.ReadString();
             string turnIn = r.ReadString();
+            float zoneX = r.ReadFloat();
+            float zoneY = r.ReadFloat();
+            float zoneRadius = r.ReadFloat();
             quests[i] = new Aetheria.Shared.Data.QuestDefinition
             {
                 Id = id, TargetMonsterId = target, RewardItemId = rewardItem, NextQuestId = next,
                 RequiredKills = kills, RewardXp = xp, RewardGold = gold,
                 Name = name, Description = description, TurnInText = turnIn,
+                ZoneX = zoneX, ZoneY = zoneY, ZoneRadius = zoneRadius,
             };
         }
 

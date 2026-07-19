@@ -247,4 +247,13 @@ public sealed class QuestDefinition
 
     /// <summary>The quest unlocked by completing this one (0 = end of the chain).</summary>
     public byte NextQuestId { get; init; }
+
+    /// <summary>
+    /// WHERE TO HUNT — the map hint circle (centre + radius, world units). Radius 0 = no zone.
+    /// The server fills these from the actual monster positions before sending the catalogue,
+    /// so the map always points at the real hunting grounds.
+    /// </summary>
+    public float ZoneX { get; init; }
+    public float ZoneY { get; init; }
+    public float ZoneRadius { get; init; }
 }

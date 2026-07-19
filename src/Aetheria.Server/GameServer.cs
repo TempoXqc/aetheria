@@ -37,6 +37,17 @@ public sealed class GameServer
     // persistence (M4), where names are reserved in the database.
     private readonly HashSet<string> _activeNames = new(StringComparer.OrdinalIgnoreCase);
 
+    // Instance GATES in the open world: (instance def, portal position, meeting-stone position).
+    private readonly List<(byte defId, Vec2 gate, Vec2 stone)> _portals = new();
+
+    // The running instance of each party (keyed by leader peer), so members who walk into the
+    // portal AFTER the group entered land in the SAME instance.
+    private readonly Dictionary<int, World.World> _partyInstances = new();
+
+    // Anti-spam: last tick a refusal message was sent per player / a stone fired per party.
+    private readonly Dictionary<int, long> _portalMsgAt = new();
+    private readonly Dictionary<int, long> _stoneFiredAt = new();
+
     // Pending duel challenges: challenged peer -> (challenger peer, to-death?).
     private readonly Dictionary<PeerId, (PeerId challenger, bool toDeath)> _pendingDuels = new();
 
@@ -165,6 +176,7 @@ public sealed class GameServer
         {
             BroadcastPlayerState();
             BroadcastPartyVitals(); // live HP/mana for the party frames
+            TickPortalsAndStones(); // walk-in instance gates + meeting stones
         }
 
         // Periodic durability flush: capture every online character + bank and save.
@@ -211,6 +223,17 @@ public sealed class GameServer
 
         // WORLD RAID BOSS: raid-difficulty, in the open world, never instanced — PvP possible.
         open.SpawnMonster(monsterId: 4, new Vec2(80f, 80f)); // Ashmaw the Devourer
+
+        // INSTANCE GATES: physical portals in the world (no key, no menu — you WALK in), each
+        // with its meeting stone. The stone summons missing party members when ≥2 stand by it.
+        foreach (InstanceDefinition def in _worlds.GameData.Instances)
+        {
+            Vec2 gate = def.IsRaid ? new Vec2(74f, 66f) : new Vec2(34f, 26f);
+            var stone = new Vec2(gate.X - 3f, gate.Y - 1.5f);
+            open.SpawnNpc("Portail : " + def.Name, gate, npcType: 5);
+            open.SpawnNpc("Pierre de téléportation", stone, npcType: 6);
+            _portals.Add((def.Id, gate, stone));
+        }
     }
 
     private void HandlePacket(PeerId peer, byte[] payload)
@@ -712,7 +735,7 @@ public sealed class GameServer
 
         Send(peer, new ConnectAccepted(entity.Id, (byte)SimulationConstants.TickRate));
         SendBankState(peer, session.AccountId);
-        Send(peer, new QuestCatalogMessage(System.Linq.Enumerable.ToArray(data.Quests)));
+        Send(peer, new QuestCatalogMessage(QuestsWithZones(data)));
         SendQuestState(peer, session);
 
         _log($"'{session.Name}' entered as {entity.Faction} {data.GetRace(entity.RaceId).Name} " +
@@ -929,6 +952,167 @@ public sealed class GameServer
     }
 
     // -------------------------------------------------------------- Instances
+
+    /// <summary>
+    /// The WALK-IN gates: a player standing on a portal enters their party's instance (min 2 —
+    /// solo adventurers are told to find a group); standing on the exit portal inside an
+    /// instance walks back out. The meeting stone summons the missing party members when at
+    /// least two of them stand beside it. Runs every 10 ticks.
+    /// </summary>
+    private void TickPortalsAndStones()
+    {
+        const float GateRangeSq = 2.2f * 2.2f;
+        const float StoneRangeSq = 3f * 3f;
+        long now = _worlds.OpenWorld.Tick;
+
+        // Drop instance registrations whose world has emptied and been disposed.
+        List<int>? dead = null;
+        foreach (KeyValuePair<int, World.World> entry in _partyInstances)
+        {
+            if (!_worlds.AllWorlds.Contains(entry.Value))
+            {
+                (dead ??= new List<int>()).Add(entry.Key);
+            }
+        }
+
+        if (dead is not null)
+        {
+            foreach (int key in dead) { _partyInstances.Remove(key); }
+        }
+
+        foreach (KeyValuePair<PeerId, PlayerSession> pair in _sessions)
+        {
+            PlayerSession session = pair.Value;
+            if (!session.HandshakeComplete)
+            {
+                continue;
+            }
+
+            if (!TryGetEntity(session, out ServerEntity? self) || self is null || self.IsDead)
+            {
+                continue;
+            }
+
+            if (ReferenceEquals(session.CurrentWorld, _worlds.OpenWorld))
+            {
+                foreach ((byte defId, Vec2 gate, Vec2 _) in _portals)
+                {
+                    if (Vec2.DistanceSquared(self!.Position, gate) <= GateRangeSq)
+                    {
+                        TryPortalEnter(pair.Key, session, defId);
+                        break;
+                    }
+                }
+            }
+            else
+            {
+                // Inside an instance: the exit portal stands at (-4,-4).
+                if (Vec2.DistanceSquared(self!.Position, new Vec2(-4f, -4f)) <= GateRangeSq)
+                {
+                    HandleLeaveInstance(pair.Key, session, notify: true);
+                }
+            }
+        }
+
+        // Meeting stones: ≥2 party members beside a stone pull the rest of the party to it.
+        foreach ((byte _, Vec2 _, Vec2 stone) in _portals)
+        {
+            foreach (Party party in _parties.AllParties)
+            {
+                if (_stoneFiredAt.TryGetValue(party.Leader, out long at) && now - at < 300)
+                {
+                    continue; // 15s per-party cooldown
+                }
+
+                var present = new List<int>();
+                var absent = new List<(PeerId peer, PlayerSession session, ServerEntity entity)>();
+                foreach (int member in party.Members)
+                {
+                    var memberPeer = new PeerId(member);
+                    if (!_sessions.TryGetValue(memberPeer, out PlayerSession? ms) || !ms.HandshakeComplete ||
+                        !ReferenceEquals(ms.CurrentWorld, _worlds.OpenWorld) ||
+                        !TryGetEntity(ms, out ServerEntity? me) || me is null || me.IsDead)
+                    {
+                        continue;
+                    }
+
+                    if (Vec2.DistanceSquared(me!.Position, stone) <= StoneRangeSq)
+                    {
+                        present.Add(member);
+                    }
+                    else
+                    {
+                        absent.Add((memberPeer, ms, me!));
+                    }
+                }
+
+                if (present.Count >= 2 && absent.Count > 0)
+                {
+                    _stoneFiredAt[party.Leader] = now;
+                    int slot = 0;
+                    foreach ((PeerId memberPeer, PlayerSession _, ServerEntity entity) in absent)
+                    {
+                        _worlds.OpenWorld.Teleport(entity, new Vec2(stone.X + 1f + slot, stone.Y + 1.2f));
+                        slot++;
+                        Send(memberPeer, new InstanceResult(true, 0,
+                            "La pierre de téléportation t'a invoqué auprès de ton groupe."));
+                    }
+
+                    _log($"Meeting stone summoned {absent.Count} member(s) of party {party.Id}.");
+                }
+            }
+        }
+    }
+
+    /// <summary>A player walked into a gate: join the party's running instance, or open it.</summary>
+    private void TryPortalEnter(PeerId peer, PlayerSession session, byte instanceDefId)
+    {
+        if (!_worlds.GameData.TryGetInstance(instanceDefId, out InstanceDefinition def))
+        {
+            return;
+        }
+
+        long now = _worlds.OpenWorld.Tick;
+        Party? party = _parties.GetParty(peer.Value);
+
+        // Refusals are throttled (the player is STANDING on the portal, every 10 ticks…).
+        bool canComplain = !_portalMsgAt.TryGetValue(peer.Value, out long at) || now - at >= 100;
+
+        if (party is null || !WorldManager.CanEnter(def, party.Count, out string reason0))
+        {
+            string reason = party is null
+                ? $"{def.Name} demande un groupe d'au moins {def.MinPlayers} joueurs."
+                : ReasonOf(def, party.Count);
+            if (canComplain)
+            {
+                _portalMsgAt[peer.Value] = now;
+                Send(peer, new InstanceResult(false, instanceDefId, reason));
+            }
+
+            return;
+        }
+
+        // The party's instance: reuse the running one, or open it scaled to the FULL party.
+        if (!_partyInstances.TryGetValue(party.Leader, out World.World? instance) ||
+            !_worlds.AllWorlds.Contains(instance))
+        {
+            instance = _worlds.CreateInstance(def, party.Count);
+            _partyInstances[party.Leader] = instance;
+            _log($"Instance '{def.Name}' opened for party {party.Id} ({party.Count} player(s)).");
+        }
+
+        if (WorldManager.TransferPlayer(session.CurrentWorld, instance, session.EntityId, Vec2.Zero))
+        {
+            session.CurrentWorld = instance;
+            Send(peer, new InstanceResult(true, instanceDefId, $"Tu entres dans {def.Name}."));
+        }
+
+        static string ReasonOf(InstanceDefinition def, int count)
+        {
+            WorldManager.CanEnter(def, count, out string reason);
+            return reason;
+        }
+    }
 
     private void HandleEnterInstance(PeerId peer, PlayerSession session, byte instanceDefId)
     {
@@ -1442,6 +1626,66 @@ public sealed class GameServer
 
     private bool TryGetEntity(PlayerSession session, out ServerEntity? entity)
         => session.CurrentWorld.Entities.TryGetValue(session.EntityId, out entity);
+
+    private QuestDefinition[]? _questsWithZones;
+
+    /// <summary>
+    /// The quest catalogue with HUNTING ZONES filled in: each quest's zone is the circle around
+    /// the open-world monsters it targets — computed once from the real spawns, so the map hint
+    /// always points at the actual hunting grounds (Studio quests included).
+    /// </summary>
+    private QuestDefinition[] QuestsWithZones(GameData data)
+    {
+        if (_questsWithZones is not null)
+        {
+            return _questsWithZones;
+        }
+
+        var result = new List<QuestDefinition>();
+        foreach (QuestDefinition q in data.Quests)
+        {
+            float sumX = 0f, sumY = 0f;
+            int n = 0;
+            foreach (ServerEntity e in _worlds.OpenWorld.Entities.Values)
+            {
+                if (e.Kind == EntityKind.Monster && e.RaceId == q.TargetMonsterId)
+                {
+                    sumX += e.Position.X;
+                    sumY += e.Position.Y;
+                    n++;
+                }
+            }
+
+            if (n == 0)
+            {
+                result.Add(q);
+                continue;
+            }
+
+            var center = new Vec2(sumX / n, sumY / n);
+            float radius = 6f;
+            foreach (ServerEntity e in _worlds.OpenWorld.Entities.Values)
+            {
+                if (e.Kind == EntityKind.Monster && e.RaceId == q.TargetMonsterId)
+                {
+                    float d = MathF.Sqrt(Vec2.DistanceSquared(center, e.Position)) + 5f;
+                    if (d > radius) { radius = d; }
+                }
+            }
+
+            result.Add(new QuestDefinition
+            {
+                Id = q.Id, Name = q.Name, Description = q.Description, TurnInText = q.TurnInText,
+                TargetMonsterId = q.TargetMonsterId, RequiredKills = q.RequiredKills,
+                RewardXp = q.RewardXp, RewardGold = q.RewardGold, RewardItemId = q.RewardItemId,
+                NextQuestId = q.NextQuestId,
+                ZoneX = center.X, ZoneY = center.Y, ZoneRadius = radius,
+            });
+        }
+
+        _questsWithZones = result.ToArray();
+        return _questsWithZones;
+    }
 
     private (PeerId targetPeer, PlayerSession targetSession)? FindSessionByEntity(int entityId)
     {

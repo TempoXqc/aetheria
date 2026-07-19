@@ -52,6 +52,9 @@ namespace Aetheria.UnityClient
 
         public int EntityId { get; private set; }
         public EntityKind Kind { get; private set; }
+
+        /// <summary>NPC type / monster definition id (the snapshot's RaceId).</summary>
+        public byte RaceId { get; private set; }
         public int Health { get; private set; }
         public int MaxHealth { get; private set; }
         public bool IsBoss { get; private set; }
@@ -65,6 +68,9 @@ namespace Aetheria.UnityClient
 
         /// <summary>True while this character has a hostile engaged: weapon-raised idle stance.</summary>
         public bool CombatStance { get; set; }
+
+        /// <summary>Seated on the ground (the 10-second hardcore logout pose).</summary>
+        public bool Sitting { get; set; }
 
         // The gear this model was built with — a change means the LOOK changed: rebuild.
         private readonly byte[] _builtEquipment = new byte[EquipSlots.Count];
@@ -219,6 +225,7 @@ namespace Aetheria.UnityClient
             Health = snapshot.Health;
             MaxHealth = snapshot.MaxHealth;
             DisplayName = snapshot.Name;
+            RaceId = snapshot.RaceId;
             Level = snapshot.Level;
             Faction = snapshot.Faction;
             IsBoss = Kind == EntityKind.Monster && snapshot.MaxHealth >= 300;
@@ -453,6 +460,24 @@ namespace Aetheria.UnityClient
                 {
                     float bite = AttackCurve() * 28f;
                     _rig.SwingX(_rig.Head, bite);
+                }
+            }
+            else if (Sitting)
+            {
+                // SEATED: on the ground, legs stretched forward, arms resting — logout pose.
+                Vector3 seatPos = _body.localPosition;
+                _body.localPosition = new Vector3(seatPos.x, seatPos.y - 0.42f, seatPos.z);
+                _rig.SwingX(_rig.LegL, 86f);
+                _rig.SwingX(_rig.LegR, 86f);
+                _rig.SwingX(_rig.ArmL, 18f);
+                _rig.SwingX(_rig.ArmR, 18f);
+
+                if (_rig.Torso != null)
+                {
+                    if (_torsoBaseY <= 0f) { _torsoBaseY = _rig.Torso.localScale.y; }
+                    float calm = 1f + (Mathf.Sin(Time.time * 1.4f) * 0.012f);
+                    Vector3 ts = _rig.Torso.localScale;
+                    _rig.Torso.localScale = new Vector3(ts.x, _torsoBaseY * calm, ts.z);
                 }
             }
             else

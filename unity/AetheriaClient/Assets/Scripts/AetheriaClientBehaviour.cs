@@ -123,6 +123,14 @@ namespace Aetheria.UnityClient
         private readonly HashSet<int> _seenThisFrame = new HashSet<int>();
         private IsoCameraRig _cameraRig;
         private int _targetId = -1;
+
+        // --- World map (M), quest log (L), logout timer ---
+        private bool _worldMapOpen;
+        private bool _questLogOpen;
+        private byte _trackedQuestId; // quest whose hunting zone is highlighted on the maps
+        private readonly WorldMapView _worldMapView = new WorldMapView();
+        private float _logoutAt = -1f; // Time.time when the seated logout completes (-1 = off)
+        private static Texture2D _zoneDisc; // soft translucent circle for map zone overlays
         private bool _targetHostile; // stance & auto-attack only apply to hostile targets
         private float _inputTimer;
         private float _lastFacing;
@@ -395,6 +403,8 @@ namespace Aetheria.UnityClient
                 _lastServerSaved = true;
             }
 
+            TickLogout(); // the seated 10-second logout, when armed
+
             // Chat input: Enter opens the box; Enter again sends; Escape cancels.
             if (Input.GetKeyDown(KeyCode.Return) || Input.GetKeyDown(KeyCode.KeypadEnter))
             {
@@ -422,6 +432,9 @@ namespace Aetheria.UnityClient
                 else if (_client.OpenCorpseId >= 0) { _client.CloseCorpse(); }
                 else if (_bagsOpen) { _bagsOpen = false; }
                 else if (_sheetOpen) { _sheetOpen = false; }
+                else if (_worldMapOpen) { _worldMapOpen = false; }
+                else if (_questLogOpen) { _questLogOpen = false; }
+                else if (_logoutAt > 0f) { _logoutAt = -1f; } // Escape cancels the logout timer
                 else if (_targetId >= 0) { SetAttackIntent(-1); } // Escape drops the target first
                 else { _menuOpen = !_menuOpen; _optionsTab = -1; _layoutEditMode = false; }
             }
@@ -772,6 +785,65 @@ namespace Aetheria.UnityClient
             string address = _host + ":" + _port;
             Disconnect();
             Connect(address, createAccount: false); // logs back in → lands on the character screen
+        }
+
+        /// <summary>
+        /// HARDCORE logout: outside the sanctuary it takes 10 seconds, seated by the fire so
+        /// the world can still kill you — inside the safe zone it's instant. Moving (or Échap)
+        /// cancels the timer.
+        /// </summary>
+        private void BeginLogout()
+        {
+            EntitySnapshot self;
+            bool inSanctuary = false;
+            if (_client.TryGetSelf(out self) && !_client.InInstance)
+            {
+                float dx = self.Position.X - SimulationConstants.SafeZoneCenterX;
+                float dy = self.Position.Y - SimulationConstants.SafeZoneCenterY;
+                inSanctuary = (dx * dx) + (dy * dy)
+                    <= SimulationConstants.SafeZoneRadius * SimulationConstants.SafeZoneRadius;
+            }
+
+            if (inSanctuary)
+            {
+                DisconnectToCharacter();
+                return;
+            }
+
+            _logoutAt = Time.time + 10f;
+        }
+
+        /// <summary>The seated countdown: sit the character, watch for movement, disconnect at 0.</summary>
+        private void TickLogout()
+        {
+            bool active = _logoutAt > 0f;
+
+            // Sitting is a pose on OUR view; it follows the timer's life.
+            EntityView selfView;
+            if (_client.EntityId.HasValue &&
+                _views.TryGetValue(_client.EntityId.Value, out selfView) && selfView != null)
+            {
+                selfView.Sitting = active;
+            }
+
+            if (!active)
+            {
+                return;
+            }
+
+            // Any movement input stands you back up and cancels the logout.
+            if (Input.GetAxisRaw("Horizontal") != 0f || Input.GetAxisRaw("Vertical") != 0f ||
+                (Input.GetMouseButton(0) && Input.GetMouseButton(1)) || Input.GetKeyDown(KeyCode.Space))
+            {
+                _logoutAt = -1f;
+                return;
+            }
+
+            if (Time.time >= _logoutAt)
+            {
+                _logoutAt = -1f;
+                DisconnectToCharacter();
+            }
         }
 
         /// <summary>Map the existing character onto the HUD state, then enter the world.</summary>
@@ -1136,9 +1208,9 @@ namespace Aetheria.UnityClient
             if (_cfg.Down(HudConfig.Bind.Invite) && _targetId >= 0) { _client.SendPartyInvite(_targetId); }
             if (_cfg.Down(HudConfig.Bind.AcceptInvite) && _client.PendingInviteFrom != null) { _client.SendPartyRespond(true); }
             if (_cfg.Down(HudConfig.Bind.LeaveParty)) { _client.SendPartyLeave(); }
-            if (_cfg.Down(HudConfig.Bind.Dungeon)) { _client.SendEnterInstance(1); }
-            if (_cfg.Down(HudConfig.Bind.Raid)) { _client.SendEnterInstance(2); }
-            if (_cfg.Down(HudConfig.Bind.LeaveInstance)) { _client.SendLeaveInstance(); }
+            // Instances have PHYSICAL gates now: walk into the portal, no keyboard shortcut.
+            if (_cfg.Down(HudConfig.Bind.WorldMap)) { _worldMapOpen = !_worldMapOpen; }
+            if (_cfg.Down(HudConfig.Bind.QuestLog)) { _questLogOpen = !_questLogOpen; }
         }
 
         private void HandleMouse()
@@ -1186,8 +1258,8 @@ namespace Aetheria.UnityClient
 
             if (picked == null)
             {
-                _targetHostile = false;
-                SetAttackIntent(-1); // tap on the ground clears the target, WoW-style
+                // Clicking the GROUND keeps the current target — only Échap clears it, and
+                // clicking another entity switches it (the user asked for sticky targeting).
                 return;
             }
 
@@ -1521,6 +1593,9 @@ namespace Aetheria.UnityClient
             DrawSocialNotices();
             DrawTradeWindow();
             DrawInspectWindow();
+            DrawQuestLogWindow();
+            DrawWorldMapWindow();
+            DrawLogoutCountdown();
             DrawDragGhost();
             DrawVersionTag();
             if (_layoutEditMode) { DrawLayoutEditor(); }
@@ -2736,6 +2811,17 @@ namespace Aetheria.UnityClient
                     GUI.Label(new Rect(x - 80, y - 18, 160, 16), label, RichCentered());
                 }
 
+                // QUEST MARKERS over the quest giver: « ! » = a quest awaits, « ? » = turn-in
+                // ready (grey « ? » while the hunt is still under way), WoW-style.
+                if (view.Kind == EntityKind.Npc && view.RaceId == 2)
+                {
+                    string marker = QuestGiverMarker();
+                    if (marker.Length > 0)
+                    {
+                        GUI.Label(new Rect(x - 30, y - 52, 60, 34), marker, RichCentered());
+                    }
+                }
+
                 if (_cfg.ShowHealthBars && view.Kind != EntityKind.Npc)
                 {
                     DrawBar(new Rect(x - 22, y, 44, 6), view.Health / (float)view.MaxHealth,
@@ -2749,6 +2835,41 @@ namespace Aetheria.UnityClient
                     }
                 }
             }
+        }
+
+        /// <summary>The quest giver's overhead marker: "!", gold "?", grey "?", or nothing.</summary>
+        private string QuestGiverMarker()
+        {
+            if (_client.QuestCatalog == null)
+            {
+                return "";
+            }
+
+            if (_client.ActiveQuestId != 0)
+            {
+                foreach (Aetheria.Shared.Data.QuestDefinition q in _client.QuestCatalog)
+                {
+                    if (q.Id == _client.ActiveQuestId)
+                    {
+                        return _client.QuestKills >= q.RequiredKills
+                            ? "<size=26><b><color=#ffd100>?</color></b></size>"   // ready to turn in
+                            : "<size=22><b><color=#9a9a9a>?</color></b></size>"; // hunt in progress
+                    }
+                }
+
+                return "";
+            }
+
+            // No active quest: is there a NEXT one in the chain to offer?
+            foreach (Aetheria.Shared.Data.QuestDefinition q in _client.QuestCatalog)
+            {
+                if (q.Id > _client.QuestCompletedUpTo)
+                {
+                    return "<size=26><b><color=#ffd100>!</color></b></size>";
+                }
+            }
+
+            return "";
         }
 
         // --- Corpse prompt & loot window ---
@@ -3010,6 +3131,16 @@ namespace Aetheria.UnityClient
                     sb.Append("<b><color=#ffd0a0>").Append(e.Name).Append("</color></b>");
                     sb.Append("\n<color=#a0a0a0>Niveau ").Append(e.Level).Append("</color>");
                     sb.Append("\nPV ").Append(e.Health).Append('/').Append(e.MaxHealth);
+
+                    // QUEST HINT: this monster is the active quest's target — say it plainly.
+                    Aetheria.Shared.Data.QuestDefinition? hunted = ActiveQuestFor(e.RaceId);
+                    if (hunted != null)
+                    {
+                        sb.Append("\n<color=#ffd100>Objectif de quête : ").Append(hunted.Name)
+                          .Append(" (").Append(Mathf.Min(_client.QuestKills, hunted.RequiredKills))
+                          .Append('/').Append(hunted.RequiredKills).Append(")</color>");
+                    }
+
                     break;
 
                 case EntityKind.Player when e.Id != (_client.EntityId ?? -1):
@@ -3031,6 +3162,26 @@ namespace Aetheria.UnityClient
             }
 
             _tooltip = sb.ToString();
+        }
+
+        /// <summary>The ACTIVE quest that hunts this monster def id, or null.</summary>
+        private Aetheria.Shared.Data.QuestDefinition? ActiveQuestFor(byte monsterDefId)
+        {
+            if (_client.QuestCatalog == null || _client.ActiveQuestId == 0)
+            {
+                return null;
+            }
+
+            foreach (Aetheria.Shared.Data.QuestDefinition q in _client.QuestCatalog)
+            {
+                if (q.Id == _client.ActiveQuestId && q.TargetMonsterId == monsterDefId &&
+                    _client.QuestKills < q.RequiredKills)
+                {
+                    return q;
+                }
+            }
+
+            return null;
         }
 
         /// <summary>The WoW-style tooltip panel, anchored at the bottom-right edge of the screen —
@@ -3560,6 +3711,207 @@ namespace Aetheria.UnityClient
                 case EquipSlot.OffHand: return "Main G.";
                 default: return "";
             }
+        }
+
+        /// <summary>The soft disc texture used for quest-zone overlays on the maps.</summary>
+        private static Texture2D ZoneDisc()
+        {
+            if (_zoneDisc == null)
+            {
+                const int S = 64;
+                _zoneDisc = new Texture2D(S, S, TextureFormat.RGBA32, false);
+                for (int y = 0; y < S; y++)
+                {
+                    for (int x = 0; x < S; x++)
+                    {
+                        float dx = (x - (S / 2f)) / (S / 2f);
+                        float dy = (y - (S / 2f)) / (S / 2f);
+                        float d = Mathf.Sqrt((dx * dx) + (dy * dy));
+                        float edge = Mathf.Abs(d - 0.88f) < 0.10f ? 0.55f : 0f; // the ring
+                        float fill = d < 0.88f ? 0.16f : 0f;                    // the wash
+                        _zoneDisc.SetPixel(x, y, new Color(1f, 0.82f, 0.2f, Mathf.Max(edge, fill)));
+                    }
+                }
+
+                _zoneDisc.Apply();
+            }
+
+            return _zoneDisc;
+        }
+
+        /// <summary>The quest whose zone the maps highlight: the tracked one, else the active one.</summary>
+        private Aetheria.Shared.Data.QuestDefinition? HighlightedQuest()
+        {
+            if (_client.QuestCatalog == null)
+            {
+                return null;
+            }
+
+            byte want = _trackedQuestId != 0 ? _trackedQuestId : _client.ActiveQuestId;
+            if (want == 0)
+            {
+                return null;
+            }
+
+            foreach (Aetheria.Shared.Data.QuestDefinition q in _client.QuestCatalog)
+            {
+                if (q.Id == want && q.ZoneRadius > 0f)
+                {
+                    return q;
+                }
+            }
+
+            return null;
+        }
+
+        /// <summary>L — the QUEST LOG: the chain with states, click a quest to track its zone.</summary>
+        private void DrawQuestLogWindow()
+        {
+            if (!_questLogOpen || _client.QuestCatalog == null)
+            {
+                return;
+            }
+
+            var win = new Rect((VirtW / 2f) - 420, (VirtH / 2f) - 240, 380, 480);
+            WowUi.Panel(win);
+            WowUi.GoldCentered(new Rect(win.x, win.y + 8, win.width, 20), "<b>Carnet de quêtes</b>");
+            if (GUI.Button(new Rect(win.xMax - 26, win.y + 5, 21, 21), "X")) { _questLogOpen = false; return; }
+
+            float y = win.y + 36;
+            foreach (Aetheria.Shared.Data.QuestDefinition q in _client.QuestCatalog)
+            {
+                bool done = q.Id <= _client.QuestCompletedUpTo;
+                bool active = q.Id == _client.ActiveQuestId;
+                bool available = !done && !active && QuestIsNext(q.Id);
+                if (!done && !active && !available)
+                {
+                    continue; // still locked behind the chain: keep the log clean
+                }
+
+                var row = new Rect(win.x + 10, y, win.width - 20, 40);
+                if (_trackedQuestId == q.Id) { WowUi.Highlight(row); }
+
+                string state = done ? "<color=#30d040>✔</color>"
+                    : active ? (_client.QuestKills >= q.RequiredKills
+                        ? "<color=#ffd100>?</color>" : "<color=#ffd100>●</color>")
+                    : "<color=#ffd100>!</color>";
+                string progress = active
+                    ? "  <color=#c8c8c8>" + Mathf.Min(_client.QuestKills, q.RequiredKills) + " / " + q.RequiredKills + "</color>"
+                    : "";
+                GUI.Label(new Rect(row.x + 6, row.y + 2, row.width - 12, 18),
+                    state + " <b>" + q.Name + "</b>" + progress, Rich());
+                GUI.Label(new Rect(row.x + 20, row.y + 20, row.width - 26, 16),
+                    "<size=10><color=#909090>" + (q.ZoneRadius > 0f
+                        ? "Clique pour voir la zone de chasse sur la carte"
+                        : "") + "</color></size>", Rich());
+
+                Event evt = Event.current;
+                if (evt.type == EventType.MouseDown && row.Contains(evt.mousePosition))
+                {
+                    _trackedQuestId = _trackedQuestId == q.Id ? (byte)0 : q.Id;
+                    evt.Use();
+                }
+
+                y += 44f;
+                if (y > win.yMax - 60) { break; }
+            }
+
+            Aetheria.Shared.Data.QuestDefinition? sel = HighlightedQuest();
+            if (sel != null)
+            {
+                WowUi.Body(new Rect(win.x + 14, win.yMax - 58, win.width - 28, 48),
+                    "<size=10><i>" + sel.Description + "</i></size>");
+            }
+        }
+
+        /// <summary>Is this quest the NEXT offer of the chain (available at the quest giver)?</summary>
+        private bool QuestIsNext(byte questId)
+        {
+            if (_client.ActiveQuestId != 0 || _client.QuestCatalog == null)
+            {
+                return false;
+            }
+
+            // The chain's next quest: the first one beyond CompletedUpTo.
+            foreach (Aetheria.Shared.Data.QuestDefinition q in _client.QuestCatalog)
+            {
+                if (q.Id > _client.QuestCompletedUpTo)
+                {
+                    return q.Id == questId;
+                }
+            }
+
+            return false;
+        }
+
+        /// <summary>M — the WORLD MAP: live top-down view, player arrow, quest-zone circle.</summary>
+        private void DrawWorldMapWindow()
+        {
+            _worldMapView.SetActive(_worldMapOpen && !_client.InInstance);
+            if (!_worldMapOpen)
+            {
+                return;
+            }
+
+            if (_client.InInstance)
+            {
+                var small = new Rect((VirtW / 2f) - 160, (VirtH / 2f) - 50, 320, 100);
+                WowUi.Panel(small, "Carte du monde");
+                WowUi.Body(new Rect(small.x + 16, small.y + 44, small.width - 32, 40),
+                    "Pas de carte à l'intérieur d'une instance.");
+                return;
+            }
+
+            float size = Mathf.Min(VirtH * 0.82f, 620f);
+            var win = new Rect((VirtW / 2f) - (size / 2f) - 10, (VirtH / 2f) - (size / 2f) - 22, size + 20, size + 44);
+            WowUi.Panel(win);
+            WowUi.GoldCentered(new Rect(win.x, win.y + 7, win.width, 18), "<b>Carte du monde</b>");
+            if (GUI.Button(new Rect(win.xMax - 26, win.y + 5, 21, 21), "X")) { _worldMapOpen = false; return; }
+
+            var map = new Rect(win.x + 10, win.y + 30, size, size);
+            if (_worldMapView.Texture != null)
+            {
+                GUI.DrawTexture(map, _worldMapView.Texture, ScaleMode.StretchToFill);
+            }
+
+            // Quest zone circle.
+            Aetheria.Shared.Data.QuestDefinition? quest = HighlightedQuest();
+            if (quest != null)
+            {
+                Vector2 c = WorldMapView.ToMap(map, quest.ZoneX, quest.ZoneY);
+                float r = quest.ZoneRadius / WorldMapView.Extent * (size / 2f);
+                GUI.DrawTexture(new Rect(c.x - r, c.y - r, r * 2f, r * 2f), ZoneDisc(), ScaleMode.StretchToFill);
+                GUI.Label(new Rect(c.x - 90, c.y - r - 20, 180, 18),
+                    "<size=10><color=#ffd100><b>" + quest.Name + "</b></color></size>", RichCentered());
+            }
+
+            // The player: a gold dot exactly where you stand.
+            EntitySnapshot self;
+            if (_client.TryGetSelf(out self))
+            {
+                Vector2 p = WorldMapView.ToMap(map, self.Position.X, self.Position.Y);
+                Color prev = GUI.color;
+                GUI.color = new Color(1f, 0.85f, 0.2f);
+                GUI.DrawTexture(new Rect(p.x - 4, p.y - 4, 8, 8), Texture2D.whiteTexture);
+                GUI.color = prev;
+            }
+        }
+
+        /// <summary>The seated logout countdown, front and centre.</summary>
+        private void DrawLogoutCountdown()
+        {
+            if (_logoutAt <= 0f)
+            {
+                return;
+            }
+
+            int seconds = Mathf.CeilToInt(_logoutAt - Time.time);
+            var box = new Rect((VirtW / 2f) - 170, VirtH * 0.24f, 340, 64);
+            WowUi.Panel(box);
+            WowUi.GoldCentered(new Rect(box.x, box.y + 10, box.width, 22),
+                "<size=15><b>Déconnexion dans " + Mathf.Max(seconds, 0) + " s</b></size>");
+            WowUi.Body(new Rect(box.x, box.y + 36, box.width, 20),
+                "<size=10><color=#a0a0a0>Bouge (ou Échap) pour rester en jeu.</color></size>");
         }
 
         // --- Bags (WoW-style separate window, bottom right) ---
@@ -4171,7 +4523,7 @@ namespace Aetheria.UnityClient
         {
             if (GUILayout.Button("Retour au jeu", GUILayout.Height(28))) { _menuOpen = false; }
             if (GUILayout.Button("Options", GUILayout.Height(28))) { _optionsTab = 0; }
-            if (GUILayout.Button("Se déconnecter", GUILayout.Height(28))) { DisconnectToCharacter(); }
+            if (GUILayout.Button("Se déconnecter", GUILayout.Height(28))) { BeginLogout(); _menuOpen = false; }
             if (GUILayout.Button("Quitter le jeu", GUILayout.Height(28)))
             {
                 _cfg.Save();
@@ -4454,8 +4806,25 @@ namespace Aetheria.UnityClient
             Rect panel = FrameRect(HudConfig.Frame.Minimap);
             WowUi.Panel(panel);
 
-            GUI.DrawTexture(new Rect(panel.x + 6, panel.y + 8, panel.width - 12, panel.width - 12),
-                _minimap.Texture, ScaleMode.ScaleToFit);
+            var mapRect = new Rect(panel.x + 6, panel.y + 8, panel.width - 12, panel.width - 12);
+            GUI.DrawTexture(mapRect, _minimap.Texture, ScaleMode.ScaleToFit);
+
+            // QUEST ZONE on the minimap: the hunting circle of the highlighted quest, clipped
+            // to the map square. Minimap camera: ortho size 26, centred on the player.
+            EntitySnapshot selfForZone;
+            Aetheria.Shared.Data.QuestDefinition? zone = HighlightedQuest();
+            if (zone != null && !_client.InInstance && _client.TryGetSelf(out selfForZone))
+            {
+                const float Ortho = 26f;
+                float pxPerUnit = mapRect.width / (2f * Ortho);
+                float cx = mapRect.x + (mapRect.width / 2f) + ((zone.ZoneX - selfForZone.Position.X) * pxPerUnit);
+                float cy = mapRect.y + (mapRect.height / 2f) - ((zone.ZoneY - selfForZone.Position.Y) * pxPerUnit);
+                float r = zone.ZoneRadius * pxPerUnit;
+                GUI.BeginGroup(mapRect);
+                GUI.DrawTexture(new Rect(cx - mapRect.x - r, cy - mapRect.y - r, r * 2f, r * 2f),
+                    ZoneDisc(), ScaleMode.StretchToFill);
+                GUI.EndGroup();
+            }
 
             // The player is always dead-centre: a golden arrow-dot.
             WowUi.GoldCentered(new Rect(panel.x + (panel.width / 2f) - 8, panel.y + 8 + ((panel.width - 12) / 2f) - 8, 16, 16),

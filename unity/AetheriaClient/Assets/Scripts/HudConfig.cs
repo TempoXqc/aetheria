@@ -15,7 +15,7 @@ namespace Aetheria.UnityClient
         {
             Attack1, Attack2, Renew, Racial, Interact, CharSheet,
             Invite, AcceptInvite, LeaveParty, Dungeon, Raid, LeaveInstance, NextTarget,
-            Bags,
+            Bags, WorldMap, QuestLog,
         }
 
         /// <summary>Movable HUD frames (shown in Options → Déplacer l'interface).</summary>
@@ -37,9 +37,8 @@ namespace Aetheria.UnityClient
             { Bind.Invite, KeyCode.G },
             { Bind.AcceptInvite, KeyCode.H },
             { Bind.LeaveParty, KeyCode.J },
-            { Bind.Dungeon, KeyCode.I },
-            { Bind.Raid, KeyCode.O },
-            { Bind.LeaveInstance, KeyCode.L },
+            { Bind.WorldMap, KeyCode.M },
+            { Bind.QuestLog, KeyCode.L },
             { Bind.NextTarget, KeyCode.Tab },
         };
 
@@ -55,9 +54,8 @@ namespace Aetheria.UnityClient
             { Bind.Invite, "Inviter la cible" },
             { Bind.AcceptInvite, "Accepter l'invitation" },
             { Bind.LeaveParty, "Quitter le groupe" },
-            { Bind.Dungeon, "Entrer au donjon" },
-            { Bind.Raid, "Entrer au raid" },
-            { Bind.LeaveInstance, "Sortir de l'instance" },
+            { Bind.WorldMap, "Carte du monde" },
+            { Bind.QuestLog, "Carnet de quêtes" },
             { Bind.NextTarget, "Cible suivante" },
         };
 

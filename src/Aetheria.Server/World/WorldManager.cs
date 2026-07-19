@@ -53,14 +53,14 @@ public sealed class WorldManager
         if (groupSize < def.MinPlayers)
         {
             reason = def.IsRaid
-                ? $"{def.Name} is a raid and requires at least {def.MinPlayers} players."
-                : $"{def.Name} requires at least {def.MinPlayers} players.";
+                ? $"{def.Name} est un raid : il faut un groupe d'au moins {def.MinPlayers} joueurs."
+                : $"{def.Name} demande un groupe d'au moins {def.MinPlayers} joueurs.";
             return false;
         }
 
         if (groupSize > def.MaxPlayers)
         {
-            reason = $"{def.Name} allows at most {def.MaxPlayers} players.";
+            reason = $"{def.Name} est limité à {def.MaxPlayers} joueurs.";
             return false;
         }
 
@@ -81,6 +81,9 @@ public sealed class WorldManager
         {
             world.SpawnMonster(spawn.MonsterId, new Vec2(spawn.X, spawn.Y), hpMult, dmgMult);
         }
+
+        // The way OUT: an exit portal behind the entrance — walk into it to leave (no key).
+        world.SpawnNpc("Portail de sortie", new Vec2(-4f, -4f), npcType: 5);
 
         int id = _nextInstanceId++;
         _instances[id] = new RunningInstance(id, def, world);

@@ -50,6 +50,9 @@ public sealed class PartyManager
 
     public Party? GetParty(int member) => _partyByMember.TryGetValue(member, out Party? p) ? p : null;
 
+    /// <summary>Every distinct running party (members map to shared Party objects).</summary>
+    public IEnumerable<Party> AllParties => _partyByMember.Values.Distinct();
+
     /// <summary>Record an invite. Fails if the target is already in a party or the inviter's party is full.</summary>
     public bool Invite(int inviter, int target, out string error)
     {

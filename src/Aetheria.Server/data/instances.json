@@ -1,22 +1,64 @@
 [
   {
-    "id": 1, "name": "Ragefire Depths", "isRaid": false, "minPlayers": 1, "maxPlayers": 5,
-    "healthScalingPerExtraPlayer": 0.5, "damageScalingPerExtraPlayer": 0.25,
+    "id": 1,
+    "name": "Ragefire Depths",
+    "isRaid": false,
+    "minPlayers": 2,
+    "maxPlayers": 5,
+    "healthScalingPerExtraPlayer": 0.5,
+    "damageScalingPerExtraPlayer": 0.25,
     "spawns": [
-      { "monsterId": 1, "x": 8.0,  "y": 4.0 },
-      { "monsterId": 1, "x": 12.0, "y": 8.0 },
-      { "monsterId": 2, "x": 16.0, "y": 4.0 },
-      { "monsterId": 3, "x": 24.0, "y": 8.0 }
+      {
+        "monsterId": 1,
+        "x": 8.0,
+        "y": 4.0
+      },
+      {
+        "monsterId": 1,
+        "x": 12.0,
+        "y": 8.0
+      },
+      {
+        "monsterId": 2,
+        "x": 16.0,
+        "y": 4.0
+      },
+      {
+        "monsterId": 3,
+        "x": 24.0,
+        "y": 8.0
+      }
     ]
   },
   {
-    "id": 2, "name": "Molten Sanctum", "isRaid": true, "minPlayers": 6, "maxPlayers": 40,
-    "healthScalingPerExtraPlayer": 0.35, "damageScalingPerExtraPlayer": 0.15,
+    "id": 2,
+    "name": "Molten Sanctum",
+    "isRaid": true,
+    "minPlayers": 2,
+    "maxPlayers": 40,
+    "healthScalingPerExtraPlayer": 0.35,
+    "damageScalingPerExtraPlayer": 0.15,
     "spawns": [
-      { "monsterId": 2, "x": 10.0, "y": 6.0 },
-      { "monsterId": 2, "x": 14.0, "y": 6.0 },
-      { "monsterId": 3, "x": 20.0, "y": 8.0 },
-      { "monsterId": 4, "x": 30.0, "y": 10.0 }
+      {
+        "monsterId": 2,
+        "x": 10.0,
+        "y": 6.0
+      },
+      {
+        "monsterId": 2,
+        "x": 14.0,
+        "y": 6.0
+      },
+      {
+        "monsterId": 3,
+        "x": 20.0,
+        "y": 8.0
+      },
+      {
+        "monsterId": 4,
+        "x": 30.0,
+        "y": 10.0
+      }
     ]
   }
 ]
