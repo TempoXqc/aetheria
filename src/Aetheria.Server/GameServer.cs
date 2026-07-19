@@ -1469,7 +1469,7 @@ public sealed class GameServer
 
         if (display.Length is < 2 or > 16)
         {
-            error = "Name must be between 2 and 16 characters.";
+            error = "Le nom doit faire entre 2 et 16 caractères.";
             return false;
         }
 
@@ -1477,7 +1477,7 @@ public sealed class GameServer
         {
             if (!char.IsLetterOrDigit(c))
             {
-                error = "Name may contain only letters and digits.";
+                error = "Le nom ne peut contenir que des lettres et des chiffres.";
                 return false;
             }
         }
@@ -1488,13 +1488,13 @@ public sealed class GameServer
         if (_state.Names.TryGetValue(nameKey, out string? owner) &&
             !string.Equals(owner, accountKey, StringComparison.Ordinal))
         {
-            error = $"The name '{display}' is already taken on this server.";
+            error = $"Le nom « {display} » est déjà pris sur ce serveur.";
             return false;
         }
 
         if (!_activeNames.Add(display)) // case-insensitive; false if currently online
         {
-            error = $"'{display}' is already online.";
+            error = $"« {display} » est déjà en ligne.";
             return false;
         }
 

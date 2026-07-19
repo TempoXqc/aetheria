@@ -2201,8 +2201,10 @@ namespace Aetheria.UnityClient
             WowUi.Body(new Rect(classPanel.x + 14, classPanel.y + 112, classPanel.width - 28, 40),
                 "<color=#e8c15a>Ressource — " + ParenPart(Classes[_classIndex].label) + "</color>");
 
-            // BOTTOM CENTRE: name + accept, like WoW's Name / Accept row.
+            // BOTTOM CENTRE: name + accept, like WoW's Name / Accept row. The server's refusal
+            // (name taken, etc.) shows ABOVE the name field, impossible to miss.
             float cx = VirtW / 2f;
+            DrawErrorsAt(new Rect(cx - 300, VirtH - 168, 600, 26));
             WowUi.GoldCentered(new Rect(cx - 130, VirtH - 138, 260, 20), "Nom");
             _name = WowUi.TextField(new Rect(cx - 130, VirtH - 116, 260, 30), _name);
             WowUi.Body(new Rect(cx - 220, VirtH - 82, 440, 18),
@@ -2214,8 +2216,6 @@ namespace Aetheria.UnityClient
                 Disconnect();
                 OpenServerBrowser();
             }
-
-            DrawErrorsAt(new Rect(cx - 240, VirtH - 40, 480, 30));
         }
 
         // --- Frames ---
