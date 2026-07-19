@@ -68,6 +68,21 @@ namespace Aetheria.UnityClient
             }
         }
 
+        /// <summary>
+        /// Fold a constant pose offset into a bone's captured rest (root-space axis + degrees) and
+        /// apply it right away. Used to lower a T-posed rig's arms into a natural stance — every
+        /// later swing composes on top of the corrected pose.
+        /// </summary>
+        public void PreRotate(Transform pivot, Vector3 rootAxis, float degrees)
+        {
+            Quaternion rest;
+            if (pivot != null && _rest.TryGetValue(pivot, out rest))
+            {
+                _rest[pivot] = Quaternion.AngleAxis(degrees, rootAxis) * rest;
+                SwingX(pivot, 0f);
+            }
+        }
+
         /// <summary>Swing a pivot by X degrees around the character's sideways axis.</summary>
         public void SwingX(Transform pivot, float degrees)
         {

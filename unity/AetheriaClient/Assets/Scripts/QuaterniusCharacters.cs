@@ -82,9 +82,33 @@ namespace Aetheria.UnityClient
                 Attach(root.transform, bones, g + (female ? "Ranger_Acc_Pauldrons" : "Ranger_Acc_Pauldron"));
             }
 
-            // Textures: each material keeps its own map (outfit cloth vs bare skin), with an
-            // appearance-driven recolour variant so not every adventurer wears the same dye.
-            ApplyTextures(root, female, variant: snapshot.Appearance.Face % 2 != 0);
+            // The REAL head (Universal Base Characters kit): face, eyes and brows re-bound onto
+            // the outfit skeleton — the rest of the base body is pruned to avoid clipping.
+            Transform headBone = FindBone(bones, "head", "Head", "neck_01");
+            bool hasRealHead = AttachBaseHead(root.transform, bones, female);
+            if (!hasRealHead && headBone != null && snapshot.EquippedIn(EquipSlot.Head) == 0)
+            {
+                // Kit not imported: fall back to the stylised procedural head.
+                BuildPlaceholderHead(headBone, root.transform, snapshot);
+            }
+
+            // Hair (skipped under a hood) and beard, from the same kit.
+            if (hasRealHead)
+            {
+                if (snapshot.EquippedIn(EquipSlot.Head) == 0)
+                {
+                    string hair = HairFor(snapshot.Appearance.HairStyle, female);
+                    if (hair != null) { Attach(root.transform, bones, hair); }
+                }
+
+                if (snapshot.Appearance.BeardStyle > 0)
+                {
+                    Attach(root.transform, bones, "Hair_Beard");
+                }
+            }
+
+            // Textures: outfit cloth, bare skin (tone-aware), eyes, tinted hair — per material.
+            ApplyTextures(root, female, snapshot.Appearance);
 
             // Normalise to the world's character height (packs export at their own scale).
             float height = MeasureHeight(root);
@@ -92,13 +116,6 @@ namespace Aetheria.UnityClient
             {
                 float k = TargetHeight / height;
                 root.transform.localScale = new Vector3(k, k, k);
-            }
-
-            // Head: the pack ships none — mount the stylised custom head on the head bone.
-            Transform headBone = FindBone(bones, "head", "Head", "neck_01");
-            if (headBone != null && snapshot.EquippedIn(EquipSlot.Head) == 0)
-            {
-                BuildPlaceholderHead(headBone, root.transform, snapshot);
             }
 
             // Hand over the bones to the shared animation rig.
@@ -116,7 +133,51 @@ namespace Aetheria.UnityClient
             };
 
             rig.CaptureRestPose();
+
+            // The pack exports a raised-arms bind pose: fold the arms down into a natural
+            // stance (root-space roll), so characters stand like people, not like scarecrows.
+            rig.PreRotate(rig.ArmL, Vector3.forward, 70f);
+            rig.PreRotate(rig.ArmR, Vector3.forward, -70f);
             return rig;
+        }
+
+        /// <summary>Hairstyle resource for our creation-screen styles (0 court, 1 long, 2 iroquois, 3 chauve).</summary>
+        private static string HairFor(int style, bool female)
+        {
+            switch (style)
+            {
+                case 0: return female ? "Hair_Buns" : "Hair_SimpleParted";
+                case 1: return "Hair_Long";
+                case 2: return female ? "Hair_BuzzedFemale" : "Hair_Buzzed";
+                default: return null; // chauve
+            }
+        }
+
+        /// <summary>
+        /// Instantiate the base body, keep ONLY its head meshes (head, eyes, brows) re-bound onto
+        /// the master skeleton, and prune the rest (the outfit replaces it — pack guidance).
+        /// Returns false when the Universal Base Characters kit is not imported.
+        /// </summary>
+        private static bool AttachBaseHead(Transform root, Dictionary<string, Transform> masterBones, bool female)
+        {
+            string name = female ? "Superhero_Female_FullBody" : "Superhero_Male_FullBody";
+            GameObject spawned = Attach(root, masterBones, name);
+            if (spawned == null)
+            {
+                return false;
+            }
+
+            foreach (SkinnedMeshRenderer smr in spawned.GetComponentsInChildren<SkinnedMeshRenderer>(true))
+            {
+                string n = smr.gameObject.name;
+                bool keep = n.Contains("Head") || n.Contains("Eye"); // Head, Eyes, Eyebrows
+                if (!keep)
+                {
+                    Object.Destroy(smr.gameObject);
+                }
+            }
+
+            return true;
         }
 
         // ------------------------------------------------------------- Assembly
@@ -179,12 +240,12 @@ namespace Aetheria.UnityClient
         /// Instantiate a clothing piece and re-bind its skinned meshes onto the master skeleton
         /// (bone-by-name), then drop its own duplicate armature.
         /// </summary>
-        private static void Attach(Transform root, Dictionary<string, Transform> masterBones, string name)
+        private static GameObject Attach(Transform root, Dictionary<string, Transform> masterBones, string name)
         {
             GameObject piece = Spawn(root, name);
             if (piece == null)
             {
-                return;
+                return null;
             }
 
             foreach (SkinnedMeshRenderer smr in piece.GetComponentsInChildren<SkinnedMeshRenderer>(true))
@@ -220,28 +281,54 @@ namespace Aetheria.UnityClient
                     Object.Destroy(child.gameObject);
                 }
             }
+
+            return piece;
         }
 
         // ------------------------------------------------------------- Look
 
-        private static void ApplyTextures(GameObject root, bool female, bool variant)
+        private static void ApplyTextures(GameObject root, bool female, Aetheria.Shared.Combat.Appearance look)
         {
+            bool variant = look.Face % 2 != 0; // outfit recolour so not everyone wears the same dye
+            bool darkSkin = look.SkinTone >= 2; // palette tones 0-1 light, 2-3 dark
+
             Texture2D peasant = LoadTexture(variant ? "T_Peasant_2_BaseColor" : "T_Peasant_BaseColor");
             Texture2D ranger = LoadTexture(variant ? "T_Ranger_3_BaseColor" : "T_Ranger_BaseColor");
-            Texture2D skin = LoadTexture(female ? "T_Regular_Female_Dark_BaseColor" : "T_Regular_Male_Dark_BaseColor");
+            Texture2D outfitSkin = LoadTexture(female ? "T_Regular_Female_Dark_BaseColor" : "T_Regular_Male_Dark_BaseColor");
+            Texture2D bodySkin = LoadTexture("Skin_" + (female ? "Female_" : "Male_") + (darkSkin ? "Dark" : "Light"));
+            Texture2D eyes = LoadTexture("T_Eye_Brown");
+            Texture2D hair1 = LoadTexture("T_Hair_1_BaseColor");
+            Texture2D hair2 = LoadTexture("T_Hair_2_BaseColor");
+
+            Color hairColor = CharacterModelBuilder.HairColors[
+                Mathf.Clamp(look.HairColor, 0, CharacterModelBuilder.HairColors.Length - 1)];
+            Color beardColor = CharacterModelBuilder.HairColors[
+                Mathf.Clamp(look.BeardColor, 0, CharacterModelBuilder.HairColors.Length - 1)];
 
             foreach (Renderer r in root.GetComponentsInChildren<Renderer>(true))
             {
+                bool beardMesh = r.gameObject.name.Contains("Beard");
+                bool hairMesh = beardMesh || r.gameObject.name.Contains("Hair") ||
+                                r.gameObject.name.Contains("Eyebrow");
+
                 foreach (Material m in r.materials)
                 {
-                    string n = m != null ? m.name : "";
                     if (m == null) { continue; }
 
-                    if (n.Contains("egular")) { m.mainTexture = skin; }        // bare skin (arms…)
-                    else if (n.Contains("anger")) { m.mainTexture = ranger; }  // ranger outfit cloth
+                    string n = m.name;
+                    m.color = Color.white;
+
+                    if (n.Contains("Hair") || hairMesh)
+                    {
+                        m.mainTexture = n.Contains("Hair_2") ? hair2 : hair1;
+                        m.color = beardMesh ? beardColor : hairColor; // dyed by the customisation
+                    }
+                    else if (n.Contains("Eye")) { m.mainTexture = eyes; }        // eyeballs
+                    else if (n.Contains("uperhero")) { m.mainTexture = bodySkin; } // the real head
+                    else if (n.Contains("egular")) { m.mainTexture = outfitSkin; } // bare arms…
+                    else if (n.Contains("anger")) { m.mainTexture = ranger; }      // ranger cloth
                     else if (n.Contains("easant")) { m.mainTexture = peasant; }
                     else { m.mainTexture = r.name.Contains("Ranger") ? ranger : peasant; }
-                    m.color = Color.white;
                 }
             }
         }
