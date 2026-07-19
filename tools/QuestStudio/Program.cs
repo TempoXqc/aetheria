@@ -34,6 +34,16 @@ app.Urls.Add("http://localhost:5178");
 // The one-page UI.
 app.MapGet("/", () => Results.Content(File.ReadAllText(htmlPath, Encoding.UTF8), "text/html; charset=utf-8"));
 
+// Item icons — the same PNGs the game uses (Ultimate RPG Items pack).
+string iconsDir = Path.Combine(repoRoot, "unity", "AetheriaClient", "Assets", "Resources", "Icons");
+app.MapGet("/icons/{id:int}", (int id) =>
+{
+    string png = Path.Combine(iconsDir, "item_" + id + ".png");
+    return File.Exists(png)
+        ? Results.File(png, "image/png")
+        : Results.NotFound();
+});
+
 // Everything the editor needs: monster IDs, item IDs, and the current quests.
 app.MapGet("/api/data", () =>
 {
@@ -55,6 +65,14 @@ app.MapGet("/api/data", () =>
         {
             ["id"] = i!["id"]!.GetValue<int>(),
             ["name"] = i["name"]!.GetValue<string>(),
+            ["type"] = i["type"]?.GetValue<int>() ?? 0,
+            ["slot"] = i["slot"]?.GetValue<int>() ?? 0,
+            ["attackBonus"] = i["attackBonus"]?.GetValue<int>() ?? 0,
+            ["defenseBonus"] = i["defenseBonus"]?.GetValue<int>() ?? 0,
+            ["healthBonus"] = i["healthBonus"]?.GetValue<int>() ?? 0,
+            ["goldValue"] = i["goldValue"]?.GetValue<int>() ?? 0,
+            ["stackable"] = i["stackable"]?.GetValue<bool>() ?? false,
+            ["maxStack"] = i["maxStack"]?.GetValue<int>() ?? 1,
         }).ToArray()),
         ["quests"] = quests,
     };

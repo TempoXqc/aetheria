@@ -2,238 +2,552 @@
 <html lang="fr">
 <head>
 <meta charset="utf-8">
-<title>Studio de Quêtes — Aetheria</title>
+<title>Aetheria — Studio de Quêtes</title>
 <style>
   :root {
-    --bg: #14100c; --panel: #1f1812; --panel2: #2a2016; --gold: #e8c25a;
-    --gold-dim: #a8894a; --text: #e8ddc8; --muted: #9a8f7a; --red: #c0392b;
-    --green: #4a9a4a; --border: #4a3a22;
+    --bg: #0b0e14; --bg2: #10141d; --panel: #151b26; --panel2: #1b2230;
+    --border: #2c3547; --border-hi: #45536e;
+    --gold: #f0c85a; --gold-dim: #b59a54;
+    --text: #dfe4ee; --muted: #8a93a6; --dim: #616a7d;
+    --red: #d05548; --green: #58c05a; --blue: #4aa3e0;
+    --q-common: #ffffff; --q-uncommon: #1eff00; --q-rare: #0070dd; --q-epic: #a335ee; --q-junk: #9d9d9d;
+    --shadow: 0 10px 30px rgba(0,0,0,.55);
   }
   * { box-sizing: border-box; }
+  html, body { height: 100%; }
   body {
-    margin: 0; background: var(--bg); color: var(--text);
-    font: 15px/1.5 Georgia, 'Times New Roman', serif;
+    margin: 0; background:
+      radial-gradient(1100px 500px at 70% -10%, #1a2130 0%, transparent 60%),
+      radial-gradient(900px 500px at 0% 110%, #141a26 0%, transparent 55%),
+      var(--bg);
+    color: var(--text);
+    font: 14px/1.55 'Segoe UI', system-ui, -apple-system, sans-serif;
   }
+
+  /* ------------------------------------------------------------------ header */
   header {
-    padding: 18px 28px; border-bottom: 2px solid var(--border);
-    background: linear-gradient(#241c12, #1a140d);
-    display: flex; align-items: baseline; gap: 16px;
+    display: flex; align-items: center; gap: 18px;
+    padding: 14px 30px; background: rgba(10,13,20,.92);
+    border-bottom: 1px solid var(--border);
+    position: sticky; top: 0; z-index: 50; backdrop-filter: blur(6px);
   }
-  header h1 { margin: 0; color: var(--gold); font-size: 24px; letter-spacing: 1px; }
-  header .sub { color: var(--muted); font-size: 13px; }
-  main { display: flex; gap: 20px; padding: 20px 28px; align-items: flex-start; }
-  .col-list { width: 320px; flex-shrink: 0; }
-  .col-edit { flex: 1; min-width: 420px; }
-  .col-ref { width: 300px; flex-shrink: 0; }
+  .logo {
+    width: 42px; height: 42px; border-radius: 8px; flex-shrink: 0;
+    background: linear-gradient(145deg, #2b1d0a, #171006);
+    border: 1px solid var(--gold-dim);
+    display: grid; place-items: center; font-size: 22px;
+    box-shadow: inset 0 0 12px rgba(240,200,90,.25);
+  }
+  header .titles h1 {
+    margin: 0; font-size: 19px; letter-spacing: 2.5px; color: var(--gold);
+    font-family: Georgia, serif; text-transform: uppercase;
+  }
+  header .titles .sub { color: var(--muted); font-size: 12px; }
+  header .spacer { flex: 1; }
+  .toolbar-top { display: flex; gap: 10px; align-items: center; }
+
+  /* ------------------------------------------------------------------ layout */
+  main {
+    display: grid; grid-template-columns: 330px minmax(430px, 1fr) 330px;
+    gap: 18px; padding: 20px 30px; align-items: start;
+    max-width: 1500px; margin: 0 auto;
+  }
   .panel {
-    background: var(--panel); border: 1px solid var(--border);
-    border-radius: 6px; padding: 16px; margin-bottom: 16px;
+    background: linear-gradient(180deg, var(--panel), var(--bg2));
+    border: 1px solid var(--border); border-radius: 10px;
+    box-shadow: var(--shadow); margin-bottom: 18px; overflow: hidden;
   }
-  .panel h2 {
-    margin: 0 0 12px; font-size: 16px; color: var(--gold);
-    border-bottom: 1px solid var(--border); padding-bottom: 8px;
+  .panel > .head {
+    display: flex; align-items: center; gap: 8px;
+    padding: 12px 16px; border-bottom: 1px solid var(--border);
+    background: rgba(255,255,255,.02);
   }
+  .panel > .head h2 {
+    margin: 0; font-size: 13px; letter-spacing: 1.6px; text-transform: uppercase;
+    color: var(--gold); font-weight: 600;
+  }
+  .panel > .body { padding: 14px 16px; }
+
+  /* -------------------------------------------------------------- quest list */
   .quest-card {
-    padding: 10px 12px; margin-bottom: 8px; border: 1px solid var(--border);
-    border-radius: 4px; background: var(--panel2); cursor: pointer;
+    display: flex; gap: 10px; align-items: center;
+    padding: 10px 12px; margin-bottom: 8px;
+    border: 1px solid var(--border); border-radius: 8px;
+    background: var(--panel2); cursor: pointer;
+    transition: border-color .15s, transform .1s;
   }
-  .quest-card:hover { border-color: var(--gold-dim); }
-  .quest-card.active { border-color: var(--gold); background: #332818; }
-  .quest-card .qname { color: var(--gold); font-weight: bold; }
+  .quest-card:hover { border-color: var(--border-hi); transform: translateY(-1px); }
+  .quest-card.active { border-color: var(--gold-dim); box-shadow: 0 0 0 1px var(--gold-dim), var(--shadow); }
+  .quest-card .num {
+    width: 30px; height: 30px; flex-shrink: 0; border-radius: 6px;
+    background: #232c3d; border: 1px solid var(--border);
+    display: grid; place-items: center; font-weight: 700; color: var(--gold); font-size: 13px;
+  }
+  .quest-card .info { min-width: 0; flex: 1; }
+  .quest-card .qname { color: var(--text); font-weight: 600; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
   .quest-card .qmeta { color: var(--muted); font-size: 12px; }
-  .chain-arrow { text-align: center; color: var(--gold-dim); font-size: 13px; margin: -4px 0 4px; }
-  label { display: block; margin: 10px 0 3px; color: var(--gold-dim); font-size: 13px; }
+  .quest-card img.reward { width: 28px; height: 28px; border-radius: 5px; border: 1px solid var(--border); }
+  .chain-arrow { text-align: center; color: var(--dim); font-size: 12px; margin: -3px 0 5px; }
+  .chain-arrow b { color: var(--gold-dim); font-weight: 600; }
+
+  /* ------------------------------------------------------------------- forms */
+  label { display: block; margin: 12px 0 4px; color: var(--muted); font-size: 11.5px;
+          letter-spacing: .8px; text-transform: uppercase; font-weight: 600; }
   input[type=text], input[type=number], textarea, select {
-    width: 100%; padding: 8px 10px; background: #14100b; color: var(--text);
-    border: 1px solid var(--border); border-radius: 4px;
-    font: 14px Georgia, serif;
+    width: 100%; padding: 9px 11px; background: #0d1118; color: var(--text);
+    border: 1px solid var(--border); border-radius: 7px;
+    font: 14px 'Segoe UI', system-ui, sans-serif;
+    transition: border-color .15s;
   }
-  textarea { resize: vertical; min-height: 70px; }
+  textarea { resize: vertical; min-height: 74px; }
   input:focus, textarea:focus, select:focus { outline: none; border-color: var(--gold-dim); }
   .row { display: flex; gap: 12px; }
-  .row > div { flex: 1; }
+  .row > div { flex: 1; min-width: 0; }
+
   button {
-    padding: 9px 18px; border-radius: 4px; cursor: pointer;
-    font: bold 14px Georgia, serif; border: 1px solid var(--border);
-    background: linear-gradient(#5a1010, #3a0a0a); color: var(--gold);
+    padding: 9px 16px; border-radius: 7px; cursor: pointer;
+    font: 600 13.5px 'Segoe UI', system-ui, sans-serif;
+    border: 1px solid var(--border); background: var(--panel2); color: var(--text);
+    transition: border-color .15s, background .15s;
   }
-  button:hover { border-color: var(--gold); }
-  button.secondary { background: var(--panel2); color: var(--text); }
-  button.green { background: linear-gradient(#2a5a2a, #1a3a1a); }
-  button:disabled { opacity: 0.45; cursor: default; }
-  .toolbar { display: flex; gap: 10px; margin-top: 14px; flex-wrap: wrap; }
+  button:hover { border-color: var(--border-hi); background: #232c3d; }
+  button.primary { background: linear-gradient(180deg, #8a6a1e, #6b500f); border-color: #a8843a; color: #fff8e0; }
+  button.primary:hover { border-color: var(--gold); }
+  button.publish { background: linear-gradient(180deg, #2e6b33, #1d4a22); border-color: #3f8a46; color: #e7ffe8; }
+  button.publish:hover { border-color: var(--green); }
+  button.danger { color: #ffb0a8; }
+  button.danger:hover { border-color: var(--red); }
+  .btns { display: flex; gap: 10px; margin-top: 14px; flex-wrap: wrap; }
+
   #status {
-    white-space: pre-wrap; margin-top: 12px; padding: 10px; border-radius: 4px;
+    white-space: pre-wrap; margin-top: 12px; padding: 10px 12px; border-radius: 7px;
     font-size: 13px; display: none;
   }
-  #status.ok { display: block; background: #16301b; border: 1px solid var(--green); }
-  #status.err { display: block; background: #33150f; border: 1px solid var(--red); }
-  .ref-table { width: 100%; border-collapse: collapse; font-size: 13px; }
-  .ref-table td { padding: 3px 6px; border-bottom: 1px solid #2c2318; }
-  .ref-table td.rid { color: var(--gold); width: 34px; text-align: right; }
-  .hint { color: var(--muted); font-size: 12px; margin-top: 6px; }
-  .pill {
-    display: inline-block; padding: 1px 8px; border-radius: 10px;
-    background: var(--panel2); border: 1px solid var(--border);
-    font-size: 12px; color: var(--muted);
+  #status.ok  { display: block; background: rgba(88,192,90,.1);  border: 1px solid rgba(88,192,90,.45); }
+  #status.err { display: block; background: rgba(208,85,72,.12); border: 1px solid rgba(208,85,72,.5); }
+  .hint { color: var(--dim); font-size: 12px; margin-top: 8px; line-height: 1.45; }
+  .hint b { color: var(--muted); }
+
+  /* --------------------------------------------------------- reference lists */
+  .ref-row {
+    display: flex; align-items: center; gap: 10px;
+    padding: 6px 8px; border-radius: 7px; cursor: default;
+  }
+  .ref-row:hover { background: rgba(255,255,255,.045); }
+  .ref-row .rid {
+    width: 30px; flex-shrink: 0; text-align: right;
+    color: var(--dim); font-size: 12px; font-variant-numeric: tabular-nums;
+  }
+  .ref-row .rname { flex: 1; min-width: 0; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+  .ref-row .rlvl { color: var(--dim); font-size: 12px; }
+  .icon {
+    width: 32px; height: 32px; flex-shrink: 0; border-radius: 6px;
+    border: 1px solid var(--border); background: #0d1118; object-fit: contain;
+  }
+  .icon.missing { display: grid; place-items: center; color: var(--dim); font-size: 15px; }
+  .scroll { max-height: 380px; overflow-y: auto; padding-right: 4px; }
+  .scroll::-webkit-scrollbar { width: 8px; }
+  .scroll::-webkit-scrollbar-thumb { background: var(--border); border-radius: 4px; }
+  .search {
+    margin-bottom: 8px;
+  }
+
+  /* -------------------------------------------------------- item picker */
+  .item-picker {
+    display: flex; align-items: center; gap: 10px; width: 100%;
+    padding: 7px 11px; background: #0d1118; color: var(--text);
+    border: 1px solid var(--border); border-radius: 7px; cursor: pointer;
+    transition: border-color .15s; text-align: left;
+  }
+  .item-picker:hover { border-color: var(--gold-dim); background: #0d1118; }
+  .item-picker .chev { margin-left: auto; color: var(--dim); font-size: 11px; }
+  .picker-pop {
+    position: absolute; z-index: 90; left: 0; right: 0; margin-top: 6px;
+    background: var(--panel); border: 1px solid var(--border-hi); border-radius: 9px;
+    box-shadow: var(--shadow); padding: 10px;
+  }
+  .picker-wrap { position: relative; }
+  .picker-pop .grid { max-height: 300px; overflow-y: auto; }
+  .picker-pop .ref-row { cursor: pointer; }
+
+  /* ---------------------------------------------------------- WoW tooltip */
+  #tt {
+    position: fixed; z-index: 200; pointer-events: none; display: none;
+    min-width: 230px; max-width: 300px;
+    background: linear-gradient(180deg, rgba(9,12,26,.97), rgba(6,8,18,.97));
+    border: 1px solid #3d4a6b; border-radius: 6px;
+    box-shadow: 0 8px 28px rgba(0,0,0,.7), inset 0 0 0 1px rgba(120,140,190,.12);
+    padding: 10px 12px; font-size: 13px; line-height: 1.5;
+  }
+  #tt .t-name { font-size: 15px; font-weight: 700; }
+  #tt .t-line { color: var(--q-common); }
+  #tt .t-sub { display: flex; justify-content: space-between; gap: 16px; color: var(--q-common); }
+  #tt .t-gold { color: var(--gold); }
+  #tt .t-green { color: var(--q-uncommon); }
+  #tt .t-gray { color: var(--q-junk); }
+  #tt .t-muted { color: #b8c0d4; }
+  #tt .t-sell { margin-top: 4px; color: var(--q-common); }
+  .coin { display: inline-block; width: 10px; height: 10px; border-radius: 50%; margin: 0 5px 0 2px; vertical-align: -1px; }
+  .coin.g { background: radial-gradient(circle at 35% 30%, #ffe89a, #c9992a); }
+  .coin.s { background: radial-gradient(circle at 35% 30%, #f0f0f0, #8f8f9a); }
+  .coin.c { background: radial-gradient(circle at 35% 30%, #e0a070, #8a5a2a); }
+
+  .quality-common { color: var(--q-common); }
+  .quality-uncommon { color: var(--q-uncommon); }
+  .quality-rare { color: var(--q-rare); }
+  .quality-epic { color: var(--q-epic); }
+  .quality-junk { color: var(--q-junk); }
+
+  .welcome p { color: var(--muted); }
+  .welcome b { color: var(--gold-dim); }
+  .badge {
+    display: inline-block; padding: 2px 10px; border-radius: 12px; font-size: 11.5px;
+    background: var(--panel2); border: 1px solid var(--border); color: var(--muted);
   }
 </style>
 </head>
 <body>
+
 <header>
-  <h1>⚔ Studio de Quêtes</h1>
-  <span class="sub">Aetheria — écris les quêtes, choisis les récompenses, publie. Aucun code nécessaire.</span>
+  <div class="logo">⚔</div>
+  <div class="titles">
+    <h1>Aetheria</h1>
+    <div class="sub">Studio de Quêtes — écris, relie, récompense, publie.</div>
+  </div>
+  <div class="spacer"></div>
+  <div class="toolbar-top">
+    <span class="badge" id="questCount"></span>
+    <button class="primary" onclick="saveAll()">💾 Enregistrer</button>
+    <button class="publish" onclick="publish()">🚀 Publier</button>
+  </div>
 </header>
+
 <main>
-  <!-- LEFT: quest list + chain view -->
-  <div class="col-list">
+  <!-- LEFT: quests + publish -->
+  <section>
     <div class="panel">
-      <h2>Quêtes</h2>
-      <div id="questList"></div>
-      <div class="toolbar">
-        <button class="secondary" onclick="newQuest()">+ Nouvelle quête</button>
+      <div class="head"><h2>Chapitres de l'histoire</h2></div>
+      <div class="body">
+        <div id="questList"></div>
+        <div class="btns"><button onclick="newQuest()">＋ Nouvelle quête</button></div>
       </div>
     </div>
     <div class="panel">
-      <h2>Publier</h2>
-      <label>Petit mot pour l'historique (facultatif)</label>
-      <input type="text" id="commitMsg" placeholder="Ex : ajout de la quête des loups">
-      <div class="toolbar">
-        <button onclick="saveAll()">💾 Enregistrer</button>
-        <button class="green" onclick="publish()">🚀 Publier (git push)</button>
+      <div class="head"><h2>Publication</h2></div>
+      <div class="body">
+        <label>Note pour l'historique (facultatif)</label>
+        <input type="text" id="commitMsg" placeholder="Ex : ajout de la quête des loups">
+        <div class="hint"><b>Enregistrer</b> écrit le fichier du jeu sur ce PC.
+        <b>Publier</b> l'envoie sur GitHub — le serveur du jeu fait ensuite
+        <b>git pull</b> + redémarrage et tous les joueurs voient les nouveautés.</div>
+        <div id="status"></div>
       </div>
-      <div class="hint">« Enregistrer » écrit le fichier du jeu. « Publier » l'envoie sur GitHub —
-      il ne restera qu'un <b>git pull</b> + redémarrage du serveur pour que tout le monde le voie.</div>
-      <div id="status"></div>
     </div>
-  </div>
+  </section>
 
-  <!-- MIDDLE: the editor -->
-  <div class="col-edit">
+  <!-- MIDDLE: editor -->
+  <section>
     <div class="panel" id="editor" style="display:none">
-      <h2 id="editorTitle">Édition</h2>
-      <div class="row">
-        <div style="max-width:90px">
-          <label>ID</label>
-          <input type="number" id="f_id" min="1" max="255" onchange="fieldChanged()">
+      <div class="head"><h2 id="editorTitle">Édition</h2></div>
+      <div class="body">
+        <div class="row">
+          <div style="max-width:86px">
+            <label>ID</label>
+            <input type="number" id="f_id" min="1" max="255" onchange="fieldChanged()">
+          </div>
+          <div>
+            <label>Nom de la quête</label>
+            <input type="text" id="f_name" placeholder="Ex : La menace gobeline" oninput="fieldChanged()">
+          </div>
         </div>
-        <div>
-          <label>Nom de la quête</label>
-          <input type="text" id="f_name" placeholder="Ex : La menace gobeline" oninput="fieldChanged()">
+        <label>Dialogue du PNJ — pour donner la quête</label>
+        <textarea id="f_description" placeholder="Les gobelins pillent nos champs…" oninput="fieldChanged()"></textarea>
+        <label>Dialogue du PNJ — quand on rend la quête</label>
+        <textarea id="f_turnInText" placeholder="Bien joué, héros !" oninput="fieldChanged()"></textarea>
+        <div class="row">
+          <div>
+            <label>Monstre à tuer</label>
+            <select id="f_targetMonsterId" onchange="fieldChanged()"></select>
+          </div>
+          <div style="max-width:110px">
+            <label>Combien ?</label>
+            <input type="number" id="f_requiredKills" min="1" max="1000" onchange="fieldChanged()">
+          </div>
+        </div>
+        <div class="row">
+          <div>
+            <label>Récompense — XP</label>
+            <input type="number" id="f_rewardXp" min="0" onchange="fieldChanged()">
+          </div>
+          <div>
+            <label>Récompense — argent (cuivre)</label>
+            <input type="number" id="f_rewardGold" min="0" onchange="fieldChanged()">
+            <div class="hint" id="goldPreview"></div>
+          </div>
+        </div>
+        <label>Récompense — objet</label>
+        <div class="picker-wrap">
+          <button type="button" class="item-picker" id="rewardBtn" onclick="togglePicker(event)"></button>
+          <div class="picker-pop" id="pickerPop" style="display:none">
+            <input type="text" class="search" id="pickerSearch" placeholder="Chercher un objet…" oninput="renderPickerGrid()">
+            <div class="grid" id="pickerGrid"></div>
+          </div>
+        </div>
+        <label>Quête suivante — débloquée à la remise</label>
+        <select id="f_nextQuestId" onchange="fieldChanged()"></select>
+        <div class="btns">
+          <button class="danger" onclick="deleteQuest()">🗑 Supprimer cette quête</button>
         </div>
       </div>
-      <label>Description (ce que le PNJ raconte pour donner la quête)</label>
-      <textarea id="f_description" placeholder="Les gobelins pillent nos champs…" oninput="fieldChanged()"></textarea>
-      <label>Texte de fin (ce que le PNJ dit quand on rend la quête)</label>
-      <textarea id="f_turnInText" placeholder="Bien joué, héros !" oninput="fieldChanged()"></textarea>
-      <div class="row">
-        <div>
-          <label>Monstre à tuer</label>
-          <select id="f_targetMonsterId" onchange="fieldChanged()"></select>
-        </div>
-        <div style="max-width:120px">
-          <label>Combien ?</label>
-          <input type="number" id="f_requiredKills" min="1" max="1000" onchange="fieldChanged()">
-        </div>
-      </div>
-      <div class="row">
-        <div>
-          <label>Récompense : XP</label>
-          <input type="number" id="f_rewardXp" min="0" onchange="fieldChanged()">
-        </div>
-        <div>
-          <label>Récompense : argent (en cuivre — 10000 = 1 pièce d'or)</label>
-          <input type="number" id="f_rewardGold" min="0" onchange="fieldChanged()">
-        </div>
-      </div>
-      <label>Récompense : objet (facultatif)</label>
-      <select id="f_rewardItemId" onchange="fieldChanged()"></select>
-      <label>Quête suivante (débloquée quand celle-ci est rendue)</label>
-      <select id="f_nextQuestId" onchange="fieldChanged()"></select>
-      <div class="toolbar">
-        <button class="secondary" onclick="deleteQuest()">🗑 Supprimer cette quête</button>
-      </div>
-      <div class="hint">Tout se sauvegarde avec le bouton « Enregistrer » à gauche.</div>
     </div>
-    <div class="panel" id="noQuest">
-      <h2>Bienvenue !</h2>
-      <p>Choisis une quête à gauche, ou crée-en une nouvelle. Chaque quête dit au joueur
-      quel <b>monstre</b> tuer, <b>combien</b> de fois, et ce qu'il gagne. Relie les quêtes entre
-      elles avec « Quête suivante » pour faire une histoire en chapitres.</p>
-      <p class="hint">Les IDs des monstres et des objets sont listés à droite — les menus
-      déroulants les remplissent pour toi, pas besoin de les retenir.</p>
-    </div>
-  </div>
 
-  <!-- RIGHT: reference tables -->
-  <div class="col-ref">
-    <div class="panel">
-      <h2>Monstres du jeu</h2>
-      <table class="ref-table" id="monsterTable"></table>
-    </div>
-    <div class="panel">
-      <h2>Objets du jeu</h2>
-      <div style="max-height:340px; overflow-y:auto">
-        <table class="ref-table" id="itemTable"></table>
+    <div class="panel welcome" id="noQuest">
+      <div class="head"><h2>Bienvenue</h2></div>
+      <div class="body">
+        <p>Choisis une quête à gauche ou crée-en une nouvelle. Chaque quête dit au joueur
+        quel <b>monstre</b> tuer, <b>combien</b> de fois, et ce qu'il gagne en revenant
+        voir le PNJ.</p>
+        <p>Relie les quêtes entre elles avec « <b>Quête suivante</b> » pour construire une
+        histoire en chapitres — la suivante ne se débloque que quand la précédente est rendue.</p>
+        <p>Survole n'importe quel objet <b>pour voir sa fiche</b> (stats, valeur), comme en jeu.
+        Les récompenses se choisissent avec leur icône, pas besoin de retenir les IDs.</p>
       </div>
     </div>
-  </div>
+  </section>
+
+  <!-- RIGHT: bestiary + items -->
+  <section>
+    <div class="panel">
+      <div class="head"><h2>Bestiaire</h2></div>
+      <div class="body" id="monsterTable"></div>
+    </div>
+    <div class="panel">
+      <div class="head"><h2>Objets du jeu</h2></div>
+      <div class="body">
+        <input type="text" class="search" id="itemSearch" placeholder="Chercher…" oninput="renderItems()">
+        <div class="scroll" id="itemTable"></div>
+      </div>
+    </div>
+  </section>
 </main>
+
+<div id="tt"></div>
 
 <script>
 let DATA = { monsters: [], items: [], quests: [] };
-let current = null; // id of the quest being edited
+let current = null;
 
+const SLOTS = { 0:'', 1:'Main droite', 2:'Torse', 3:'Tête', 4:'Épaules', 5:'Jambes',
+                6:'Pieds', 7:'Mains', 8:'Ceinture', 9:'Dos', 10:'Main gauche' };
+const TYPES = { 0:'Butin', 1:'Arme', 2:'Armure', 3:'Consommable' };
+
+function quality(item) {
+  if (item.type === 0) { return 'junk'; }
+  const power = (item.attackBonus * 2) + item.defenseBonus + (item.healthBonus / 5);
+  if (power >= 16) { return 'epic'; }
+  if (power >= 9) { return 'rare'; }
+  if (power >= 3) { return 'uncommon'; }
+  return 'common';
+}
+
+function item(id) { return DATA.items.find(i => i.id === id); }
+function monster(id) { return DATA.monsters.find(m => m.id === id); }
+
+function iconImg(id, cls) {
+  return `<img class="${cls || 'icon'}" src="/icons/${id}" onerror="this.outerHTML='<div class=\'icon missing\'>?</div>'" alt="">`;
+}
+
+function money(copper) {
+  copper = Math.max(0, copper | 0);
+  const g = Math.floor(copper / 10000), s = Math.floor(copper % 10000 / 100), c = copper % 100;
+  let out = '';
+  if (g > 0) { out += g + '<span class="coin g"></span>'; }
+  if (g > 0 || s > 0) { out += s + '<span class="coin s"></span>'; }
+  out += c + '<span class="coin c"></span>';
+  return out;
+}
+
+/* ------------------------------------------------------------- WoW tooltip */
+function itemTooltipHtml(it) {
+  const q = quality(it);
+  let html = `<div class="t-name quality-${q}">${esc(it.name)}</div>`;
+  if (it.slot > 0) {
+    html += `<div class="t-sub"><span>${SLOTS[it.slot] || ''}</span><span>${TYPES[it.type] || ''}</span></div>`;
+  } else {
+    html += `<div class="t-gray">${TYPES[it.type] || 'Objet'}</div>`;
+  }
+  if (it.attackBonus > 0) { html += `<div class="t-line">+${it.attackBonus} Attaque</div>`; }
+  if (it.defenseBonus > 0) { html += `<div class="t-line">+${it.defenseBonus} Défense</div>`; }
+  if (it.healthBonus > 0) { html += `<div class="t-green">+${it.healthBonus} Vie</div>`; }
+  if (it.type === 3) { html += `<div class="t-green">Utiliser : rend des points de vie</div>`; }
+  if (it.stackable) { html += `<div class="t-gray">Se cumule par ${it.maxStack}</div>`; }
+  html += `<div class="t-sell">Prix de vente : ${money(it.goldValue)}</div>`;
+  return html;
+}
+
+function monsterTooltipHtml(m) {
+  return `<div class="t-name t-gold">${esc(m.name)}</div>` +
+         `<div class="t-muted">Niveau ${m.level}</div>` +
+         `<div class="t-gray">ID ${m.id} — cible de quête</div>`;
+}
+
+const tt = document.getElementById('tt');
+function showTT(html, ev) { tt.innerHTML = html; tt.style.display = 'block'; moveTT(ev); }
+function hideTT() { tt.style.display = 'none'; }
+function moveTT(ev) {
+  const pad = 16, w = tt.offsetWidth, h = tt.offsetHeight;
+  let x = ev.clientX + pad, y = ev.clientY + pad;
+  if (x + w > innerWidth - 8) { x = ev.clientX - w - pad; }
+  if (y + h > innerHeight - 8) { y = ev.clientY - h - pad; }
+  tt.style.left = x + 'px'; tt.style.top = y + 'px';
+}
+function bindTT(el, htmlFn) {
+  el.addEventListener('mouseenter', ev => showTT(htmlFn(), ev));
+  el.addEventListener('mousemove', moveTT);
+  el.addEventListener('mouseleave', hideTT);
+}
+
+/* ------------------------------------------------------------------ render */
 async function boot() {
-  const res = await fetch('/api/data');
-  DATA = await res.json();
+  DATA = await (await fetch('/api/data')).json();
   DATA.quests = DATA.quests || [];
-  renderRefs();
+  renderMonsters();
+  renderItems();
   renderList();
 }
 
-function renderRefs() {
-  document.getElementById('monsterTable').innerHTML = DATA.monsters
-    .map(m => `<tr><td class="rid">${m.id}</td><td>${esc(m.name)}</td><td class="rid">niv ${m.level}</td></tr>`).join('');
-  document.getElementById('itemTable').innerHTML = DATA.items
-    .map(i => `<tr><td class="rid">${i.id}</td><td>${esc(i.name)}</td></tr>`).join('');
+function renderMonsters() {
+  const el = document.getElementById('monsterTable');
+  el.innerHTML = DATA.monsters.map(m =>
+    `<div class="ref-row" data-mid="${m.id}">
+       <span class="rid">${m.id}</span>
+       <span class="rname">${esc(m.name)}</span>
+       <span class="rlvl">niv ${m.level}</span>
+     </div>`).join('');
+  for (const row of el.querySelectorAll('.ref-row')) {
+    const m = monster(+row.dataset.mid);
+    bindTT(row, () => monsterTooltipHtml(m));
+  }
+}
+
+function renderItems() {
+  const filter = (document.getElementById('itemSearch').value || '').toLowerCase();
+  const el = document.getElementById('itemTable');
+  const list = DATA.items.filter(i => !filter || i.name.toLowerCase().includes(filter));
+  el.innerHTML = list.map(i =>
+    `<div class="ref-row" data-iid="${i.id}">
+       ${iconImg(i.id)}
+       <span class="rname quality-${quality(i)}">${esc(i.name)}</span>
+       <span class="rid">${i.id}</span>
+     </div>`).join('') || '<div class="hint">Aucun objet trouvé.</div>';
+  for (const row of el.querySelectorAll('.ref-row')) {
+    const i = item(+row.dataset.iid);
+    bindTT(row, () => itemTooltipHtml(i));
+  }
 }
 
 function renderList() {
   const container = document.getElementById('questList');
   const sorted = [...DATA.quests].sort((a, b) => a.id - b.id);
+  document.getElementById('questCount').textContent =
+    sorted.length + ' quête' + (sorted.length > 1 ? 's' : '');
   let html = '';
   for (const q of sorted) {
-    const monster = DATA.monsters.find(m => m.id === q.targetMonsterId);
-    html += `<div class="quest-card ${q.id === current ? 'active' : ''}" onclick="selectQuest(${q.id})">
-      <div class="qname">${q.id}. ${esc(q.name || '(sans nom)')}</div>
-      <div class="qmeta">Tuer ${q.requiredKills} × ${esc(monster ? monster.name : '?')}
-        · ${q.rewardXp} XP</div>
+    const m = monster(q.targetMonsterId);
+    const reward = q.rewardItemId ? item(q.rewardItemId) : null;
+    html += `<div class="quest-card ${q.id === current ? 'active' : ''}" onclick="selectQuest(${q.id})" data-qid="${q.id}">
+      <div class="num">${q.id}</div>
+      <div class="info">
+        <div class="qname">${esc(q.name || '(sans nom)')}</div>
+        <div class="qmeta">${q.requiredKills} × ${esc(m ? m.name : '?')} · ${q.rewardXp} XP</div>
+      </div>
+      ${reward ? iconImg(reward.id, 'icon reward-icon') : ''}
     </div>`;
     if (q.nextQuestId) {
       const next = DATA.quests.find(x => x.id === q.nextQuestId);
-      html += `<div class="chain-arrow">↓ débloque « ${esc(next ? next.name : 'id ' + q.nextQuestId)} »</div>`;
+      html += `<div class="chain-arrow">↓ débloque <b>${esc(next ? next.name : 'id ' + q.nextQuestId)}</b></div>`;
     }
   }
-  container.innerHTML = html || '<span class="pill">Aucune quête pour l\'instant</span>';
+  container.innerHTML = html || '<div class="hint">Aucune quête pour l\'instant — crée la première !</div>';
+
+  // Tooltips on the reward icons in the list.
+  for (const card of container.querySelectorAll('.quest-card')) {
+    const q = DATA.quests.find(x => x.id === +card.dataset.qid);
+    const img = card.querySelector('img');
+    if (img && q && q.rewardItemId) {
+      const it = item(q.rewardItemId);
+      if (it) { bindTT(img, () => itemTooltipHtml(it)); }
+    }
+  }
 }
 
-function fillDropdowns(q) {
+/* ------------------------------------------------------------------ editor */
+function fillSelects(q) {
   const mSel = document.getElementById('f_targetMonsterId');
   mSel.innerHTML = DATA.monsters
-    .map(m => `<option value="${m.id}">${m.id} — ${esc(m.name)} (niv ${m.level})</option>`).join('');
+    .map(m => `<option value="${m.id}">${esc(m.name)} (niveau ${m.level})</option>`).join('');
   mSel.value = q.targetMonsterId || DATA.monsters[0]?.id || 1;
-
-  const iSel = document.getElementById('f_rewardItemId');
-  iSel.innerHTML = '<option value="0">— Aucun objet —</option>' + DATA.items
-    .map(i => `<option value="${i.id}">${i.id} — ${esc(i.name)}</option>`).join('');
-  iSel.value = q.rewardItemId || 0;
 
   const nSel = document.getElementById('f_nextQuestId');
   nSel.innerHTML = '<option value="0">— Fin de l\'histoire —</option>' + DATA.quests
     .filter(x => x.id !== q.id)
     .map(x => `<option value="${x.id}">${x.id} — ${esc(x.name)}</option>`).join('');
   nSel.value = q.nextQuestId || 0;
+
+  renderRewardButton(q.rewardItemId || 0);
+}
+
+function renderRewardButton(rewardId) {
+  const btn = document.getElementById('rewardBtn');
+  const it = rewardId ? item(rewardId) : null;
+  btn.innerHTML = it
+    ? `${iconImg(it.id)}<span class="quality-${quality(it)}">${esc(it.name)}</span><span class="chev">▼</span>`
+    : `<div class="icon missing">—</div><span class="quality-junk">Aucun objet</span><span class="chev">▼</span>`;
+  if (it) { bindTT(btn, () => itemTooltipHtml(it)); }
+}
+
+function togglePicker(ev) {
+  ev.stopPropagation();
+  const pop = document.getElementById('pickerPop');
+  const show = pop.style.display === 'none';
+  pop.style.display = show ? 'block' : 'none';
+  if (show) {
+    document.getElementById('pickerSearch').value = '';
+    renderPickerGrid();
+    document.getElementById('pickerSearch').focus();
+  }
+}
+document.addEventListener('click', ev => {
+  if (!ev.target.closest('.picker-wrap')) {
+    document.getElementById('pickerPop').style.display = 'none';
+  }
+});
+
+function renderPickerGrid() {
+  const filter = (document.getElementById('pickerSearch').value || '').toLowerCase();
+  const grid = document.getElementById('pickerGrid');
+  const list = DATA.items.filter(i => !filter || i.name.toLowerCase().includes(filter));
+  grid.innerHTML = `<div class="ref-row" onclick="pickReward(0)">
+      <div class="icon missing">—</div><span class="rname quality-junk">Aucun objet</span>
+    </div>` + list.map(i =>
+    `<div class="ref-row" data-pick="${i.id}" onclick="pickReward(${i.id})">
+       ${iconImg(i.id)}
+       <span class="rname quality-${quality(i)}">${esc(i.name)}</span>
+       <span class="rid">${i.id}</span>
+     </div>`).join('');
+  for (const row of grid.querySelectorAll('[data-pick]')) {
+    const i = item(+row.dataset.pick);
+    bindTT(row, () => itemTooltipHtml(i));
+  }
+}
+
+function pickReward(id) {
+  const q = DATA.quests.find(x => x.id === current);
+  if (q) { q.rewardItemId = id; }
+  hideTT();
+  renderRewardButton(id);
+  document.getElementById('pickerPop').style.display = 'none';
+  renderList();
 }
 
 function selectQuest(id) {
@@ -242,7 +556,7 @@ function selectQuest(id) {
   if (!q) { return; }
   document.getElementById('noQuest').style.display = 'none';
   document.getElementById('editor').style.display = 'block';
-  document.getElementById('editorTitle').textContent = 'Édition — quête ' + q.id;
+  document.getElementById('editorTitle').textContent = 'Quête ' + q.id + ' — ' + (q.name || 'sans nom');
   document.getElementById('f_id').value = q.id;
   document.getElementById('f_name').value = q.name || '';
   document.getElementById('f_description').value = q.description || '';
@@ -250,8 +564,14 @@ function selectQuest(id) {
   document.getElementById('f_requiredKills').value = q.requiredKills || 1;
   document.getElementById('f_rewardXp').value = q.rewardXp || 0;
   document.getElementById('f_rewardGold').value = q.rewardGold || 0;
-  fillDropdowns(q);
+  fillSelects(q);
+  updateGoldPreview();
   renderList();
+}
+
+function updateGoldPreview() {
+  const v = parseInt(document.getElementById('f_rewardGold').value) || 0;
+  document.getElementById('goldPreview').innerHTML = v > 0 ? '= ' + money(v) : '';
 }
 
 function fieldChanged() {
@@ -265,7 +585,6 @@ function fieldChanged() {
   q.requiredKills = parseInt(document.getElementById('f_requiredKills').value) || 1;
   q.rewardXp = parseInt(document.getElementById('f_rewardXp').value) || 0;
   q.rewardGold = parseInt(document.getElementById('f_rewardGold').value) || 0;
-  q.rewardItemId = parseInt(document.getElementById('f_rewardItemId').value) || 0;
   q.nextQuestId = parseInt(document.getElementById('f_nextQuestId').value) || 0;
   if (newId !== q.id && !DATA.quests.some(x => x.id === newId)) {
     for (const other of DATA.quests) {
@@ -274,6 +593,8 @@ function fieldChanged() {
     q.id = newId;
     current = newId;
   }
+  document.getElementById('editorTitle').textContent = 'Quête ' + q.id + ' — ' + (q.name || 'sans nom');
+  updateGoldPreview();
   renderList();
 }
 
@@ -297,26 +618,29 @@ function deleteQuest() {
   current = null;
   document.getElementById('editor').style.display = 'none';
   document.getElementById('noQuest').style.display = 'block';
+  hideTT();
   renderList();
 }
 
+/* ------------------------------------------------------------- save/publish */
 async function saveAll() {
   const res = await fetch('/api/quests', {
     method: 'POST', headers: { 'Content-Type': 'application/json' },
     body: JSON.stringify(DATA.quests),
   });
   const out = await res.json();
-  showStatus(res.ok ? 'Enregistré ! (' + out.saved + ' quête(s) dans le fichier du jeu)' : out.error, res.ok);
+  showStatus(res.ok ? '✔ Enregistré — ' + out.saved + ' quête(s) dans le fichier du jeu.' : out.error, res.ok);
+  return res.ok;
 }
 
 async function publish() {
-  await saveAll();
+  if (!await saveAll()) { return; }
   const res = await fetch('/api/publish', {
     method: 'POST', headers: { 'Content-Type': 'application/json' },
     body: JSON.stringify({ message: document.getElementById('commitMsg').value || undefined }),
   });
   const out = await res.json();
-  showStatus(res.ok ? out.info : out.error, res.ok);
+  showStatus(res.ok ? '✔ ' + out.info : out.error, res.ok);
 }
 
 function showStatus(text, ok) {
@@ -326,9 +650,10 @@ function showStatus(text, ok) {
 }
 
 function esc(s) {
-  return String(s ?? '').replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;');
+  return String(s ?? '').replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;').replace(/"/g, '&quot;');
 }
 
+document.getElementById('f_rewardGold').addEventListener('input', updateGoldPreview);
 boot();
 </script>
 </body>
