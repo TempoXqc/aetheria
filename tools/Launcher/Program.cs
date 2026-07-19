@@ -24,10 +24,10 @@ int uiPort = hostMode ? 5181 : 5180;
 string baseDir = AppContext.BaseDirectory;
 string configPath = Path.Combine(BaseDataDir(), "launcher.json");
 
-// On the HOST's PC (repo present) the patch server is always local: the address configures
-// itself and the field disappears. A shipped launcher.txt does the same for friends.
-bool repoNearby = DetectRepoNearby();
-bool hostIsAutomatic = repoNearby || File.Exists(Path.Combine(baseDir, "launcher.txt"));
+// Players NEVER type an address: the official patch address ships in launcher.txt (committed
+// with the game). The launcher prefers a LOCAL patch server when one answers (the host's PC),
+// and falls back to the official address everywhere else.
+string patchHost = ResolvePatchHost();
 string htmlPath = FindAsset("launcher.html");
 var http = new HttpClient { Timeout = TimeSpan.FromSeconds(8) };
 var jsonOptions = new JsonSerializerOptions { WriteIndented = true, PropertyNameCaseInsensitive = true };
@@ -52,8 +52,7 @@ app.MapGet("/api/state", async () =>
 
     var result = new JsonObject
     {
-        ["host"] = config["host"]!.GetValue<string>(),
-        ["hostAuto"] = hostIsAutomatic, // the page hides the address field entirely
+        ["host"] = patchHost,
         ["account"] = config["account"]!.GetValue<string>(),
         ["hasSecret"] = !string.IsNullOrEmpty(config["secret"]!.GetValue<string>()),
         ["channels"] = channels,
@@ -67,7 +66,7 @@ app.MapGet("/api/news", async () =>
     JsonNode config = LoadConfig();
     try
     {
-        string news = await http.GetStringAsync($"http://{config["host"]!.GetValue<string>()}/news");
+        string news = await http.GetStringAsync($"http://{patchHost}/news");
         return Results.Content(news, "text/plain; charset=utf-8");
     }
     catch (Exception)
@@ -80,7 +79,6 @@ app.MapPost("/api/config", async (HttpRequest request) =>
 {
     JsonNode? body = JsonNode.Parse(await new StreamReader(request.Body).ReadToEndAsync());
     JsonNode config = LoadConfig();
-    if (body?["host"] is not null) { config["host"] = body["host"]!.GetValue<string>().Trim(); }
     if (body?["account"] is not null) { config["account"] = body["account"]!.GetValue<string>().Trim(); }
     if (body?["secret"] is not null && body["secret"]!.GetValue<string>().Length > 0)
     {
@@ -96,7 +94,7 @@ app.MapPost("/api/update", async (HttpRequest request) =>
 {
     string channel = SafeChannel(request.Query["channel"].ToString());
     JsonNode config = LoadConfig();
-    string host = config["host"]!.GetValue<string>();
+    string host = patchHost;
 
     JsonNode? remote;
     try
@@ -259,7 +257,7 @@ async Task<JsonNode> ChannelState(JsonNode config, string channel)
     try
     {
         HttpResponseMessage response = await http.GetAsync(
-            $"http://{config["host"]!.GetValue<string>()}/manifest/{channel}");
+            $"http://{patchHost}/manifest/{channel}");
         reachable = true;
         if (response.IsSuccessStatusCode)
         {
@@ -299,7 +297,6 @@ JsonNode LoadConfig()
             if (node is not null)
             {
                 node["host"] ??= "127.0.0.1:27080";
-                if (repoNearby) { node["host"] = "127.0.0.1:27080"; }
                 node["account"] ??= "";
                 node["secret"] ??= "";
                 return node;
@@ -326,7 +323,41 @@ void SaveConfig(JsonNode config)
     File.WriteAllText(configPath, config.ToJsonString(jsonOptions), new UTF8Encoding(false));
 }
 
-static bool DetectRepoNearby()
+string ResolvePatchHost()
+{
+    // 1) A patch server on THIS machine wins (the host plays on localhost, no hairpin).
+    try
+    {
+        using var probe = new HttpClient { Timeout = TimeSpan.FromSeconds(1.5) };
+        probe.GetAsync("http://127.0.0.1:27080/news").GetAwaiter().GetResult();
+        return "127.0.0.1:27080";
+    }
+    catch (Exception) { /* not the host's PC (or servers not started yet) */ }
+
+    // 2) The official address committed with the game: beside the exe, else at the repo root.
+    foreach (string candidate in new[]
+             {
+                 Path.Combine(AppContext.BaseDirectory, "launcher.txt"),
+                 Path.Combine(RepoRootOrCwd(), "launcher.txt"),
+             })
+    {
+        try
+        {
+            if (File.Exists(candidate))
+            {
+                string? line = File.ReadAllLines(candidate)
+                    .Select(l => l.Trim())
+                    .FirstOrDefault(l => l.Length > 0 && !l.StartsWith('#'));
+                if (line != null) { return line; }
+            }
+        }
+        catch (IOException) { /* try the next spot */ }
+    }
+
+    return "127.0.0.1:27080"; // last resort
+}
+
+static string RepoRootOrCwd()
 {
     var dir = new DirectoryInfo(AppContext.BaseDirectory);
     while (dir != null && !Directory.Exists(Path.Combine(dir.FullName, ".git")))
@@ -343,7 +374,7 @@ static bool DetectRepoNearby()
         }
     }
 
-    return dir != null && Directory.Exists(Path.Combine(dir.FullName, "unity", "AetheriaClient"));
+    return dir?.FullName ?? Directory.GetCurrentDirectory();
 }
 
 string BaseDataDir()

@@ -156,11 +156,6 @@
       <div class="hint">Sauvegardés sur CE PC : le jeu se connecte tout seul jusqu'à l'écran
       de personnage. Laisse vide pour te connecter dans le jeu comme avant.</div>
     </div>
-    <div class="panel" id="hostCfgPanel">
-      <h2>Serveur de mises à jour</h2>
-      <input id="host" placeholder="ip:27080">
-      <div class="hint">L'adresse du PC qui héberge le jeu (remplie automatiquement si un
-      launcher.txt accompagne le launcher).</div>
     </div>
   </div>
 </main>
@@ -187,9 +182,6 @@ async function refresh() {
     return;
   }
   if (document.activeElement?.id !== 'account') { document.getElementById('account').value = STATE.account || ''; }
-  const cfg = document.getElementById('hostCfgPanel');
-  if (cfg) { cfg.style.display = STATE.hostAuto ? 'none' : 'block'; } // auto = invisible
-  if (document.activeElement?.id !== 'host') { document.getElementById('host').value = STATE.host || ''; }
   render();
 }
 
@@ -240,7 +232,6 @@ async function saveConfig() {
   await fetch('/api/config', {
     method: 'POST', headers: { 'Content-Type': 'application/json' },
     body: JSON.stringify({
-      host: document.getElementById('host').value,
       account: document.getElementById('account').value,
       secret: secret, // empty = keep the stored one
     }),
@@ -354,10 +345,9 @@ async function toggleServer(name) {
   setTimeout(refreshHost, 800);
 }
 
-document.getElementById('host').addEventListener('change', async () => { await saveConfig(); await refresh(); await loadNews(); });
 if (MODE === 'host') {
   document.getElementById('subTitle').textContent = 'Launcher serveur';
-  for (const id of ['playerLeft','loginPanel','hostCfgPanel']) {
+  for (const id of ['playerLeft','loginPanel']) {
     const el = document.getElementById(id); if (el) { el.style.display = 'none'; }
   }
   document.querySelector('footer').style.display = 'none';
