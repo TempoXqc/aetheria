@@ -5,6 +5,123 @@ using UnityEngine;
 namespace Aetheria.UnityClient
 {
     /// <summary>
+    /// Loader for the Quaternius "Stylized Nature MegaKit" (CC0, Assets/Resources/Nature):
+    /// spawns a named model, normalises it to a target height, and wires its textures by
+    /// material name (Bark_NormalTree → Bark_NormalTree.png, Pebbles → PathRocks_Diffuse…).
+    /// When the kit isn't imported, callers fall back to the old procedural primitives.
+    /// </summary>
+    public static class NatureModels
+    {
+        private const string Root = "Nature/";
+
+        private static readonly System.Collections.Generic.Dictionary<string, GameObject> Cache =
+            new System.Collections.Generic.Dictionary<string, GameObject>();
+        private static readonly System.Collections.Generic.Dictionary<string, Texture2D> TexCache =
+            new System.Collections.Generic.Dictionary<string, Texture2D>();
+        private static bool _checked;
+        private static bool _available;
+
+        public static bool Available
+        {
+            get
+            {
+                if (!_checked)
+                {
+                    _checked = true;
+                    _available = Load("CommonTree_1") != null;
+                }
+
+                return _available;
+            }
+        }
+
+        private static GameObject Load(string name)
+        {
+            GameObject cached;
+            if (!Cache.TryGetValue(name, out cached))
+            {
+                cached = Resources.Load<GameObject>(Root + name);
+                Cache[name] = cached;
+            }
+
+            return cached;
+        }
+
+        /// <summary>Spawn a kit model at a spot, scaled so its height ≈ targetHeight.</summary>
+        public static GameObject Spawn(Transform parent, string name, Vector3 pos, float targetHeight, float yawDegrees)
+        {
+            GameObject prefab = Load(name);
+            if (prefab == null)
+            {
+                return null;
+            }
+
+            GameObject go = Object.Instantiate(prefab, parent, false);
+            go.name = name;
+            go.transform.localPosition = pos;
+            go.transform.localRotation = Quaternion.Euler(0f, yawDegrees, 0f);
+
+            float height = 0f;
+            foreach (Renderer r in go.GetComponentsInChildren<Renderer>(true))
+            {
+                float y = r.bounds.max.y - pos.y;
+                if (y > height) { height = y; }
+            }
+
+            if (height > 0.05f)
+            {
+                float k = targetHeight / height;
+                go.transform.localScale = new Vector3(k, k, k);
+            }
+
+            ApplyTextures(go);
+            return go;
+        }
+
+        private static void ApplyTextures(GameObject go)
+        {
+            foreach (Renderer r in go.GetComponentsInChildren<Renderer>(true))
+            {
+                foreach (Material m in r.materials)
+                {
+                    if (m == null) { continue; }
+
+                    Texture2D tex = TextureFor(m.name);
+                    if (tex != null)
+                    {
+                        m.mainTexture = tex;
+                        m.color = Color.white;
+                    }
+                }
+            }
+        }
+
+        /// <summary>The kit names materials after their texture — resolve with light fuzzing.</summary>
+        private static Texture2D TextureFor(string materialName)
+        {
+            string n = materialName.Replace(" (Instance)", "").Replace("(Instance)", "").Trim();
+            Texture2D tex = LoadTexture(n);
+            if (tex == null) { tex = LoadTexture(n + "_Diffuse"); }
+            if (tex == null && n.Contains("Rock")) { tex = LoadTexture("Rocks_Diffuse"); }
+            if (tex == null && n.Contains("Pebble")) { tex = LoadTexture("PathRocks_Diffuse"); }
+            if (tex == null && n.Contains("Leaf")) { tex = LoadTexture("Leaves"); }
+            return tex;
+        }
+
+        private static Texture2D LoadTexture(string name)
+        {
+            Texture2D cached;
+            if (!TexCache.TryGetValue(name, out cached))
+            {
+                cached = Resources.Load<Texture2D>(Root + name);
+                TexCache[name] = cached;
+            }
+
+            return cached;
+        }
+    }
+
+    /// <summary>
     /// Static scenery for the open world, built from primitives to match the server's layout:
     /// the paved SANCTUARY with its standing stones and bank corner, a dirt path east to the
     /// goblin starter camp, and the WOLF FIELD to the west — golden wheat, fences and haystacks.
@@ -109,6 +226,57 @@ namespace Aetheria.UnityClient
             // Ashmaw's scorched ground (world raid boss at 80,80).
             Block(r, "Scorch", new Vector3(80f, 0.01f, 80f), new Vector3(16f, 0.02f, 16f),
                 new Color(0.20f, 0.12f, 0.10f));
+
+            DressWithNature(r);
+        }
+
+        /// <summary>
+        /// PURE-VISUAL vegetation from the nature kit (nothing here blocks movement): grass and
+        /// flowers scattered across the fields, mushrooms and gnarled trees at the goblin camp,
+        /// dead trees around the raid boss's scorched ground. Deterministic (seeded) so every
+        /// client sees the same world. No-op when the kit isn't imported.
+        /// </summary>
+        private static void DressWithNature(Transform r)
+        {
+            if (!NatureModels.Available)
+            {
+                return;
+            }
+
+            // Scatter: small ground cover in a wide ring around the sanctuary (kept out of the
+            // plaza, the path corridor and the boss ground).
+            string[] cover = { "Grass_Common_Tall", "Grass_Wispy_Tall", "Flower_3_Group",
+                "Flower_4_Group", "Bush_Common", "Bush_Common_Flowers", "Fern_1", "Clover_1",
+                "Plant_1_Big", "Pebble_Round_1", "Pebble_Round_2", "Pebble_Round_3" };
+            var rng = new System.Random(4242);
+            for (int i = 0; i < 140; i++)
+            {
+                float x = ((float)rng.NextDouble() * 150f) - 75f;
+                float z = ((float)rng.NextDouble() * 150f) - 75f;
+                float dOrigin = Mathf.Sqrt((x * x) + (z * z));
+                if (dOrigin < 19f) { continue; }                                    // sanctuary
+                if (x > 70f && z > 70f) { continue; }                               // scorched ground
+                float h = 0.35f + ((float)rng.NextDouble() * 0.6f);
+                string name = cover[rng.Next(cover.Length)];
+                NatureModels.Spawn(r, name, new Vector3(x, 0f, z), h, rng.Next(360));
+            }
+
+            // Goblin camp: gnarled trees and mushrooms — it should feel WRONG there.
+            NatureModels.Spawn(r, "TwistedTree_1", new Vector3(21f, 0f, 15.5f), 5.0f, 40f);
+            NatureModels.Spawn(r, "TwistedTree_2", new Vector3(29.5f, 0f, 13f), 4.4f, 210f);
+            NatureModels.Spawn(r, "Mushroom_Common", new Vector3(24f, 0f, 10.5f), 0.5f, 15f);
+            NatureModels.Spawn(r, "Mushroom_Common", new Vector3(26.4f, 0f, 11.8f), 0.35f, 150f);
+
+            // Pines along the road east, framing the walk to the camp.
+            NatureModels.Spawn(r, "Pine_1", new Vector3(10f, 0f, -1.5f), 7f, 80f);
+            NatureModels.Spawn(r, "Pine_2", new Vector3(16f, 0f, 8.5f), 6.2f, 300f);
+            NatureModels.Spawn(r, "Pine_3", new Vector3(13.5f, 0f, 2.5f), 7.5f, 200f);
+
+            // The boss's dead grove: burnt trunks ringing the scorch.
+            NatureModels.Spawn(r, "DeadTree_1", new Vector3(72f, 0f, 74f), 6f, 20f);
+            NatureModels.Spawn(r, "DeadTree_2", new Vector3(87f, 0f, 73.5f), 5.4f, 130f);
+            NatureModels.Spawn(r, "DeadTree_1", new Vector3(74.5f, 0f, 87f), 5.8f, 250f);
+            NatureModels.Spawn(r, "DeadTree_2", new Vector3(86f, 0f, 86.5f), 6.4f, 310f);
         }
 
         public void Teardown()
@@ -155,6 +323,17 @@ namespace Aetheria.UnityClient
 
         private static void Tree(Transform r, Vector3 at, float s)
         {
+            if (NatureModels.Available)
+            {
+                // A real tree from the kit: variant and yaw picked deterministically per spot.
+                int hash = Mathf.Abs((int)((at.x * 7f) + (at.z * 13f)));
+                string name = "CommonTree_" + ((hash % 5) + 1);
+                if (NatureModels.Spawn(r, name, at, 5.5f * s, hash % 360) != null)
+                {
+                    return;
+                }
+            }
+
             Tex.Apply(Round(PrimitiveType.Cylinder, r, "Trunk", at + new Vector3(0f, 0.7f * s, 0f),
                 new Vector3(0.3f * s, 0.7f * s, 0.3f * s), new Color(0.30f, 0.20f, 0.11f)), "bark", 1.5f, 2f);
             Color leaves = new Color(0.16f, 0.38f, 0.18f);
@@ -166,6 +345,16 @@ namespace Aetheria.UnityClient
 
         private static void Rock(Transform r, Vector3 at, float s)
         {
+            if (NatureModels.Available)
+            {
+                int hash = Mathf.Abs((int)((at.x * 11f) + (at.z * 5f)));
+                string name = "Rock_Medium_" + ((hash % 3) + 1);
+                if (NatureModels.Spawn(r, name, at, 1.1f * s, hash % 360) != null)
+                {
+                    return;
+                }
+            }
+
             var rock = Round(PrimitiveType.Sphere, r, "Rock", at + new Vector3(0f, 0.35f * s, 0f),
                 new Vector3(1.3f * s, 0.75f * s, 1.05f * s), new Color(0.40f, 0.40f, 0.43f));
             Tex.Apply(rock, "stone", 2f, 2f, new Color(0.75f, 0.75f, 0.78f));
