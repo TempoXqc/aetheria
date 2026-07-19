@@ -89,7 +89,7 @@ namespace Aetheria.UnityClient
             // The REAL head (Universal Base Characters kit): face, eyes and brows re-bound onto
             // the outfit skeleton — the rest of the base body is pruned to avoid clipping.
             Transform headBone = FindBone(bones, "head", "Head", "neck_01");
-            bool hasRealHead = AttachBaseHead(root.transform, bones, female);
+            bool hasRealHead = AttachBaseHead(root.transform, bones, female, headBone);
             if (!hasRealHead && headBone != null && snapshot.EquippedIn(EquipSlot.Head) == 0)
             {
                 // Kit not imported: fall back to the stylised procedural head.
@@ -122,10 +122,12 @@ namespace Aetheria.UnityClient
                 root.transform.localScale = new Vector3(k, k, k);
             }
 
-            // Hand over the bones to the shared animation rig.
+            // Hand over the bones to the shared animation rig. The reference frame is the
+            // PARENT (whose +Z is the character's facing), not the 180°-flipped model root —
+            // weapons and attack swings point where the character looks.
             var rig = new ModelRig
             {
-                BoneRoot = root.transform,
+                BoneRoot = parent,
                 ArmL = FindBone(bones, "upperarm_l"),
                 ArmR = FindBone(bones, "upperarm_r"),
                 LegL = FindBone(bones, "thigh_l", "calf_l"),
@@ -170,11 +172,14 @@ namespace Aetheria.UnityClient
         }
 
         /// <summary>
-        /// Instantiate the base body, keep ONLY its head meshes (head, eyes, brows) re-bound onto
-        /// the master skeleton, and prune the rest (the outfit replaces it — pack guidance).
+        /// Instantiate the base body and keep ONLY its head: eyes and brows are separate meshes,
+        /// but the face SKIN lives inside the full-body mesh — so that one goes through triangle
+        /// surgery, keeping only the triangles skinned to the head bone and its descendants
+        /// (pack guidance: "only the head is required"; the outfit replaces the body).
         /// Returns false when the Universal Base Characters kit is not imported.
         /// </summary>
-        private static bool AttachBaseHead(Transform root, Dictionary<string, Transform> masterBones, bool female)
+        private static bool AttachBaseHead(Transform root, Dictionary<string, Transform> masterBones,
+            bool female, Transform headBone)
         {
             string name = female ? "Superhero_Female_FullBody" : "Superhero_Male_FullBody";
             GameObject spawned = Attach(root, masterBones, name);
@@ -185,15 +190,85 @@ namespace Aetheria.UnityClient
 
             foreach (SkinnedMeshRenderer smr in spawned.GetComponentsInChildren<SkinnedMeshRenderer>(true))
             {
-                string n = smr.gameObject.name;
-                bool keep = n.Contains("Head") || n.Contains("Eye"); // Head, Eyes, Eyebrows
-                if (!keep)
+                if (smr.gameObject.name.Contains("Eye"))
                 {
-                    Object.Destroy(smr.gameObject);
+                    continue; // Eyes / Eyebrows: already head-only meshes
                 }
+
+                PruneToHead(smr, headBone);
             }
 
             return true;
+        }
+
+        /// <summary>
+        /// Rebuild a skinned mesh keeping only the triangles whose vertices follow the head bone
+        /// (or its grafted facial children) — runtime scissors for the body-with-head mesh.
+        /// </summary>
+        private static void PruneToHead(SkinnedMeshRenderer smr, Transform headBone)
+        {
+            Mesh src = smr.sharedMesh;
+            if (src == null || headBone == null)
+            {
+                Object.Destroy(smr.gameObject);
+                return;
+            }
+
+            Transform[] bones = smr.bones;
+            bool[] headBoneIndex = new bool[bones.Length];
+            for (int i = 0; i < bones.Length; i++)
+            {
+                headBoneIndex[i] = bones[i] != null && (bones[i] == headBone || bones[i].IsChildOf(headBone));
+            }
+
+            BoneWeight[] weights = src.boneWeights;
+            if (weights == null || weights.Length == 0)
+            {
+                Object.Destroy(smr.gameObject);
+                return;
+            }
+
+            // A vertex belongs to the head when its HEAVIEST bone is the head (or under it).
+            bool[] headVertex = new bool[weights.Length];
+            for (int v = 0; v < weights.Length; v++)
+            {
+                BoneWeight w = weights[v];
+                int dominant = w.boneIndex0;
+                float best = w.weight0;
+                if (w.weight1 > best) { best = w.weight1; dominant = w.boneIndex1; }
+                if (w.weight2 > best) { best = w.weight2; dominant = w.boneIndex2; }
+                if (w.weight3 > best) { dominant = w.boneIndex3; }
+
+                headVertex[v] = dominant >= 0 && dominant < headBoneIndex.Length && headBoneIndex[dominant];
+            }
+
+            Mesh copy = Object.Instantiate(src);
+            int keptTotal = 0;
+            for (int s = 0; s < src.subMeshCount; s++)
+            {
+                int[] tris = src.GetTriangles(s);
+                var kept = new List<int>(tris.Length);
+                for (int t = 0; t + 2 < tris.Length; t += 3)
+                {
+                    if (headVertex[tris[t]] && headVertex[tris[t + 1]] && headVertex[tris[t + 2]])
+                    {
+                        kept.Add(tris[t]);
+                        kept.Add(tris[t + 1]);
+                        kept.Add(tris[t + 2]);
+                    }
+                }
+
+                copy.SetTriangles(kept, s);
+                keptTotal += kept.Count;
+            }
+
+            if (keptTotal == 0)
+            {
+                Object.Destroy(smr.gameObject); // nothing head-bound in this mesh at all
+                return;
+            }
+
+            smr.sharedMesh = copy;
         }
 
         // ------------------------------------------------------------- Assembly
@@ -385,7 +460,7 @@ namespace Aetheria.UnityClient
         {
             var mount = new GameObject("HeadMount");
             mount.transform.SetParent(headBone, false);
-            mount.transform.rotation = root.rotation;
+            mount.transform.rotation = root.parent != null ? root.parent.rotation : root.rotation;
 
             Vector3 ls = mount.transform.lossyScale;
             mount.transform.localScale = new Vector3(

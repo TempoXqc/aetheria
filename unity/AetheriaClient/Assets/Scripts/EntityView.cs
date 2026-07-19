@@ -370,16 +370,20 @@ namespace Aetheria.UnityClient
             }
             else
             {
+                // Idle micro-motion so standing still doesn't look frozen: a slow breath-like
+                // arm sway that fades out as soon as the character walks.
+                float sway = Mathf.Sin(Time.time * 1.7f) * 2.4f * (1f - stride);
+
                 // Legs swing opposite each other; arms counter-swing.
                 _rig.SwingX(_rig.LegL, swing);
                 _rig.SwingX(_rig.LegR, -swing);
-                _rig.SwingX(_rig.ArmL, -swing * 0.7f);
+                _rig.SwingX(_rig.ArmL, (-swing * 0.7f) + sway);
 
                 // The weapon arm: walk counter-swing, overridden by the attack swing.
                 float atk = AttackCurve();
                 float armAngle = atk > 0f
                     ? Mathf.Lerp(20f, -105f, atk) // wind up slightly, then strike down/forward
-                    : swing * 0.7f;
+                    : (swing * 0.7f) - sway;
                 _rig.SwingX(_rig.ArmR, armAngle);
 
                 // Idle breathing: a subtle torso pulse when standing still.
