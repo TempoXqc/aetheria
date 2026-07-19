@@ -927,6 +927,7 @@ namespace Aetheria.UnityClient
             {
                 _myOffer.Clear();
                 _myOfferGold = 0;
+                _bagsOpen = true; // WoW opens the bags with the trade window
                 if (_pendingAutoOffer != null)
                 {
                     _myOffer.Add(_pendingAutoOffer.Value); // the dragged item opens as the first offer
@@ -2983,12 +2984,29 @@ namespace Aetheria.UnityClient
                         _dragFromIndex = index;
                         e.Use();
                     }
-                    else if (e.button == 1 && _shopOpen && !_client.TradeActive)
+                    else if (e.button == 1 && _client.TradeActive)
+                    {
+                        // Trade open: RIGHT = put it on the table (once, up to six offers).
+                        bool offered = false;
+                        for (int k = 0; k < _myOffer.Count; k++)
+                        {
+                            if (_myOffer[k].ItemId == stack.ItemId) { offered = true; }
+                        }
+
+                        if (!offered && _myOffer.Count < TradeSlots && !_client.TradeMyAccepted)
+                        {
+                            _myOffer.Add(stack);
+                            PushOffer();
+                        }
+
+                        e.Use();
+                    }
+                    else if (e.button == 1 && _shopOpen)
                     {
                         _client.SendVendor(sell: true, stack.ItemId, 1); // shop open: RIGHT = sell
                         e.Use();
                     }
-                    else if (e.button == 1 && def.Slot != EquipSlot.None && !_client.TradeActive)
+                    else if (e.button == 1 && def.Slot != EquipSlot.None)
                     {
                         _client.SendEquipItem(stack.ItemId, (byte)def.Slot); // RIGHT = wear it
                         e.Use();
@@ -3145,108 +3163,123 @@ namespace Aetheria.UnityClient
             }
         }
 
+        private const int TradeSlots = 6; // WoW-style: six offer rows per side
+
         private void DrawTradeWindow()
         {
             if (!_client.TradeActive) { return; }
 
-            Rect win = new Rect((VirtW / 2f) - 210, (VirtH / 2f) - 160, 420, 320);
-            GUI.Box(win, "<b>Échange avec " + _client.TradePartner + "</b>", RichCenteredBox());
+            Rect win = new Rect((VirtW / 2f) - 225, (VirtH / 2f) - 185, 450, 370);
+            WowUi.Panel(win);
+            WowUi.GoldCentered(new Rect(win.x, win.y + 8, win.width, 20),
+                "<size=13><b>Échange — " + _client.TradePartner + "</b></size>");
 
             float colW = (win.width - 36f) / 2f;
             float leftX = win.x + 12f;
             float rightX = win.x + 24f + colW;
-            float topY = win.y + 28f;
+            float topY = win.y + 32f;
 
-            // My side.
-            GUI.Label(new Rect(leftX, topY, colW, 18), "<b>Mon offre</b>" +
-                (_client.TradeMyAccepted ? "  <color=#50e060>✔</color>" : ""), Rich());
-            GUI.Label(new Rect(leftX, topY + 20, 110, 20), FormatMoney(_myOfferGold), Rich());
-            if (GUI.Button(new Rect(leftX + 92, topY + 19, 30, 20), "+10") && _client.Gold >= _myOfferGold + 10)
-            {
-                _myOfferGold += 10;
-                PushOffer();
-            }
-
-            if (GUI.Button(new Rect(leftX + 126, topY + 19, 30, 20), "−10") && _myOfferGold >= 10)
-            {
-                _myOfferGold -= 10;
-                PushOffer();
-            }
-
-            float y = topY + 44f;
-            for (int i = 0; i < _myOffer.Count; i++)
-            {
-                ItemStack s = _myOffer[i];
-                GUI.Label(new Rect(leftX, y, colW - 34, 20),
-                    Data.GetItem(s.ItemId).Name + (s.Quantity > 1 ? " ×" + s.Quantity : ""));
-                if (GUI.Button(new Rect(leftX + colW - 30, y, 24, 20), "−"))
-                {
-                    _myOffer.RemoveAt(i);
-                    PushOffer();
-                    break;
-                }
-
-                y += 22f;
-            }
-
-            // Add from bag (items not already offered).
-            GUI.Label(new Rect(leftX, y + 4, colW, 18), "<i>Sac (cliquer pour offrir) :</i>", Rich());
-            y += 24f;
-            IReadOnlyList<ItemStack> bag = _client.InventoryItems;
-            for (int i = 0; i < bag.Count && y < win.y + win.height - 60; i++)
-            {
-                ItemStack s = bag[i];
-                if (s.ItemId == 0) { continue; } // layout hole
-                bool alreadyOffered = false;
-                for (int k = 0; k < _myOffer.Count; k++)
-                {
-                    if (_myOffer[k].ItemId == s.ItemId) { alreadyOffered = true; }
-                }
-
-                if (alreadyOffered) { continue; }
-
-                if (GUI.Button(new Rect(leftX, y, colW - 8, 20),
-                        Data.GetItem(s.ItemId).Name + (s.Quantity > 1 ? " ×" + s.Quantity : "")))
-                {
-                    _myOffer.Add(s);
-                    PushOffer();
-                }
-
-                y += 22f;
-            }
-
-            // Their side.
-            GUI.Label(new Rect(rightX, topY, colW, 18), "<b>Son offre</b>" +
-                (_client.TradeTheirAccepted ? "  <color=#50e060>✔</color>" : ""), Rich());
-            GUI.Label(new Rect(rightX, topY + 20, colW, 20), FormatMoney(_client.TradeTheirGold), Rich());
-            float ty = topY + 44f;
-            IReadOnlyList<ItemStack> theirs = _client.TradeTheirItems;
-            for (int i = 0; i < theirs.Count; i++)
-            {
-                ItemStack s = theirs[i];
-                GUI.Label(new Rect(rightX, ty, colW, 20),
-                    Data.GetItem(s.ItemId).Name + (s.Quantity > 1 ? " ×" + s.Quantity : ""));
-                ty += 22f;
-            }
+            DrawTradeColumn(new Rect(leftX, topY, colW, 250), mine: true);
+            DrawTradeColumn(new Rect(rightX, topY, colW, 250), mine: false);
 
             if (!string.IsNullOrEmpty(_client.TradeMessage))
             {
-                GUI.Label(new Rect(win.x + 12, win.y + win.height - 56, win.width - 24, 20),
-                    "<color=#f0c040>" + _client.TradeMessage + "</color>", Rich());
+                GUI.Label(new Rect(win.x + 12, win.y + win.height - 78, win.width - 24, 20),
+                    "<color=#f0c040>" + _client.TradeMessage + "</color>", RichCentered());
             }
 
+            GUI.Label(new Rect(win.x + 12, win.y + win.height - 58, win.width - 24, 18),
+                "<size=9><color=#909090>Clic droit sur un objet de tes sacs : l'offrir · Clic sur une offre : la retirer</color></size>",
+                RichCentered());
+
+            // WoW flow: « Échanger » locks YOUR side; the deal closes when both have locked.
             bool locked = _client.TradeMyAccepted;
             GUI.enabled = !locked;
-            if (GUI.Button(new Rect(win.x + 12, win.y + win.height - 32, 190, 24),
-                    locked ? "En attente de l'autre…" : "Accepter l'échange"))
+            if (WowUi.Button(new Rect(win.x + 12, win.y + win.height - 36, 200, 28),
+                    locked ? "En attente de " + _client.TradePartner + "…" : "Échanger"))
             {
                 _client.SendTradeAccept();
             }
 
             GUI.enabled = true;
-            if (GUI.Button(new Rect(win.x + win.width - 202, win.y + win.height - 32, 190, 24), "Annuler"))
+            if (WowUi.Button(new Rect(win.x + win.width - 212, win.y + win.height - 36, 200, 28), "Annuler"))
             {
                 _client.SendTradeCancel();
+            }
+        }
+
+        /// <summary>One trade column: header with accept state, six item rows, and the money line.
+        /// The whole column glows green once that side has locked its offer (WoW).</summary>
+        private void DrawTradeColumn(Rect area, bool mine)
+        {
+            bool accepted = mine ? _client.TradeMyAccepted : _client.TradeTheirAccepted;
+            WowUi.Highlight(area);
+            if (accepted)
+            {
+                Color prev = GUI.color;
+                GUI.color = new Color(0.2f, 0.9f, 0.3f, 0.10f);
+                GUI.DrawTexture(area, Texture2D.whiteTexture);
+                GUI.color = prev;
+            }
+
+            GUI.Label(new Rect(area.x + 8, area.y + 4, area.width - 16, 18),
+                "<b>" + (mine ? "Ton offre" : "Offre de " + _client.TradePartner) + "</b>" +
+                (accepted ? "  <color=#50e060>✔ verrouillée</color>" : ""), Rich());
+
+            IReadOnlyList<ItemStack> items = mine ? (IReadOnlyList<ItemStack>)_myOffer : _client.TradeTheirItems;
+            for (int i = 0; i < TradeSlots; i++)
+            {
+                var slotRect = new Rect(area.x + 8, area.y + 26 + (i * 33f), 30, 30);
+                if (i < items.Count && items[i].ItemId != 0)
+                {
+                    ItemStack s = items[i];
+                    DrawItemIcon(slotRect, s.ItemId, s.Quantity); // real icon + hover tooltip
+                    ItemDefinition def = Data.GetItem(s.ItemId);
+                    GUI.Label(new Rect(slotRect.xMax + 6, slotRect.y + 5, area.width - 56, 20),
+                        "<color=" + QualityHex(def) + ">" + def.Name +
+                        (s.Quantity > 1 ? " ×" + s.Quantity : "") + "</color>", Rich());
+
+                    // Click one of MY offered items to take it back off the table.
+                    Event e = Event.current;
+                    if (mine && e.type == EventType.MouseDown && e.button == 0 &&
+                        new Rect(slotRect.x, slotRect.y, area.width - 16, 30).Contains(e.mousePosition))
+                    {
+                        _myOffer.RemoveAt(i);
+                        PushOffer();
+                        e.Use();
+                    }
+                }
+                else
+                {
+                    WowUi.Slot(slotRect); // empty offer socket
+                }
+            }
+
+            // Money line: mine is editable (copper amount), theirs is display-only.
+            float my = area.y + 26 + (TradeSlots * 33f) + 4f;
+            if (mine)
+            {
+                GUI.Label(new Rect(area.x + 8, my + 3, 48, 18), "<size=10>Argent :</size>", Rich());
+                string typed = GUI.TextField(new Rect(area.x + 58, my, 66, 20), _myOfferGold.ToString());
+                int parsed;
+                if (int.TryParse(typed, out parsed) && parsed != _myOfferGold)
+                {
+                    _myOfferGold = Mathf.Clamp(parsed, 0, _client.Gold);
+                    PushOffer();
+                }
+                else if (typed.Length == 0 && _myOfferGold != 0)
+                {
+                    _myOfferGold = 0;
+                    PushOffer();
+                }
+
+                GUI.Label(new Rect(area.x + 130, my + 3, area.width - 138, 18),
+                    "<size=10>= " + FormatMoney(_myOfferGold) + "</size>", Rich());
+            }
+            else
+            {
+                GUI.Label(new Rect(area.x + 8, my + 3, area.width - 16, 18),
+                    "<size=10>Argent : " + FormatMoney(_client.TradeTheirGold) + "</size>", Rich());
             }
         }
 
