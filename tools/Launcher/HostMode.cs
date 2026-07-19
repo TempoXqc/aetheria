@@ -489,6 +489,7 @@ public static class HostMode
                 }
 
                 Servers.Remove(name);
+                try { File.Delete(Path.Combine(RepoRoot!, "run", name + ".pid")); } catch (IOException) { }
                 return "arrêté";
             }
 
@@ -514,6 +515,27 @@ public static class HostMode
                 Log("[prod] anciennes sauvegardes migrées vers state/aetheria-prod.json.");
             }
 
+            // ORPHAN GUARD: a previous launcher may have died without stopping its servers —
+            // their ports stay taken and the fresh start crashes (10048). Each server leaves a
+            // PID file; if that process is still alive, kill it before starting anew.
+            string pidFile = Path.Combine(RepoRoot!, "run", name + ".pid");
+            try
+            {
+                if (File.Exists(pidFile) && int.TryParse(File.ReadAllText(pidFile).Trim(), out int oldPid))
+                {
+                    Process orphan = Process.GetProcessById(oldPid);
+                    if (!orphan.HasExited &&
+                        orphan.ProcessName.Contains("dotnet", StringComparison.OrdinalIgnoreCase))
+                    {
+                        Log($"[{name}] ancien serveur orphelin (pid {oldPid}) — arrêt avant redémarrage.");
+                        orphan.Kill(entireProcessTree: true);
+                        orphan.WaitForExit(3000);
+                    }
+                }
+            }
+            catch (ArgumentException) { /* pid no longer exists: nothing to do */ }
+            catch (Exception e) { Log($"[{name}] garde anti-orphelin : {e.Message}"); }
+
             string runDir = Path.Combine(RepoRoot!, "run", name);
             CopyDirectory(sourceDir, runDir);
 
@@ -533,6 +555,7 @@ public static class HostMode
             process.BeginOutputReadLine();
             process.BeginErrorReadLine();
             Servers[name] = process;
+            try { File.WriteAllText(pidFile, process.Id.ToString()); } catch (IOException) { }
             return "démarré";
         }
     }
@@ -559,9 +582,13 @@ public static class HostMode
     {
         lock (Gate)
         {
-            foreach (Process p in Servers.Values)
+            foreach (KeyValuePair<string, Process> entry in Servers)
             {
-                try { if (!p.HasExited) { p.Kill(entireProcessTree: true); } } catch (Exception) { }
+                try { if (!entry.Value.HasExited) { entry.Value.Kill(entireProcessTree: true); } }
+                catch (Exception) { }
+
+                try { File.Delete(Path.Combine(RepoRoot!, "run", entry.Key + ".pid")); }
+                catch (IOException) { }
             }
 
             Servers.Clear();

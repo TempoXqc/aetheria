@@ -83,7 +83,20 @@ Console.WriteLine();
 // Open the TCP port on the router so friends' launchers reach us from the internet.
 _ = Task.Run(() => Aetheria.Server.Net.UpnpPortOpener.TryOpenAsync(Port, Console.WriteLine, "TCP"));
 
-app.Run();
+try
+{
+    app.Run();
+}
+catch (IOException e) when (e.InnerException is System.Net.Sockets.SocketException
+{
+    SocketErrorCode: System.Net.Sockets.SocketError.AddressAlreadyInUse
+})
+{
+    Console.WriteLine($"ERREUR : le port {Port} est déjà utilisé — un autre serveur de patchs tourne encore.");
+    Console.WriteLine("Ferme l'ancien (ou redémarre le Launcher-Serveur, qui le fait tout seul).");
+    return 1;
+}
+
 return 0;
 
 // -------------------------------------------------------------------------- publish

@@ -16,7 +16,16 @@ var store = new JsonFilePersistenceStore(statePath);
 Console.WriteLine($"State file: {statePath}");
 
 using var transport = new UdpServerTransport();
-transport.Start(port);
+try
+{
+    transport.Start(port);
+}
+catch (System.Net.Sockets.SocketException e) when (e.SocketErrorCode == System.Net.Sockets.SocketError.AddressAlreadyInUse)
+{
+    Console.WriteLine($"ERREUR : le port UDP {port} est déjà utilisé — un autre serveur tourne encore.");
+    Console.WriteLine("Ferme l'ancien serveur (ou redémarre le Launcher-Serveur, qui le fait tout seul).");
+    return 1;
+}
 
 string serverName = ParseArg(args, "--name") ?? SimulationConstants.DefaultServerName;
 int maxPlayers = int.TryParse(ParseArg(args, "--max-players"), out int cap) && cap > 0
