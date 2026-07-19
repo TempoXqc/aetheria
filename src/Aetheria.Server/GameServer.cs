@@ -143,6 +143,16 @@ public sealed class GameServer
             }
 
             BroadcastDuelEndings(world);
+
+            // Quest kill-counters that moved this tick: push fresh state to those players.
+            foreach (int playerId in world.DrainQuestDirty())
+            {
+                (PeerId qPeer, PlayerSession qSession)? qFound = FindSessionByEntity(playerId);
+                if (qFound is not null)
+                {
+                    SendQuestState(qFound.Value.qPeer, qFound.Value.qSession);
+                }
+            }
         }
 
         if (playerDied)
@@ -170,6 +180,12 @@ public sealed class GameServer
         // The sanctuary's BANK: a chest players stand next to to move goods/gold in and out.
         open.SpawnNpc("Coffre de banque",
             new Vec2(SimulationConstants.BankChestX, SimulationConstants.BankChestY));
+
+        // The sanctuary's PEOPLE: the quest giver by the plaza, and flavour villagers at their
+        // stalls — the safe zone should feel inhabited, not just paved.
+        open.SpawnNpc("Aldric le Guetteur", new Vec2(3.5f, 3.5f), npcType: 2);
+        open.SpawnNpc("Mira la Marchande", new Vec2(-3.2f, 5.6f), npcType: 3);
+        open.SpawnNpc("Brom le Forgeron", new Vec2(-6.0f, -3.8f), npcType: 3);
 
         // ZONE DE DÉPART — ISOLATED goblins east of the sanctuary: every early fight is a duel,
         // one against one. Packs are endgame content (the dungeon camp below stays grouped).
@@ -310,6 +326,16 @@ public sealed class GameServer
                 case MessageType.ChatSend:
                     ChatSend say = ChatSend.Read(ref reader);
                     HandleChat(session, say.Text);
+                    break;
+
+                case MessageType.QuestAction:
+                    QuestAction qa = QuestAction.Read(ref reader);
+                    if (session.CurrentWorld.TryQuestAction(session.EntityId, qa.QuestId, qa.TurnIn))
+                    {
+                        SendSelfState(peer, session); // rewards may have landed
+                    }
+
+                    SendQuestState(peer, session);
                     break;
 
                 case MessageType.AttackTarget:
@@ -614,6 +640,7 @@ public sealed class GameServer
 
         Send(peer, new ConnectAccepted(entity.Id, (byte)SimulationConstants.TickRate));
         SendBankState(peer, session.AccountId);
+        SendQuestState(peer, session);
 
         _log($"'{session.Name}' entered as {entity.Faction} {data.GetRace(entity.RaceId).Name} " +
              $"{data.GetClass(entity.ClassId).Name} ({entity.Gender}, entity {entity.Id}, {peer}, " +
@@ -1160,6 +1187,15 @@ public sealed class GameServer
         Send(peer, new BankState(bank.Gold, bank.Stacks));
     }
 
+    /// <summary>Push a player's quest progress (active quest, kills, chain position).</summary>
+    private void SendQuestState(PeerId peer, PlayerSession session)
+    {
+        if (TryGetEntity(session, out ServerEntity? self))
+        {
+            Send(peer, new QuestStateMessage(self!.ActiveQuestId, self.QuestKills, self.QuestCompletedUpTo));
+        }
+    }
+
     /// <summary>Send a corpse's current contents (empty contents = spent; the client closes its window).</summary>
     private void SendCorpseContents(PeerId peer, PlayerSession session, int corpseId)
     {
@@ -1344,6 +1380,7 @@ public sealed class GameServer
     }
 
     private void Send(PeerId peer, ConnectAccepted msg) => SendWith(peer, msg.Write);
+    private void Send(PeerId peer, QuestStateMessage msg) => SendWith(peer, msg.Write);
     private void Send(PeerId peer, ConnectRejected msg) => SendWith(peer, msg.Write);
     private void Send(PeerId peer, Pong msg) => SendWith(peer, msg.Write);
     private void Send(PeerId peer, SnapshotMessage msg) => SendWith(peer, msg.Write);

@@ -286,17 +286,99 @@ public sealed class World
     }
 
     /// <summary>Spawn a friendly interactive NPC/object (bank chest, future vendors). Invulnerable.</summary>
-    public ServerEntity SpawnNpc(string name, Vec2 position)
+    public ServerEntity SpawnNpc(string name, Vec2 position, byte npcType = 1)
     {
         int id = _ids.Next();
         var npc = new ServerEntity(id, EntityKind.Npc, position, new StatBlock(1, 0f, 0, 0, 0f), 0)
         {
             Name = name,
             Faction = Faction.Neutral,
+            RaceId = npcType, // 1 = bank chest, 2 = quest giver, 3 = flavour villager
         };
 
         AddAlive(npc);
         return npc;
+    }
+
+    // ------------------------------------------------------------------ Quests
+
+    private readonly List<int> _questDirty = new();
+
+    /// <summary>Players whose quest progress changed since the last drain (server pushes state).</summary>
+    public IReadOnlyList<int> DrainQuestDirty()
+    {
+        if (_questDirty.Count == 0)
+        {
+            return [];
+        }
+
+        var copy = _questDirty.ToArray();
+        _questDirty.Clear();
+        return copy;
+    }
+
+    private bool NearQuestGiver(ServerEntity player)
+    {
+        foreach (ServerEntity e in _entities.Values)
+        {
+            if (e.Kind == EntityKind.Npc && e.RaceId == 2 &&
+                Vec2.DistanceSquared(player.Position, e.Position) <= SimulationConstants.QuestGiverRange * SimulationConstants.QuestGiverRange)
+            {
+                return true;
+            }
+        }
+
+        return false;
+    }
+
+    /// <summary>
+    /// Accept the next quest in the chain, or turn in the finished one — both validated: the
+    /// quest must exist, follow the chain, and the player must stand at the quest giver.
+    /// </summary>
+    public bool TryQuestAction(int playerId, byte questId, bool turnIn)
+    {
+        if (!_entities.TryGetValue(playerId, out ServerEntity? player) ||
+            player.IsDead || player.Kind != EntityKind.Player || !NearQuestGiver(player))
+        {
+            return false;
+        }
+
+        QuestDefinition? quest = _gameData.GetQuest(questId);
+        if (quest == null)
+        {
+            return false;
+        }
+
+        if (!turnIn)
+        {
+            // Accept: nothing active, and it must be the NEXT link of the chain.
+            if (player.ActiveQuestId != 0 || questId != player.QuestCompletedUpTo + 1)
+            {
+                return false;
+            }
+
+            player.ActiveQuestId = questId;
+            player.QuestKills = 0;
+            return true;
+        }
+
+        // Turn in: the objective must be complete.
+        if (player.ActiveQuestId != questId || player.QuestKills < quest.RequiredKills)
+        {
+            return false;
+        }
+
+        ApplyXp(player, quest.RewardXp);
+        player.Inventory.AddGold(quest.RewardGold);
+        if (quest.RewardItemId != 0 && _gameData.HasItem(quest.RewardItemId))
+        {
+            AddItem(player, quest.RewardItemId, 1);
+        }
+
+        player.QuestCompletedUpTo = questId;
+        player.ActiveQuestId = 0;
+        player.QuestKills = 0;
+        return true;
     }
 
     /// <summary>
@@ -1018,6 +1100,18 @@ public sealed class World
             MonsterDefinition def = _gameData.GetMonster(victim.MonsterId);
             float mult = _gameData.Progression.XpMultiplierForKill(killer.Level, def.Level);
             ApplyXp(killer, (int)MathF.Round(def.XpReward * mult));
+
+            // Quest progress: the kill counts when it matches the active quest's target.
+            if (killer.ActiveQuestId != 0)
+            {
+                QuestDefinition? quest = _gameData.GetQuest(killer.ActiveQuestId);
+                if (quest != null && quest.TargetMonsterId == victim.MonsterId &&
+                    killer.QuestKills < quest.RequiredKills)
+                {
+                    killer.QuestKills++;
+                    _questDirty.Add(killer.Id);
+                }
+            }
 
             // NOTHING is auto-looted: gold, body parts and gear all wait inside the corpse
             // on the ground — right-click it (or press Interact) to open its loot window.

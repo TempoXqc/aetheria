@@ -21,6 +21,7 @@ public sealed class GameData
     private readonly Dictionary<byte, MonsterDefinition> _monsters;
     private readonly Dictionary<byte, ItemDefinition> _items;
     private readonly Dictionary<byte, InstanceDefinition> _instances;
+    private readonly Dictionary<byte, QuestDefinition> _quests;
 
     public GameData(
         IEnumerable<RaceDefinition> races,
@@ -29,7 +30,8 @@ public sealed class GameData
         IEnumerable<MonsterDefinition> monsters,
         IEnumerable<ItemDefinition>? items = null,
         ProgressionConfig? progression = null,
-        IEnumerable<InstanceDefinition>? instances = null)
+        IEnumerable<InstanceDefinition>? instances = null,
+        IEnumerable<QuestDefinition>? quests = null)
     {
         _races = races.ToDictionary(r => r.Id);
         _classes = classes.ToDictionary(c => c.Id);
@@ -37,6 +39,7 @@ public sealed class GameData
         _monsters = monsters.ToDictionary(m => m.Id);
         _items = (items ?? []).ToDictionary(i => i.Id);
         _instances = (instances ?? []).ToDictionary(i => i.Id);
+        _quests = (quests ?? []).ToDictionary(q => q.Id);
         Progression = progression ?? new ProgressionConfig();
 
         if (_races.Count == 0 || _classes.Count == 0 || _abilities.Count == 0)
@@ -57,6 +60,13 @@ public sealed class GameData
     public bool HasItem(byte id) => _items.ContainsKey(id);
 
     public IReadOnlyCollection<InstanceDefinition> Instances => _instances.Values;
+
+    public IReadOnlyCollection<QuestDefinition> Quests => _quests.Values;
+
+    public bool HasQuest(byte id) => _quests.ContainsKey(id);
+
+    public QuestDefinition? GetQuest(byte id)
+        => _quests.TryGetValue(id, out QuestDefinition? q) ? q : null;
 
     public bool TryGetInstance(byte id, out InstanceDefinition definition)
     {
@@ -104,8 +114,9 @@ public sealed class GameData
         var items = LoadList<ItemDefinition>(Path.Combine(directory, "items.json")) ?? defaults.Items.ToList();
         var progression = LoadObject<ProgressionConfig>(Path.Combine(directory, "progression.json")) ?? defaults.Progression;
         var instances = LoadList<InstanceDefinition>(Path.Combine(directory, "instances.json")) ?? defaults.Instances.ToList();
+        var quests = LoadList<QuestDefinition>(Path.Combine(directory, "quests.json")) ?? defaults.Quests.ToList();
 
-        return new GameData(races, classes, abilities, monsters, items, progression, instances);
+        return new GameData(races, classes, abilities, monsters, items, progression, instances, quests);
 #endif
     }
 
@@ -308,6 +319,27 @@ public sealed class GameData
                     new InstanceSpawn { MonsterId = 3, X = 20f, Y = 8f },
                     new InstanceSpawn { MonsterId = 4, X = 30f, Y = 10f }, // raid boss (instanced copy)
                 ],
+            },
+        ],
+        quests:
+        [
+            new QuestDefinition
+            {
+                Id = 1, Name = "La menace gobeline",
+                Description = "Les gobelins pillent nos champs et nos caravanes. Abats 10 Gobelins " +
+                              "du camp à l'est, puis reviens me voir.",
+                TurnInText = "Dix de moins ! Mais tant que leur roi respire, ils reviendront…",
+                TargetMonsterId = 1, RequiredKills = 10,
+                RewardXp = 150, RewardGold = 5000, NextQuestId = 2,
+            },
+            new QuestDefinition
+            {
+                Id = 2, Name = "Le Roi des gobelins",
+                Description = "Leur roi se terre au fond du camp, gras de nos récoltes volées. " +
+                              "Tranche la tête de cette vermine couronnée !",
+                TurnInText = "Le roi est mort ! Le sanctuaire te doit une fière chandelle, héros.",
+                TargetMonsterId = 3, RequiredKills = 1,
+                RewardXp = 500, RewardGold = 20000, RewardItemId = 14, NextQuestId = 0,
             },
         ],
         items:

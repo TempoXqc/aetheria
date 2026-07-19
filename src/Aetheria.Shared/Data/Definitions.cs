@@ -221,3 +221,30 @@ public sealed class ItemDefinition
 
     public bool IsEquippable => Slot != EquipSlot.None;
 }
+
+/// <summary>
+/// A kill quest in a linear chain: slay N of a monster, return to the quest giver, collect the
+/// reward, and the NEXT quest unlocks. Deterministic thanks to guaranteed body-part loot — but the
+/// counter tracks KILLS, so sharing loot never breaks a quest.
+/// </summary>
+public sealed class QuestDefinition
+{
+    public byte Id { get; init; }
+    public string Name { get; init; } = "Quête";
+
+    /// <summary>What the quest giver says when OFFERING the quest.</summary>
+    public string Description { get; init; } = "";
+
+    /// <summary>What the quest giver says when the quest is TURNED IN.</summary>
+    public string TurnInText { get; init; } = "Bien joué.";
+
+    public byte TargetMonsterId { get; init; }
+    public int RequiredKills { get; init; } = 1;
+
+    public int RewardXp { get; init; }
+    public int RewardGold { get; init; }
+    public byte RewardItemId { get; init; }
+
+    /// <summary>The quest unlocked by completing this one (0 = end of the chain).</summary>
+    public byte NextQuestId { get; init; }
+}

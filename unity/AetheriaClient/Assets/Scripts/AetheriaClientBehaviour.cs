@@ -132,6 +132,8 @@ namespace Aetheria.UnityClient
         private bool _sheetOpen;
         private bool _bagsOpen;
         private bool _uiPress; // the current mouse press began over the character sheet
+        private bool _questWindowOpen;
+        private int _nearbyQuestGiverId = -1;
         private readonly Dictionary<byte, float> _cooldownReadyAt = new Dictionary<byte, float>();
 
         // Right-click context menu on a friendly player.
@@ -189,6 +191,11 @@ namespace Aetheria.UnityClient
                 {
                     _minimap.Tick(new Vector3(mapSelf.Position.X, 0f, mapSelf.Position.Y));
                 }
+
+                // Day/night from the SERVER clock — every player shares the same sky.
+                // +150s so a freshly started server opens mid-morning, not at midnight.
+                DayNight.Apply(AetheriaBootstrap.SunLight, Camera.main,
+                    DayNight.PhaseFor((_client.LastTick * SimulationConstants.TickDelta) + 150f));
             }
 
             if (!_connected)
@@ -266,6 +273,7 @@ namespace Aetheria.UnityClient
                 if (_chatInputActive) { _chatInputActive = false; _chatInput = ""; }
                 else if (_awaitingBind != null) { _awaitingBind = null; }
                 else if (_contextEntityId >= 0) { _contextEntityId = -1; }
+                else if (_questWindowOpen) { _questWindowOpen = false; }
                 else if (_bankOpen) { _bankOpen = false; }
                 else if (_client.OpenCorpseId >= 0) { _client.CloseCorpse(); }
                 else if (_bagsOpen) { _bagsOpen = false; }
@@ -301,6 +309,7 @@ namespace Aetheria.UnityClient
             }
             FindNearbyCorpse();
             FindNearbyBank();
+            FindNearbyQuestGiver();
             PumpChat();
             TrackSocialState();
 
@@ -723,6 +732,32 @@ namespace Aetheria.UnityClient
             }
         }
 
+        /// <summary>The quest giver you stand next to, if any (Npc type 2).</summary>
+        private void FindNearbyQuestGiver()
+        {
+            _nearbyQuestGiverId = -1;
+            EntitySnapshot self;
+            if (!_client.TryGetSelf(out self)) { return; }
+
+            IReadOnlyList<EntitySnapshot> visible = _client.Visible;
+            for (int i = 0; i < visible.Count; i++)
+            {
+                EntitySnapshot e = visible[i];
+                if (e.Kind != EntityKind.Npc || e.RaceId != 2) { continue; }
+                if (Vec2.DistanceSquared(self.Position, e.Position) <=
+                    SimulationConstants.QuestGiverRange * SimulationConstants.QuestGiverRange)
+                {
+                    _nearbyQuestGiverId = e.Id;
+                    break;
+                }
+            }
+
+            if (_questWindowOpen && _nearbyQuestGiverId < 0)
+            {
+                _questWindowOpen = false; // walked away: the dialogue closes
+            }
+        }
+
         /// <summary>The bank chest you stand next to, if any (the sanctuary's Npc chest).</summary>
         private void FindNearbyBank()
         {
@@ -734,7 +769,7 @@ namespace Aetheria.UnityClient
             for (int i = 0; i < visible.Count; i++)
             {
                 EntitySnapshot e = visible[i];
-                if (e.Kind != EntityKind.Npc) { continue; }
+                if (e.Kind != EntityKind.Npc || e.RaceId != 1) { continue; }
                 if (Vec2.DistanceSquared(self.Position, e.Position) <=
                     SimulationConstants.BankInteractRange * SimulationConstants.BankInteractRange)
                 {
@@ -913,6 +948,10 @@ namespace Aetheria.UnityClient
                     _client.SendOpenCorpse(target.Id); // range enforced server-side
                     break;
 
+                case EntityKind.Npc when target.RaceId == 2:
+                    if (_nearbyQuestGiverId >= 0) { _questWindowOpen = true; }
+                    break;
+
                 case EntityKind.Monster:
                     SetAttackIntent(target.Id);
                     break;
@@ -960,6 +999,8 @@ namespace Aetheria.UnityClient
         {
             if (_client.OpenCorpseId >= 0) { _client.CloseCorpse(); }
             else if (_nearbyCorpseId >= 0) { _client.SendOpenCorpse(_nearbyCorpseId); }
+            else if (_questWindowOpen) { _questWindowOpen = false; }
+            else if (_nearbyQuestGiverId >= 0) { _questWindowOpen = true; }
             else if (_bankOpen) { _bankOpen = false; }
             else if (_nearbyBankId >= 0) { _bankOpen = true; }
         }
@@ -1146,6 +1187,8 @@ namespace Aetheria.UnityClient
             DrawUiError();
             DrawCastBar();
             DrawChat();
+            DrawQuestTracker();
+            DrawQuestWindow();
             DrawLootWindow();
             DrawBankWindow();
             DrawBagsWindow();
@@ -2202,6 +2245,100 @@ namespace Aetheria.UnityClient
 
             int rows = ((items.Count - 1) / cols) + 1;
             return y + (rows * (icon + 4f));
+        }
+
+        // ---------------------------------------------------------------- Quests
+
+        /// <summary>The quest giver's dialogue: offer, progress, or turn-in — WoW-style panel.</summary>
+        private void DrawQuestWindow()
+        {
+            if (!_questWindowOpen) { return; }
+
+            Rect win = new Rect((VirtW / 2f) - 230, (VirtH / 2f) - 170, 460, 320);
+            WowUi.Panel(win, "Aldric le Guetteur");
+            if (GUI.Button(new Rect(win.xMax - 26, win.y + 6, 20, 20), "X")) { _questWindowOpen = false; return; }
+
+            float y = win.y + 48;
+            byte active = _client.ActiveQuestId;
+
+            if (active != 0)
+            {
+                QuestDefinition q = Data.GetQuest(active);
+                if (q == null) { _questWindowOpen = false; return; }
+
+                WowUi.Gold(new Rect(win.x + 20, y, win.width - 40, 22), "<size=14>" + q.Name + "</size>");
+                y += 30;
+
+                if (_client.QuestKills >= q.RequiredKills)
+                {
+                    WowUi.Body(new Rect(win.x + 20, y, win.width - 40, 90), q.TurnInText);
+                    y += 96;
+                    WowUi.Body(new Rect(win.x + 20, y, win.width - 40, 40),
+                        "<b>Récompenses :</b> " + QuestRewardText(q));
+                    if (WowUi.Button(new Rect(win.x + (win.width / 2f) - 90, win.yMax - 46, 180, 32), "Rendre la quête"))
+                    {
+                        _client.SendQuestAction(active, turnIn: true);
+                    }
+                }
+                else
+                {
+                    WowUi.Body(new Rect(win.x + 20, y, win.width - 40, 70),
+                        "Reviens me voir quand ce sera fait, aventurier.");
+                    y += 60;
+                    WowUi.Gold(new Rect(win.x + 20, y, win.width - 40, 22),
+                        "Progression : " + _client.QuestKills + " / " + q.RequiredKills);
+                }
+            }
+            else
+            {
+                byte next = (byte)(_client.QuestCompletedUpTo + 1);
+                QuestDefinition q = Data.GetQuest(next);
+                if (q != null)
+                {
+                    WowUi.Gold(new Rect(win.x + 20, y, win.width - 40, 22), "<size=14>" + q.Name + "</size>");
+                    y += 30;
+                    WowUi.Body(new Rect(win.x + 20, y, win.width - 40, 110), q.Description);
+                    y += 116;
+                    WowUi.Body(new Rect(win.x + 20, y, win.width - 40, 40),
+                        "<b>Récompenses :</b> " + QuestRewardText(q));
+                    if (WowUi.Button(new Rect(win.x + (win.width / 2f) - 80, win.yMax - 46, 160, 32), "Accepter"))
+                    {
+                        _client.SendQuestAction(next, turnIn: false);
+                    }
+                }
+                else
+                {
+                    WowUi.Body(new Rect(win.x + 20, y, win.width - 40, 110),
+                        "Le sanctuaire est en paix, grâce à toi. Repose-toi, héros — " +
+                        "d'autres dangers viendront bien assez tôt.");
+                }
+            }
+        }
+
+        private string QuestRewardText(QuestDefinition q)
+        {
+            string text = "+" + q.RewardXp + " XP";
+            if (q.RewardGold > 0) { text += " · " + FormatMoney(q.RewardGold); }
+            if (q.RewardItemId != 0) { text += " · " + Data.GetItem(q.RewardItemId).Name; }
+            return text;
+        }
+
+        /// <summary>The on-screen objective tracker under the minimap, WoW-style.</summary>
+        private void DrawQuestTracker()
+        {
+            byte active = _client.ActiveQuestId;
+            if (active == 0) { return; }
+
+            QuestDefinition q = Data.GetQuest(active);
+            if (q == null) { return; }
+
+            Rect r = new Rect(VirtW - 236, 232, 228, 66);
+            WowUi.Gold(new Rect(r.x, r.y, r.width, 18), "Objectifs");
+            WowUi.Body(new Rect(r.x, r.y + 20, r.width, 20), "<b>" + q.Name + "</b>");
+            bool done = _client.QuestKills >= q.RequiredKills;
+            WowUi.Body(new Rect(r.x, r.y + 40, r.width, 20), done
+                ? "<color=#70e070>Terminé — retourne voir Aldric</color>"
+                : "Tués : " + _client.QuestKills + " / " + q.RequiredKills);
         }
 
         private void DrawLootWindow()

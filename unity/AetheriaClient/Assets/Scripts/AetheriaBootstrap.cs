@@ -9,6 +9,9 @@ namespace Aetheria.UnityClient
     /// </summary>
     public static class AetheriaBootstrap
     {
+        /// <summary>The one sun. The day/night cycle drives it; nothing else casts shadows.</summary>
+        public static Light SunLight;
+
         [RuntimeInitializeOnLoadMethod(RuntimeInitializeLoadType.AfterSceneLoad)]
         private static void Boot()
         {
@@ -38,6 +41,22 @@ namespace Aetheria.UnityClient
             sun.shadows = LightShadows.Soft;
             sun.shadowStrength = 0.8f;
             lightGo.transform.rotation = Quaternion.Euler(38f, 40f, 0f);
+            SunLight = sun;
+
+            // ONE shadow only: a default scene often ships its own Directional Light — disable
+            // every directional light that isn't our sun, and strip shadows from the rest.
+            foreach (Light other in Object.FindObjectsOfType<Light>())
+            {
+                if (other == sun) { continue; }
+                if (other.type == LightType.Directional)
+                {
+                    other.gameObject.SetActive(false);
+                }
+                else
+                {
+                    other.shadows = LightShadows.None;
+                }
+            }
 
             RenderSettings.ambientMode = UnityEngine.Rendering.AmbientMode.Flat;
             RenderSettings.ambientLight = new Color(0.48f, 0.44f, 0.40f);

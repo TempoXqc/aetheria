@@ -190,6 +190,16 @@ public sealed class ServerEntity
 
     // --- Progression (players) ---
     public int TotalXp { get; set; }
+
+    // ------------------------------------------------------------ Quest chain
+    /// <summary>The quest currently being pursued (0 = none).</summary>
+    public byte ActiveQuestId { get; set; }
+
+    /// <summary>Kills counted toward the active quest's objective.</summary>
+    public int QuestKills { get; set; }
+
+    /// <summary>Highest quest id already completed (the chain is linear).</summary>
+    public byte QuestCompletedUpTo { get; set; }
     public int Level { get; set; } = 1;
 
     /// <summary>Progression stat bonuses derived from total XP, recomputed by the World.</summary>

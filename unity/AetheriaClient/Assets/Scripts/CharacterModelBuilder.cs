@@ -174,7 +174,8 @@ namespace Aetheria.UnityClient
                 case EntityKind.MonsterCorpse:
                     return BuildMonsterRemains(parent, snapshot.RaceId);
                 case EntityKind.Npc:
-                    return BuildBankChest(parent);
+                    // Npc "race" is a TYPE: 1 = bank chest, 2 = quest giver, 3+ = villager.
+                    return snapshot.RaceId >= 2 ? BuildVillager(parent, snapshot) : BuildBankChest(parent);
                 default:
                     // Real modular meshes (Quaternius pack) when imported; procedural otherwise.
                     if (QuaterniusCharacters.Available)
@@ -228,6 +229,50 @@ namespace Aetheria.UnityClient
 
             // Remains never animate: hand back an empty rig (pivots stay at rest).
             return new ModelRig { HeadHeight = 0.9f };
+        }
+
+        /// <summary>
+        /// A sanctuary NPC as a person: deterministic appearance from the name (every client sees
+        /// the same villager), the quest giver in watchman's gear, the others in peasant clothes.
+        /// </summary>
+        private static ModelRig BuildVillager(Transform parent, EntitySnapshot snapshot)
+        {
+            int seed = 7;
+            string name = snapshot.Name ?? "";
+            for (int i = 0; i < name.Length; i++)
+            {
+                seed = (seed * 31) + name[i];
+            }
+
+            seed = Mathf.Abs(seed);
+            bool female = name.Contains("Mira") || (!name.Contains("Aldric") && !name.Contains("Brom") && seed % 2 == 0);
+            var look = new Appearance(
+                (byte)(seed % 4), (byte)(seed % 3), (byte)(female ? 1 : seed % 3),
+                (byte)(seed % 6), (byte)(female ? 0 : (seed % 4)), (byte)(seed % 6));
+
+            // The quest giver wears watchman's gear (chest + boots); villagers stay in peasant cloth.
+            byte[] gear = null;
+            if (snapshot.RaceId == 2)
+            {
+                gear = new byte[Aetheria.Shared.Items.EquipSlots.Count];
+                gear[(int)Aetheria.Shared.Items.EquipSlot.Chest] = 9;
+                gear[(int)Aetheria.Shared.Items.EquipSlot.Feet] = 15;
+            }
+
+            var person = new EntitySnapshot(snapshot.Id, EntityKind.Player, Faction.Neutral, snapshot.Position,
+                1, 1, 0, 0, 0f, 1, name, raceId: 1, classId: 1,
+                gender: female ? Gender.Female : Gender.Male, appearance: look, equipment: gear);
+
+            if (QuaterniusCharacters.Available)
+            {
+                ModelRig q = QuaterniusCharacters.Create(parent, person);
+                if (q != null)
+                {
+                    return q;
+                }
+            }
+
+            return BuildPlayer(parent, person);
         }
 
         /// <summary>The sanctuary's bank chest: sturdy wood, iron bands, a golden lock.</summary>

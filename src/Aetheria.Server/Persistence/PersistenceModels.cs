@@ -47,6 +47,11 @@ public sealed class CharacterRecord
     public int TotalXp { get; set; }
     public int Gold { get; set; }
 
+    // Quest chain progress (linear): active quest, its kill counter, highest completed.
+    public byte ActiveQuestId { get; set; }
+    public int QuestKills { get; set; }
+    public byte QuestCompletedUpTo { get; set; }
+
     // Legacy two-slot fields (kept so pre-0.24 state files still restore).
     public byte EquippedWeaponId { get; set; }
     public byte EquippedArmorId { get; set; }

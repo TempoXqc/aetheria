@@ -529,6 +529,54 @@ public readonly struct InventoryState
     }
 }
 
+/// <summary>Accept a quest from (or turn one in to) the quest giver — server-validated.</summary>
+public readonly struct QuestAction
+{
+    public readonly byte QuestId;
+    public readonly bool TurnIn;
+
+    public QuestAction(byte questId, bool turnIn)
+    {
+        QuestId = questId;
+        TurnIn = turnIn;
+    }
+
+    public void Write(PacketWriter w)
+    {
+        w.WriteByte((byte)MessageType.QuestAction);
+        w.WriteByte(QuestId);
+        w.WriteByte(TurnIn ? (byte)1 : (byte)0);
+    }
+
+    public static QuestAction Read(ref PacketReader r) => new(r.ReadByte(), r.ReadByte() != 0);
+}
+
+/// <summary>This client's quest progress: active quest, kill count, and chain position.</summary>
+public readonly struct QuestStateMessage
+{
+    public readonly byte ActiveQuestId;
+    public readonly int Kills;
+    public readonly byte CompletedUpTo;
+
+    public QuestStateMessage(byte activeQuestId, int kills, byte completedUpTo)
+    {
+        ActiveQuestId = activeQuestId;
+        Kills = kills;
+        CompletedUpTo = completedUpTo;
+    }
+
+    public void Write(PacketWriter w)
+    {
+        w.WriteByte((byte)MessageType.QuestState);
+        w.WriteByte(ActiveQuestId);
+        w.WriteInt(Kills);
+        w.WriteByte(CompletedUpTo);
+    }
+
+    public static QuestStateMessage Read(ref PacketReader r)
+        => new(r.ReadByte(), r.ReadInt(), r.ReadByte());
+}
+
 /// <summary>Someone invited this client into a party (display name shown to the user).</summary>
 public readonly struct PartyInviteNotice
 {

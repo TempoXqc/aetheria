@@ -377,6 +377,11 @@ namespace Aetheria.UnityClient
                 // arm sway that fades out as soon as the character walks.
                 float sway = Mathf.Sin(Time.time * 1.7f) * 2.4f * (1f - stride);
 
+                // Walk BOB: the body rises on each footfall — twice per stride, like a real gait.
+                float bob = Mathf.Abs(Mathf.Sin(_walkPhase)) * 0.05f * stride;
+                Vector3 bodyPos = _body.localPosition;
+                _body.localPosition = new Vector3(bodyPos.x, bodyPos.y + bob, bodyPos.z);
+
                 // Legs swing opposite each other; arms counter-swing.
                 _rig.SwingX(_rig.LegL, swing);
                 _rig.SwingX(_rig.LegR, -swing);

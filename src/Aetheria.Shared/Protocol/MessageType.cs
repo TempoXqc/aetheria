@@ -39,6 +39,7 @@ public enum MessageType : byte
     EquipItem = 29,
     ChatSend = 30,
     AttackTarget = 31,
+    QuestAction = 32,
 
     // --- Server -> Client ---
     ConnectAccepted = 128,
@@ -61,6 +62,7 @@ public enum MessageType : byte
     LoginResult = 145,
     ServerInfo = 146,
     ChatMessage = 147,
+    QuestState = 148,
 }
 
 /// <summary>Coarse kind of an entity, so the client knows how to represent it. Extended over time.</summary>

@@ -158,6 +158,14 @@ public sealed class GameClient
     /// <summary>Fight this target (the server auto-swings); 0 stops attacking.</summary>
     public void SendAttackTarget(int targetEntityId) => Send(new AttackTarget(targetEntityId));
 
+    /// <summary>Accept (or turn in) a quest at the quest giver. The server validates everything.</summary>
+    public void SendQuestAction(byte questId, bool turnIn) => Send(new QuestAction(questId, turnIn));
+
+    /// <summary>The quest currently pursued (0 = none), its kill counter, and chain position.</summary>
+    public byte ActiveQuestId { get; private set; }
+    public int QuestKills { get; private set; }
+    public byte QuestCompletedUpTo { get; private set; }
+
     public void SendPartyInvite(int targetEntityId) => Send(new PartyInvite(targetEntityId));
 
     public void SendPartyRespond(bool accept) => Send(new PartyRespond(accept));
@@ -435,6 +443,13 @@ public sealed class GameClient
                     LastInspect = InspectResult.Read(ref reader);
                     break;
 
+                case MessageType.QuestState:
+                    QuestStateMessage quest = QuestStateMessage.Read(ref reader);
+                    ActiveQuestId = quest.ActiveQuestId;
+                    QuestKills = quest.Kills;
+                    QuestCompletedUpTo = quest.CompletedUpTo;
+                    break;
+
                 case MessageType.DuelNotice:
                     DuelNotice duelNotice = DuelNotice.Read(ref reader);
                     PendingDuelFrom = duelNotice.ChallengerName;
@@ -547,6 +562,7 @@ public sealed class GameClient
     }
 
     private void Send(Login msg) => SendWith(msg.Write);
+    private void Send(QuestAction msg) => SendWith(msg.Write);
     private void Send(CreateCharacter msg) => SendWith(msg.Write);
     private void Send(EnterWorld msg) => SendWith(msg.Write);
     private void Send(InputCommand msg) => SendWith(msg.Write);

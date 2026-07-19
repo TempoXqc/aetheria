@@ -607,6 +607,54 @@ namespace Aetheria.UnityClient
     }
 
     /// <summary>
+    /// The day/night cycle, driven by the SERVER tick so every player lives under the same sky.
+    /// One full day lasts <see cref="DayLengthSeconds"/>; the sun wheels across the sky, its
+    /// light warms and fades, the ambient and sky colours follow, night falls blue and dim.
+    /// </summary>
+    public static class DayNight
+    {
+        /// <summary>Real seconds for one full in-game day (10 min: you SEE time pass).</summary>
+        public const float DayLengthSeconds = 600f;
+
+        private static readonly Color DaySun = new Color(1f, 0.90f, 0.72f);
+        private static readonly Color DawnSun = new Color(1f, 0.62f, 0.38f);
+        private static readonly Color MoonLight = new Color(0.45f, 0.55f, 0.85f);
+        private static readonly Color DayAmbient = new Color(0.48f, 0.44f, 0.40f);
+        private static readonly Color NightAmbient = new Color(0.13f, 0.15f, 0.24f);
+        private static readonly Color DaySky = new Color(0.35f, 0.55f, 0.80f);
+        private static readonly Color DawnSky = new Color(0.75f, 0.45f, 0.30f);
+        private static readonly Color NightSky = new Color(0.03f, 0.045f, 0.10f);
+
+        /// <summary>Phase for a given world time: 0 = midnight, 0.25 = dawn, 0.5 = noon.</summary>
+        public static float PhaseFor(float worldSeconds)
+            => (worldSeconds % DayLengthSeconds) / DayLengthSeconds;
+
+        public static void Apply(Light sun, Camera cam, float phase)
+        {
+            if (sun == null) { return; }
+
+            // The sun wheels a full turn per day: below the horizon at night.
+            sun.transform.rotation = Quaternion.Euler((phase * 360f) - 90f, 40f, 0f);
+
+            // Daylight strength: 0 at night, 1 at noon; "dawnness" peaks at sunrise/sunset.
+            float daylight = Mathf.Clamp01(Mathf.Sin((phase - 0.25f) * 2f * Mathf.PI) * 1.6f);
+            float dawn = Mathf.Clamp01(1f - (Mathf.Abs(daylight - 0.25f) * 4f)) *
+                         (daylight > 0.01f ? 1f : 0f);
+
+            sun.intensity = 0.10f + (1.15f * daylight);
+            sun.color = Color.Lerp(Color.Lerp(MoonLight, DaySun, daylight), DawnSun, dawn * 0.7f);
+            sun.shadowStrength = 0.35f + (0.45f * daylight);
+
+            RenderSettings.ambientLight = Color.Lerp(NightAmbient, DayAmbient, daylight);
+            if (cam != null)
+            {
+                Color sky = Color.Lerp(NightSky, DaySky, daylight);
+                cam.backgroundColor = Color.Lerp(sky, DawnSky, dawn * 0.6f);
+            }
+        }
+    }
+
+    /// <summary>
     /// The WoW-style minimap: a second orthographic camera looking straight down at the player,
     /// rendered into a RenderTexture the HUD draws in the top-right corner.
     /// </summary>

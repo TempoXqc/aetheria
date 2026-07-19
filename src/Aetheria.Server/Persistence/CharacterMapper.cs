@@ -27,6 +27,9 @@ public static class CharacterMapper
             BeardColor = entity.Appearance.BeardColor,
             TotalXp = entity.TotalXp,
             Gold = entity.Inventory.Gold,
+            ActiveQuestId = entity.ActiveQuestId,
+            QuestKills = entity.QuestKills,
+            QuestCompletedUpTo = entity.QuestCompletedUpTo,
             EquippedWeaponId = entity.EquippedWeaponId,
             EquippedArmorId = entity.EquippedArmorId,
         };
@@ -61,6 +64,9 @@ public static class CharacterMapper
     {
         world.GrantExperience(entity, record.TotalXp);
         entity.Inventory.AddGold(record.Gold);
+        entity.ActiveQuestId = record.ActiveQuestId;
+        entity.QuestKills = record.QuestKills;
+        entity.QuestCompletedUpTo = record.QuestCompletedUpTo;
 
         foreach (ItemStackRecord item in record.Items)
         {

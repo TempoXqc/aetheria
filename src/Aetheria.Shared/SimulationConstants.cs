@@ -77,6 +77,9 @@ public static class SimulationConstants
     /// <summary>How close a looter must be to a corpse to loot it (world units).</summary>
     public const float LootRange = 5f;
 
+    /// <summary>How close a player must stand to the quest giver to accept or turn in.</summary>
+    public const float QuestGiverRange = 5f;
+
     /// <summary>Gold a new character starts with.</summary>
     public const int StartingGold = 50;
 
@@ -87,7 +90,7 @@ public static class SimulationConstants
     public const int MaxPartySize = 40;
 
     /// <summary>Protocol version — bump on any wire-format change; handshake rejects mismatches.</summary>
-    public const byte ProtocolVersion = 19;
+    public const byte ProtocolVersion = 20;
 
     /// <summary>How close two players must be to trade (world units).</summary>
     public const float TradeRange = 6f;
@@ -112,5 +115,5 @@ public static class SimulationConstants
     /// in the in-game HUD, and in the server startup log, so "am I up to date?" has a one-glance
     /// answer on both sides.
     /// </summary>
-    public const string GameVersion = "0.29.3";
+    public const string GameVersion = "0.30.0";
 }
