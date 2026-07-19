@@ -93,8 +93,14 @@ public static class SimulationConstants
     public static int VendorSellPrice(int goldValue)
         => System.Math.Max(1, goldValue / VendorSellDivisor);
 
-    /// <summary>The merchant's stock (item ids from the item registry): basics + consumables.</summary>
-    public static readonly byte[] VendorStock = { 20, 26, 27, 1, 5, 6, 13, 15, 17, 19, 21, 12, 23, 24, 25 };
+    /// <summary>
+    /// MIRA's stock (supplies): potions, food, bags, light garments. The heavy iron lives at
+    /// the smith's — two merchants, two trades, like a real town.
+    /// </summary>
+    public static readonly byte[] VendorStock = { 20, 26, 27, 12, 13, 15, 17, 19, 21, 18, 23, 24, 25 };
+
+    /// <summary>BROM the smith's stock: weapons, shields, mail — arms and heavy armor.</summary>
+    public static readonly byte[] VendorStockSmith = { 1, 2, 4, 5, 6, 7, 8, 9, 14, 16, 22 };
 
     /// <summary>Gold a new character starts with.</summary>
     public const int StartingGold = 50;
@@ -146,5 +152,5 @@ public static class SimulationConstants
     /// in the in-game HUD, and in the server startup log, so "am I up to date?" has a one-glance
     /// answer on both sides.
     /// </summary>
-    public const string GameVersion = "0.51.0";
+    public const string GameVersion = "0.51.1";
 }

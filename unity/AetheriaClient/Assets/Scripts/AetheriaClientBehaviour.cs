@@ -97,6 +97,8 @@ namespace Aetheria.UnityClient
         }
 
         private readonly List<ChatLine> _chatHistory = new List<ChatLine>();
+        private readonly Dictionary<int, (string text, float until)> _chatBubbles =
+            new Dictionary<int, (string, float)>();
         private readonly List<ChatTab> _chatTabs = new List<ChatTab>();
         private int _chatTabIndex;
         private int _chatTabConfig = -1; // tab being configured (right-click), -1 = none
@@ -171,7 +173,9 @@ namespace Aetheria.UnityClient
         private int _nearbyQuestGiverId = -1;
         private bool _shopOpen;
         private int _nearbyMerchantId = -1;
+        private byte _nearbyMerchantType; // 4 = Mira (fournitures), 8 = Brom (armes/armures)
         private int _nearbyInnkeeperId = -1;
+        private bool _innDialogOpen; // the innkeeper's talk window
         private float _hearthReadyTime; // local display only — the server is the judge
         private readonly Dictionary<byte, float> _cooldownReadyAt = new Dictionary<byte, float>();
 
@@ -446,6 +450,7 @@ namespace Aetheria.UnityClient
                 else if (_awaitingBind != null) { _awaitingBind = null; }
                 else if (_partyMenuFor >= 0) { _partyMenuFor = -1; }
                 else if (_contextEntityId >= 0) { _contextEntityId = -1; }
+                else if (_innDialogOpen) { _innDialogOpen = false; }
                 else if (_client.TradeActive) { _client.SendTradeCancel(); }
                 else if (_client.LastInspect != null) { _client.ClearInspect(); }
                 else if (_questWindowOpen) { _questWindowOpen = false; }
@@ -1102,11 +1107,12 @@ namespace Aetheria.UnityClient
             for (int i = 0; i < visible.Count; i++)
             {
                 EntitySnapshot e = visible[i];
-                if (e.Kind != EntityKind.Npc || e.RaceId != 4) { continue; }
+                if (e.Kind != EntityKind.Npc || (e.RaceId != 4 && e.RaceId != 8)) { continue; }
                 if (Vec2.DistanceSquared(self.Position, e.Position) <=
                     SimulationConstants.VendorRange * SimulationConstants.VendorRange)
                 {
                     _nearbyMerchantId = e.Id;
+                    _nearbyMerchantType = e.RaceId;
                     break;
                 }
             }
@@ -1114,6 +1120,11 @@ namespace Aetheria.UnityClient
             if (_shopOpen && _nearbyMerchantId < 0)
             {
                 _shopOpen = false; // walked away: the shop closes
+            }
+
+            if (_innDialogOpen && _nearbyInnkeeperId < 0)
+            {
+                _innDialogOpen = false; // walked away from the inn
             }
 
             // The innkeeper too (npcType 7): F binds the hearthstone at her inn.
@@ -1168,6 +1179,19 @@ namespace Aetheria.UnityClient
                 if (m.Channel == ChatChannel.Whisper && m.From.Length > 0)
                 {
                     _lastWhisperFrom = m.From; // « /rep » answers here
+                }
+
+                // « Dire » floats in a SPEECH BUBBLE over the speaker (yourself included).
+                if (m.Channel == ChatChannel.Say && m.From.Length > 0)
+                {
+                    foreach (EntityView v in _views.Values)
+                    {
+                        if (v != null && v.Kind == EntityKind.Player && v.DisplayName == m.From)
+                        {
+                            _chatBubbles[v.EntityId] = (m.Text, Time.time + 3f + (m.Text.Length * 0.06f));
+                            break;
+                        }
+                    }
                 }
 
                 if (_chatHistory.Count > 200) { _chatHistory.RemoveAt(0); }
@@ -1493,19 +1517,29 @@ namespace Aetheria.UnityClient
                     _client.SendOpenCorpse(target.Id); // range enforced server-side
                     break;
 
-                case EntityKind.Npc when target.RaceId == 2:
-                    // Right-click on the quest giver: TARGET him too, then open his window.
-                    _targetHostile = false;
-                    _targetId = target.Id;
-                    _client.SendAttackTarget(0);
-                    if (_nearbyQuestGiverId >= 0) { _questWindowOpen = true; }
-                    break;
-
                 case EntityKind.Npc:
-                    // Any other NPC: right-click selects it, same sticky rules as left-click.
+                    // Right-click on an NPC: select it — and IN RANGE, open its window
+                    // (quests, stall, bank, inn talk), WoW-style.
                     _targetHostile = false;
                     _targetId = target.Id;
                     _client.SendAttackTarget(0);
+                    switch (target.RaceId)
+                    {
+                        case 2 when _nearbyQuestGiverId >= 0:
+                            _questWindowOpen = true;
+                            break;
+                        case 4 or 8 when _nearbyMerchantId == target.Id:
+                            _shopOpen = true;
+                            _bagsOpen = true;
+                            break;
+                        case 1 when _nearbyBankId >= 0:
+                            _bankOpen = true;
+                            break;
+                        case 7 when _nearbyInnkeeperId == target.Id:
+                            _innDialogOpen = true;
+                            break;
+                    }
+
                     break;
 
                 case EntityKind.Monster:
@@ -1813,6 +1847,7 @@ namespace Aetheria.UnityClient
             }
 
             if (_cfg.ShowHealthBars || _cfg.ShowNameplates) { DrawNameplates(); }
+            DrawChatBubbles();
             DrawMinimap();
             DrawCorpsePrompt();
             DrawBankPrompt();
@@ -1840,6 +1875,7 @@ namespace Aetheria.UnityClient
             DrawSocialNotices();
             DrawTradeWindow();
             DrawMicroBar();
+            DrawInnDialog();
             DrawInspectWindow();
             DrawQuestLogWindow();
             DrawWorldMapWindow();
@@ -3251,6 +3287,52 @@ namespace Aetheria.UnityClient
             GUI.DrawTexture(new Rect(m.x + 12, m.y + 8, 22, 22), CursorIconTex(_cursorIcon));
         }
 
+        /// <summary>WoW speech bubbles: what was SAID floats over the speaker, then fades.</summary>
+        private void DrawChatBubbles()
+        {
+            if (_chatBubbles.Count == 0 || Camera.main == null)
+            {
+                return;
+            }
+
+            List<int> stale = null;
+            foreach (KeyValuePair<int, (string text, float until)> pair in _chatBubbles)
+            {
+                if (Time.time > pair.Value.until ||
+                    !_views.TryGetValue(pair.Key, out EntityView view) || view == null)
+                {
+                    (stale ??= new List<int>()).Add(pair.Key);
+                    continue;
+                }
+
+                Vector3 screen = Camera.main.WorldToScreenPoint(
+                    view.transform.position + (Vector3.up * (view.HeadHeight + 1.15f)));
+                if (screen.z < 0f) { continue; }
+
+                float x = screen.x / _cfg.UiScale;
+                float y = (Screen.height - screen.y) / _cfg.UiScale;
+                string text = pair.Value.text;
+                float w = Mathf.Clamp(40f + (text.Length * 6.4f), 60f, 220f);
+                float h = 22f + (Mathf.CeilToInt(text.Length * 6.4f / 200f) * 13f);
+
+                var bubble = new Rect(x - (w / 2f), y - h, w, h);
+                Color prev = GUI.color;
+                GUI.color = new Color(1f, 1f, 1f, 0.92f);
+                GUI.DrawTexture(bubble, Texture2D.whiteTexture);
+                GUI.color = new Color(1f, 1f, 1f, 0.92f);
+                GUI.DrawTexture(new Rect(x - 4, bubble.yMax, 8, 6), Texture2D.whiteTexture); // the tail
+                GUI.color = prev;
+                GUI.Label(new Rect(bubble.x + 6, bubble.y + 3, bubble.width - 12, bubble.height - 6),
+                    "<size=10><color=#1c1c1c>" + text + "</color></size>",
+                    new GUIStyle(GUI.skin.label) { richText = true, wordWrap = true, alignment = TextAnchor.MiddleCenter });
+            }
+
+            if (stale != null)
+            {
+                foreach (int id in stale) { _chatBubbles.Remove(id); }
+            }
+        }
+
         /// <summary>The quest giver's overhead marker: "!", gold "?", grey "?", or nothing.</summary>
         private string QuestGiverMarker()
         {
@@ -3607,7 +3689,7 @@ namespace Aetheria.UnityClient
                     break;
 
                 case EntityKind.Npc:
-                    _cursorIcon = e.RaceId switch { 4 => 2, 3 => 3, _ => 0 }; // purse / anvil
+                    _cursorIcon = e.RaceId switch { 4 => 2, 8 => 3, _ => 0 }; // purse / anvil
                     sb.Append("<b><color=#40d040>").Append(e.Name).Append("</color></b>");
                     string title = e.RaceId switch
                     {
@@ -3616,6 +3698,7 @@ namespace Aetheria.UnityClient
                         5 => "Portail d'instance",
                         6 => "Pierre de rencontre",
                         7 => "Aubergiste",
+                        8 => "Forgeron — armes et armures",
                         3 => "Artisan",
                         _ => "",
                     };
@@ -3927,11 +4010,13 @@ namespace Aetheria.UnityClient
         {
             if (!_shopOpen) { return; }
 
-            byte[] stock = SimulationConstants.VendorStock;
+            bool smith = _nearbyMerchantType == 8;
+            byte[] stock = smith ? SimulationConstants.VendorStockSmith : SimulationConstants.VendorStock;
             float height = 78f + (stock.Length * 30f) + 40f;
             Rect win = new Rect(20, (VirtH / 2f) - (height / 2f), 330, height);
             WowUi.Panel(win);
-            WowUi.GoldCentered(new Rect(win.x, win.y + 7, win.width, 18), "<b>Mira la Marchande</b>");
+            WowUi.GoldCentered(new Rect(win.x, win.y + 7, win.width, 18),
+                smith ? "<b>Brom le Forgeron</b>" : "<b>Mira la Marchande</b>");
 
             if (GUI.Button(new Rect(win.x + win.width - 26, win.y + 5, 21, 21), "X"))
             {
@@ -3941,7 +4026,9 @@ namespace Aetheria.UnityClient
 
             float y = win.y + 32f;
             GUI.Label(new Rect(win.x + 12, y, win.width - 24, 18),
-                "<size=10><color=#c0c0c0>« Regarde ma marchandise, voyageur ! »</color></size>", Rich());
+                smith
+                    ? "<size=10><color=#c0c0c0>« Du bon acier, forgé ici même. »</color></size>"
+                    : "<size=10><color=#c0c0c0>« Regarde ma marchandise, voyageur ! »</color></size>", Rich());
             y += 22f;
 
             for (int i = 0; i < stock.Length; i++)
@@ -4531,6 +4618,37 @@ namespace Aetheria.UnityClient
                 {
                     _tooltip = "<b>" + entries[i].tip + "</b>";
                 }
+            }
+        }
+
+        /// <summary>The innkeeper's talk window: a WoW gossip page with the hearthstone choice.</summary>
+        private void DrawInnDialog()
+        {
+            if (!_innDialogOpen)
+            {
+                return;
+            }
+
+            var win = new Rect((VirtW / 2f) - 190, (VirtH / 2f) - 130, 380, 240);
+            WowUi.Panel(win);
+            WowUi.GoldCentered(new Rect(win.x, win.y + 8, win.width, 20), "<b>Aubergiste Marla</b>");
+            if (GUI.Button(new Rect(win.xMax - 26, win.y + 5, 21, 21), "X")) { _innDialogOpen = false; return; }
+
+            WowUi.Body(new Rect(win.x + 18, win.y + 36, win.width - 36, 90),
+                "« Bienvenue à l'auberge du Sanctuaire, voyageur. Le feu est chaud, la paille " +
+                "est propre, et personne ne viendra te chercher noise sous mon toit. Si tu veux " +
+                "faire de cette auberge ton foyer, ta pierre te ramènera toujours ici. »");
+
+            if (WowUi.Button(new Rect(win.x + 24, win.y + 138, win.width - 48, 30),
+                "⌂  Faire de cette auberge ton foyer"))
+            {
+                _client.SendSetHome();
+                _innDialogOpen = false;
+            }
+
+            if (WowUi.Button(new Rect(win.x + 24, win.y + 176, win.width - 48, 28), "Au revoir"))
+            {
+                _innDialogOpen = false;
             }
         }
 

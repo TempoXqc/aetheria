@@ -394,19 +394,22 @@ public sealed class World
         return copy;
     }
 
-    private bool NearMerchant(ServerEntity player)
+    /// <summary>The merchant NPC in range (Mira npcType 4 or Brom the smith 8), or null.</summary>
+    private ServerEntity? NearbyMerchant(ServerEntity player)
     {
         foreach (ServerEntity e in _entities.Values)
         {
-            if (e.Kind == EntityKind.Npc && e.RaceId == 4 &&
+            if (e.Kind == EntityKind.Npc && (e.RaceId == 4 || e.RaceId == 8) &&
                 Vec2.DistanceSquared(player.Position, e.Position) <= SimulationConstants.VendorRange * SimulationConstants.VendorRange)
             {
-                return true;
+                return e;
             }
         }
 
-        return false;
+        return null;
     }
+
+    private bool NearMerchant(ServerEntity player) => NearbyMerchant(player) is not null;
 
     /// <summary>The merchant's buy-back rate: a quarter of the item's value, at least 1 copper.</summary>
     public static int VendorSellPrice(ItemDefinition def)
@@ -439,9 +442,13 @@ public sealed class World
             return true;
         }
 
-        // Buying: the item must be in the merchant's stock.
+        // Buying: the item must be in THIS merchant's stall (Mira's supplies or Brom's iron).
+        ServerEntity? stall = NearbyMerchant(player);
+        byte[] stock = stall is { RaceId: 8 }
+            ? SimulationConstants.VendorStockSmith
+            : SimulationConstants.VendorStock;
         bool stocked = false;
-        foreach (byte id in SimulationConstants.VendorStock)
+        foreach (byte id in stock)
         {
             if (id == itemId) { stocked = true; break; }
         }

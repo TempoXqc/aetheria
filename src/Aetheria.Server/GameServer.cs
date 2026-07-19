@@ -200,7 +200,7 @@ public sealed class GameServer
         // stalls — the safe zone should feel inhabited, not just paved.
         open.SpawnNpc("Aldric le Guetteur", new Vec2(3.5f, 3.5f), npcType: 2);
         open.SpawnNpc("Mira la Marchande", new Vec2(-3.2f, 5.6f), npcType: 4); // 4 = merchant
-        open.SpawnNpc("Brom le Forgeron", new Vec2(-6.0f, -3.8f), npcType: 3);
+        open.SpawnNpc("Brom le Forgeron", new Vec2(-6.0f, -3.8f), npcType: 8); // 8 = smith-merchant
         open.SpawnNpc("Aubergiste Marla", new Vec2(6.2f, -2.5f), npcType: 7);  // 7 = innkeeper
 
         // ZONE DE DÉPART — ISOLATED goblins east of the sanctuary: every early fight is a duel,
