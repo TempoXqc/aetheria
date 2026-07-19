@@ -251,6 +251,61 @@ public static class HostMode
         return true;
     }
 
+    /// <summary>
+    /// The friend package: a ZIP with ONLY the player launcher (exe + page + official address).
+    /// No repo, no server launcher, no game inside — the launcher downloads the game from the
+    /// patch server on first run, so the zip never goes stale. Returns the zip path, or null.
+    /// </summary>
+    public static string? CreateShareZip()
+    {
+        try
+        {
+            string source = Path.Combine(RepoRoot!, "artifacts", "bin", "Launcher", "release");
+            if (!File.Exists(Path.Combine(source, "Launcher.exe")) &&
+                !File.Exists(Path.Combine(source, "Launcher.dll")))
+            {
+                Log("ZIP amis : binaires du launcher introuvables.");
+                return null;
+            }
+
+            string stage = Path.Combine(RepoRoot!, "run", "partage-stage");
+            if (Directory.Exists(stage)) { Directory.Delete(stage, recursive: true); }
+            CopyDirectory(source, stage);
+
+            File.Copy(Path.Combine(RepoRoot!, "tools", "Launcher", "launcher.html"),
+                Path.Combine(stage, "launcher.html"), overwrite: true);
+            string officialAddress = Path.Combine(RepoRoot!, "launcher.txt");
+            if (File.Exists(officialAddress))
+            {
+                File.Copy(officialAddress, Path.Combine(stage, "launcher.txt"), overwrite: true);
+            }
+
+            File.WriteAllText(Path.Combine(stage, "LISEZMOI.txt"),
+                "AETHERIA — Launcher\r\n" +
+                "===================\r\n\r\n" +
+                "1) Installe .NET 10 (une fois) : https://dotnet.microsoft.com/download\r\n" +
+                "2) Double-clique Launcher.exe\r\n" +
+                "3) Entre ton compte + mot de passe (créés au premier INSTALLER > JOUER)\r\n" +
+                "4) Clique INSTALLER : le jeu se télécharge tout seul, puis JOUER.\r\n\r\n" +
+                "Les mises à jour sont automatiques : quand le bouton dit\r\n" +
+                "« Mettre à jour », un clic suffit.\r\n",
+                new UTF8Encoding(false));
+
+            string shareDir = Path.Combine(RepoRoot!, "partage");
+            Directory.CreateDirectory(shareDir);
+            string zip = Path.Combine(shareDir, "Aetheria-Amis.zip");
+            if (File.Exists(zip)) { File.Delete(zip); }
+            System.IO.Compression.ZipFile.CreateFromDirectory(stage, zip);
+            Log("── ZIP pour amis créé : " + zip);
+            return zip;
+        }
+        catch (Exception e)
+        {
+            Log("ZIP amis : " + e.Message);
+            return null;
+        }
+    }
+
     /// <summary>Copy the build into builds/{channel} and write its manifest — pure file work,
     /// done IN THIS PROCESS so nothing recompiles while realms run.</summary>
     private static void PublishChannel(string buildDir, string channel, string version)
