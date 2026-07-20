@@ -56,6 +56,21 @@ public sealed class World
     public uint Tick { get; private set; }
 
     /// <summary>
+    /// Align this world's clock with another's (instance creation). Entities carry ABSOLUTE
+    /// tick stamps (ability cooldowns, GCD, potion timer, cast windows) across world
+    /// transfers — so every world must tell the SAME time. A fresh instance starting at
+    /// tick 0 made every stamp look hours away: no attacks, no heals, for everyone whose
+    /// cooldowns had ever ticked in the open world.
+    /// </summary>
+    public void SyncClock(uint tick) => Tick = tick;
+
+    /// <summary>
+    /// Delay before a slain MONSTER of this world comes back (players keep the global 5 s).
+    /// Instances crank this way up: a dungeon pack respawning every 5 seconds is a treadmill.
+    /// </summary>
+    public int MonsterRespawnDelayTicks { get; set; } = SimulationConstants.RespawnDelayTicks;
+
+    /// <summary>
     /// Injected by the GameServer: the OTHER party members' entity ids for a given player
     /// entity id (empty when solo). Lets kills share XP, quest credit and quest loot with the
     /// healer and the tank — the whole group hunted, the whole group is paid.
@@ -355,6 +370,7 @@ public sealed class World
             Name = def.Name,
             MonsterId = def.Id,
             Level = def.Level,
+            RespawnDelayTicks = MonsterRespawnDelayTicks,
         };
 
         AddAlive(entity);

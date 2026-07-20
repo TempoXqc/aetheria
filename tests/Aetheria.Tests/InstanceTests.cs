@@ -41,6 +41,59 @@ public static class InstanceTests
         Assert.False(WorldManager.CanEnter(Dungeon, 6, out _));
     }
 
+    [Test("Entering an instance NEVER locks abilities: its clock matches the open world.")]
+    public static void InstanceClock_MatchesOpenWorld_AbilitiesStayReady()
+    {
+        var manager = new WorldManager();
+
+        // Age the open world so cooldown stamps carry BIG tick values.
+        for (int i = 0; i < 400; i++) { manager.OpenWorld.Step(Aetheria.Shared.SimulationConstants.TickDelta); }
+
+        ServerEntity tank = manager.OpenWorld.SpawnPlayer(new PeerId(1), "Rempart", raceId: 0, classId: 1);
+        manager.OpenWorld.Teleport(tank, new Vec2(40f, 0f)); // OUTSIDE the sanctuary
+        ServerEntity dummy = manager.OpenWorld.SpawnMonster(1, new Vec2(41.2f, 0f));
+        tank.FacingRadians = 0f;
+        Assert.True(manager.OpenWorld.TryUseAbility(tank.Id, 1, dummy.Id)); // stamps cooldown + GCD
+
+        World inst = manager.CreateInstance(Dungeon, groupSize: 1);
+        Assert.Equal((int)manager.OpenWorld.Tick, (int)inst.Tick); // SAME clock
+
+        WorldManager.TransferPlayer(manager.OpenWorld, inst, tank.Id, new Vec2(0f, 0f));
+
+        // Let the swing cooldown + GCD expire INSIDE the instance, then strike its monster.
+        for (int i = 0; i < 80; i++) { inst.Step(Aetheria.Shared.SimulationConstants.TickDelta); }
+
+        ServerEntity mob = inst.Entities.Values.First(e => e.IsMonster);
+        inst.Teleport(tank, mob.Position + new Vec2(-1.2f, 0f));
+        tank.FacingRadians = 0f;
+        Assert.True(inst.TryUseAbility(tank.Id, 1, mob.Id),
+            "the transferring player's cooldown stamps must stay meaningful in the instance");
+    }
+
+    [Test("Instance monsters respawn SLOWLY (3 min), not on the open world's 5-second treadmill.")]
+    public static void InstanceMonsters_RespawnSlowly()
+    {
+        var manager = new WorldManager();
+        World inst = manager.CreateInstance(Dungeon, groupSize: 1);
+        ServerEntity mob = inst.Entities.Values.First(e => e.IsMonster);
+        ServerEntity tank = manager.OpenWorld.SpawnPlayer(new PeerId(1), "Rempart", raceId: 0, classId: 1);
+        WorldManager.TransferPlayer(manager.OpenWorld, inst, tank.Id, new Vec2(0f, 0f));
+        inst.Teleport(tank, mob.Position + new Vec2(-1.2f, 0f));
+        tank.FacingRadians = 0f;
+
+        for (int i = 0; i < 4000 && mob.IsAlive; i++)
+        {
+            inst.TryUseAbility(tank.Id, 1, mob.Id);
+            inst.Step(Aetheria.Shared.SimulationConstants.TickDelta);
+        }
+
+        Assert.True(mob.IsDead, "the pack must fall first");
+
+        // 30 s later (open world would have respawned it at 5 s): STILL down.
+        for (int i = 0; i < 600; i++) { inst.Step(Aetheria.Shared.SimulationConstants.TickDelta); }
+        Assert.True(mob.IsDead, "3-minute timer: nothing comes back after only 30 s");
+    }
+
     [Test("Instance monsters scale with group size (health and damage multipliers).")]
     public static void CreateInstance_ScalesMonsters()
     {

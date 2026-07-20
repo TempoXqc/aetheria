@@ -4,7 +4,7 @@
     "name": "Ragefire Depths",
     "isRaid": false,
     "minPlayers": 2,
-    "maxPlayers": 5,
+    "maxPlayers": 6,
     "healthScalingPerExtraPlayer": 0.5,
     "damageScalingPerExtraPlayer": 0.25,
     "spawns": [

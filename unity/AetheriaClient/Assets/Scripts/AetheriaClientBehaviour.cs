@@ -2896,6 +2896,15 @@ namespace Aetheria.UnityClient
 
             Rect area = FrameRect(HudConfig.Frame.PartyFrames);
             int selfId = _client.EntityId ?? -1;
+
+            // Beyond MaxGroupSize the group IS a RAID: compact two-column frames
+            // (name + health), or forty full frames would swallow the screen.
+            if (members.Count > SimulationConstants.MaxGroupSize)
+            {
+                DrawRaidFrames(members, area, selfId);
+                return;
+            }
+
             float y = area.y;
             foreach (PartyMemberInfo m in members)
             {
@@ -2964,6 +2973,64 @@ namespace Aetheria.UnityClient
                 }
 
                 y += 64f;
+            }
+
+            DrawPartyFrameMenu();
+        }
+
+        /// <summary>RAID frames: two compact columns of name + health, WoW-raid style.</summary>
+        private void DrawRaidFrames(IReadOnlyList<PartyMemberInfo> members, Rect area, int selfId)
+        {
+            WowUi.GoldCentered(new Rect(area.x, area.y, area.width, 16),
+                "<size=11><b>Raid — " + members.Count + " membres</b></size>");
+
+            const float RowH = 30f;
+            float colW = (area.width - 4f) / 2f;
+            int slot = 0;
+            foreach (PartyMemberInfo m in members)
+            {
+                if (m.EntityId == selfId) { continue; }
+
+                var cell = new Rect(area.x + (slot % 2 * (colW + 4f)),
+                    area.y + 20f + (slot / 2 * (RowH + 3f)), colW, RowH);
+                WowUi.Panel(cell);
+
+                if (!m.Online)
+                {
+                    Dim(cell, 0.45f);
+                    GUI.Label(new Rect(cell.x + 4, cell.y + 1, cell.width - 8, 14),
+                        "<size=9><color=#808088>" + m.Name + " (déco)</color></size>", Rich());
+                    slot++;
+                    continue;
+                }
+
+                bool leader = m.Name == _client.PartyLeader;
+                GUI.Label(new Rect(cell.x + 4, cell.y + 1, cell.width - 8, 14),
+                    "<size=9><color=#ffd100>" + (leader ? "★ " : "") + m.Name + "</color></size>", Rich());
+                float fill = m.MaxHealth > 0 ? m.Health / (float)m.MaxHealth : 0f;
+                DrawBar(new Rect(cell.x + 4, cell.y + 17, cell.width - 8, 9), fill,
+                    new Color(0.20f, 0.75f, 0.25f), "");
+
+                Event e = Event.current;
+                if (e.type == EventType.MouseDown && cell.Contains(e.mousePosition))
+                {
+                    if (e.button == 0)
+                    {
+                        _autoTargetPicked = false;
+                        _targetId = m.EntityId;
+                        _targetHostile = false;
+                        _client.SendAttackTarget(0);
+                    }
+                    else if (e.button == 1)
+                    {
+                        _partyMenuFor = m.EntityId;
+                        _partyMenuPos = new Vector2(cell.xMax + 4, cell.y);
+                    }
+
+                    e.Use();
+                }
+
+                slot++;
             }
 
             DrawPartyFrameMenu();

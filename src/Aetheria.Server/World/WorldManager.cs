@@ -77,6 +77,14 @@ public sealed class WorldManager
         float dmgMult = 1f + (def.DamageScalingPerExtraPlayer * (groupSize - 1));
 
         var world = new World(_gameData, _ids);
+
+        // Same clock as the open world: cooldown/GCD stamps ride along with transferring
+        // players, and a tick-0 instance would refuse their every ability for hours.
+        world.SyncClock(OpenWorld.Tick);
+
+        // Dungeon packs come back SLOWLY (3 min), not on the open world's 5-second treadmill.
+        world.MonsterRespawnDelayTicks = Aetheria.Shared.SimulationConstants.InstanceRespawnDelayTicks;
+
         foreach (InstanceSpawn spawn in def.Spawns)
         {
             world.SpawnMonster(spawn.MonsterId, new Vec2(spawn.X, spawn.Y), hpMult, dmgMult);

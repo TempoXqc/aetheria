@@ -323,7 +323,7 @@ public sealed class GameData
         [
             new InstanceDefinition
             {
-                Id = 1, Name = "Ragefire Depths", IsRaid = false, MinPlayers = 2, MaxPlayers = 5,
+                Id = 1, Name = "Ragefire Depths", IsRaid = false, MinPlayers = 2, MaxPlayers = 6,
                 HealthScalingPerExtraPlayer = 0.5f, DamageScalingPerExtraPlayer = 0.25f,
                 Spawns =
                 [

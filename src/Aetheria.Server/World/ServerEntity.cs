@@ -84,6 +84,9 @@ public sealed class ServerEntity
     public bool IsDead { get; private set; }
     public bool IsAlive => !IsDead;
     public uint RespawnAtTick { get; private set; }
+
+    /// <summary>Delay before this entity respawns after dying (instances slow monsters down).</summary>
+    public int RespawnDelayTicks { get; set; } = SimulationConstants.RespawnDelayTicks;
     public uint LastCombatTick { get; private set; }
 
     public int? AiTargetId { get; set; }
@@ -283,7 +286,7 @@ public sealed class ServerEntity
             MoveIntent = Vec2.Zero;
             AiTargetId = null;
             _effects.Clear();
-            RespawnAtTick = tick + (uint)SimulationConstants.RespawnDelayTicks;
+            RespawnAtTick = tick + (uint)RespawnDelayTicks;
         }
     }
 

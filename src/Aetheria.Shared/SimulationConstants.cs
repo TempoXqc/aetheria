@@ -108,8 +108,18 @@ public static class SimulationConstants
     /// <summary>Number of item slots in an account bank.</summary>
     public const int BankCapacity = 200;
 
+    /// <summary>
+    /// A NORMAL group holds up to this many players; one more and it silently becomes a
+    /// RAID group (compact frames, raid-sized content) up to <see cref="MaxPartySize"/>.
+    /// </summary>
+    public const int MaxGroupSize = 6;
+
     /// <summary>Maximum party size (raid cap).</summary>
     public const int MaxPartySize = 40;
+
+    /// <summary>Monsters inside INSTANCES respawn after this many ticks (3 minutes) — the
+    /// open world keeps its quick 5 s; a dungeon pack must not be a treadmill.</summary>
+    public const int InstanceRespawnDelayTicks = 3 * 60 * TickRate;
 
     /// <summary>Protocol version — bump on any wire-format change; handshake rejects mismatches.</summary>
     public const byte ProtocolVersion = 33;
@@ -152,5 +162,5 @@ public static class SimulationConstants
     /// in the in-game HUD, and in the server startup log, so "am I up to date?" has a one-glance
     /// answer on both sides.
     /// </summary>
-    public const string GameVersion = "0.53.2";
+    public const string GameVersion = "0.54.0";
 }
