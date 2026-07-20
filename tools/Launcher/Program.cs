@@ -151,6 +151,16 @@ app.MapPost("/api/update", async (HttpRequest request) =>
     string installDir = Path.Combine(BaseDataDir(), "game", channel);
     Directory.CreateDirectory(installDir);
 
+    // The GAME must be CLOSED: Windows refuses to overwrite the files of a running
+    // process, and the download died mid-file with a cryptic sharing violation.
+    if (GameIsRunningFrom(installDir))
+    {
+        return Results.BadRequest(new
+        {
+            error = "Le jeu est encore ouvert — ferme Aetheria, puis relance la mise à jour.",
+        });
+    }
+
     lock (updateLock) { /* one update at a time */ }
 
     // PASS 1 — the shopping list: hash every local file, keep only what really changed.
@@ -214,10 +224,10 @@ app.MapPost("/api/update", async (HttpRequest request) =>
     }
     catch (Exception e)
     {
-        return Results.BadRequest(new
-        {
-            error = $"Téléchargement interrompu ({progFile}) : {e.Message} — reclique, il reprendra où il en était.",
-        });
+        string hint = e is IOException && e.Message.Contains("being used by another process")
+            ? "Le jeu est encore ouvert — ferme Aetheria, puis reclique : la mise à jour reprendra où elle en était."
+            : $"Téléchargement interrompu ({progFile}) : {e.Message} — reclique, il reprendra où il en était.";
+        return Results.BadRequest(new { error = hint });
     }
     finally
     {
@@ -522,6 +532,30 @@ static string RepoRootOrCwd()
     }
 
     return dir?.FullName ?? Directory.GetCurrentDirectory();
+}
+
+// Any process running FROM the install dir (the game) blocks file overwrites on Windows.
+bool GameIsRunningFrom(string installDir)
+{
+    string full = Path.GetFullPath(installDir);
+    foreach (Process proc in Process.GetProcesses())
+    {
+        try
+        {
+            string? path = proc.MainModule?.FileName;
+            if (path is not null &&
+                Path.GetFullPath(path).StartsWith(full, StringComparison.OrdinalIgnoreCase))
+            {
+                return true;
+            }
+        }
+        catch (Exception)
+        {
+            // System/elevated processes refuse inspection — they are not our game.
+        }
+    }
+
+    return false;
 }
 
 string BaseDataDir()
