@@ -477,6 +477,8 @@ namespace Aetheria.UnityClient
                 _uiPress = (_sheetOpen && SheetWindowRect().Contains(gm)) ||
                            (_bagsOpen && FrameRect(HudConfig.Frame.Bags).Contains(gm)) ||
                            (_shopOpen && _lastShopRect.Contains(gm)) ||
+                           (_codexOpen && FrameRect(HudConfig.Frame.Codex).Contains(gm)) ||
+                           (_friendsOpen && FrameRect(HudConfig.Frame.Friends).Contains(gm)) ||
                            (_client.OpenCorpseId >= 0 && LootWindowRect().Contains(gm));
             }
             else if (!Input.GetMouseButton(0) && !Input.GetMouseButton(1) &&
@@ -488,7 +490,8 @@ namespace Aetheria.UnityClient
             // Layout-edit mode or an item drag: the camera must hold still.
             if (_cameraRig != null)
             {
-                _cameraRig.SuppressDrag = _uiPress || _layoutEditMode || _draggingItem != null;
+                _cameraRig.SuppressDrag = _uiPress || _layoutEditMode || _draggingItem != null ||
+                                          _dragWindowFrame != null; // window being moved: camera stays put
 
                 // The mouse WHEEL belongs to the window under the cursor (codex, fiche,
                 // sacs, boutique, minimap, grande carte) — never to the camera through it.
@@ -3382,6 +3385,21 @@ namespace Aetheria.UnityClient
             return tex;
         }
 
+        /// <summary>A small dark chip with a key (or cost) that stays READABLE on any icon.</summary>
+        private static void SlotChip(Rect slotRect, string text, bool topLeft)
+        {
+            float w = 10f + (text.Length * 7f);
+            var chip = topLeft
+                ? new Rect(slotRect.x + 1, slotRect.y + 1, w, 15f)
+                : new Rect(slotRect.xMax - w - 1, slotRect.yMax - 16f, w, 15f);
+            Color prev = GUI.color;
+            GUI.color = new Color(0f, 0f, 0f, 0.72f);
+            GUI.DrawTexture(chip, Texture2D.whiteTexture);
+            GUI.color = prev;
+            GUI.Label(new Rect(chip.x - 3, chip.y - 3, chip.width + 6, chip.height + 6),
+                "<size=10><b>" + text + "</b></size>", RichCentered());
+        }
+
         private void DrawActionBar()
         {
             Rect bar = FrameRect(HudConfig.Frame.ActionBar);
@@ -3452,11 +3470,10 @@ namespace Aetheria.UnityClient
                 }
 
                 // The SHORTCUT takes the name's place — the name lives in the tooltip.
-                GUI.Label(new Rect(r.x + 3, r.y + 1, r.width - 6, 16), "<size=11><b>" + key + "</b></size>", Rich());
+                SlotChip(r, key, topLeft: true);
                 if (def.ResourceCost > 0)
                 {
-                    GUI.Label(new Rect(r.x + r.width - 24, r.y + r.height - 18, 22, 16),
-                        "<size=10>" + def.ResourceCost + "</size>", Rich());
+                    SlotChip(r, def.ResourceCost.ToString(), topLeft: false);
                 }
 
                 if (locked)
@@ -3534,8 +3551,7 @@ namespace Aetheria.UnityClient
 
                     GUI.DrawTexture(new Rect(r.x + 1, r.y + 1, r.width - 2, r.height - 2),
                         FormIconTex(form), ScaleMode.StretchToFill);
-                    GUI.Label(new Rect(r.x + 3, r.y + 1, r.width - 6, 16),
-                        "<size=11><b>" + (4 + f) + "</b></size>", Rich());
+                    SlotChip(r, (4 + f).ToString(), topLeft: true);
 
                     if (r.Contains(Event.current.mousePosition))
                     {
@@ -5587,8 +5603,7 @@ namespace Aetheria.UnityClient
                         "ou de la nourriture depuis les sacs pour l'assigner.</color>";
                 }
 
-                GUI.Label(new Rect(r.x + 1, r.y - 1, 12, 12),
-                    "<size=8><color=#c8c8c8>" + keys[i] + "</color></size>", Rich());
+                SlotChip(r, keys[i], topLeft: true);
             }
         }
 

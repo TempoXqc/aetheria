@@ -1232,12 +1232,19 @@ public sealed class GameServer
 
     private void HandlePartyLeave(PeerId peer)
     {
-        Party? party = _parties.Leave(peer.Value);
-        if (party is not null)
+        // Snapshot the roster BEFORE leaving: a 2-man party DISBANDS on leave, and the
+        // (then empty) remainder left the OTHER member with a stale party icon — same
+        // trap as the kick. And ALWAYS answer the caller, even without a party: a stale
+        // client asking to leave heals itself with the empty roster.
+        Party? party = _parties.GetParty(peer.Value);
+        int[] everyone = party is not null ? party.Members.ToArray() : [];
+        _parties.Leave(peer.Value);
+        foreach (int member in everyone)
         {
-            BroadcastPartyState(party);
-            SendPartyStateTo(peer); // the leaver sees an empty roster
+            SendPartyStateTo(new PeerId(member)); // dissolved → empty roster for each
         }
+
+        SendPartyStateTo(peer);
 
         // Seats whose party dissolved release their offline ghosts.
         List<int>? stale = null;
