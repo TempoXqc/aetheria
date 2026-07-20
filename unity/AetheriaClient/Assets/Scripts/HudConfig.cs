@@ -76,6 +76,9 @@ namespace Aetheria.UnityClient
         /// <summary>Auto-select the nearest hostile you're FACING when you have no target.</summary>
         public bool AutoTarget = false;
 
+        /// <summary>Chat text size in px (right-click the chat → « Taille du texte »).</summary>
+        public int ChatFontSize = 11;
+
         public KeyCode Key(Bind bind) => _binds.TryGetValue(bind, out KeyCode k) ? k : Defaults[bind];
 
         public void SetKey(Bind bind, KeyCode key) => _binds[bind] = key;
@@ -101,6 +104,7 @@ namespace Aetheria.UnityClient
             ShowHelp = PlayerPrefs.GetInt(P(Profile, "help"), 1) == 1;
             ShowNameplates = PlayerPrefs.GetInt(P(Profile, "nameplates"), 1) == 1;
             AutoTarget = PlayerPrefs.GetInt(P(Profile, "autoTarget"), 0) == 1;
+            ChatFontSize = PlayerPrefs.GetInt(P(Profile, "chatFont"), 11);
 
             _binds.Clear();
             foreach (KeyValuePair<Bind, KeyCode> pair in Defaults)
@@ -130,6 +134,7 @@ namespace Aetheria.UnityClient
             PlayerPrefs.SetInt(P(Profile, "help"), ShowHelp ? 1 : 0);
             PlayerPrefs.SetInt(P(Profile, "nameplates"), ShowNameplates ? 1 : 0);
             PlayerPrefs.SetInt(P(Profile, "autoTarget"), AutoTarget ? 1 : 0);
+            PlayerPrefs.SetInt(P(Profile, "chatFont"), ChatFontSize);
 
             foreach (KeyValuePair<Bind, KeyCode> pair in _binds)
             {

@@ -449,6 +449,7 @@ namespace Aetheria.UnityClient
                 else if (_chatTabConfig >= 0) { _chatTabConfig = -1; }
                 else if (_awaitingBind != null) { _awaitingBind = null; }
                 else if (_partyMenuFor >= 0) { _partyMenuFor = -1; }
+                else if (_chatFontMenu) { _chatFontMenu = false; }
                 else if (_selfMenuOpen) { _selfMenuOpen = false; }
                 else if (_contextEntityId >= 0) { _contextEntityId = -1; }
                 else if (_innDialogOpen) { _innDialogOpen = false; }
@@ -6573,8 +6574,20 @@ namespace Aetheria.UnityClient
             GUILayout.EndHorizontal();
             GUILayout.Space(8);
 
-            GUILayout.Label("Échelle de l'interface : " + _cfg.UiScale.ToString("0.00"));
+            GUILayout.Label("Taille des textes et de l'interface : " + _cfg.UiScale.ToString("0.00"));
             _cfg.UiScale = Mathf.Round(GUILayout.HorizontalSlider(_cfg.UiScale, 0.8f, 1.6f) * 20f) / 20f;
+            GUILayout.BeginHorizontal();
+            foreach ((string label, float scale) in new[]
+                     { ("Petit", 0.9f), ("Normal", 1.0f), ("Grand", 1.15f), ("Très grand", 1.3f) })
+            {
+                if (GUILayout.Button(label, GUILayout.Height(22)))
+                {
+                    _cfg.UiScale = scale;
+                    _cfg.Save();
+                }
+            }
+
+            GUILayout.EndHorizontal();
             GUILayout.Space(6);
             _cfg.ShowNameplates = GUILayout.Toggle(_cfg.ShowNameplates, " Noms et niveaux au-dessus des têtes");
             _cfg.ShowHealthBars = GUILayout.Toggle(_cfg.ShowHealthBars, " Barres de vie au-dessus des entités");
@@ -6824,6 +6837,41 @@ namespace Aetheria.UnityClient
             return "<color=" + color + ">[" + label + "] <b>" + l.From + " :</b> " + l.Text + "</color>";
         }
 
+        // ------- chat FONT SIZE menu (right-click the history box). -------
+        private bool _chatFontMenu;
+        private Vector2 _chatFontMenuPos;
+
+        private void DrawChatFontMenu()
+        {
+            if (!_chatFontMenu) { return; }
+
+            (string label, int size)[] choices =
+            {
+                ("Petit", 10), ("Normal", 11), ("Moyen", 13), ("Grand", 15), ("Très grand", 18),
+            };
+            float boxH = (choices.Length * 24f) + 32f;
+            var box = new Rect(Mathf.Clamp(_chatFontMenuPos.x, 8f, VirtW - 158f),
+                Mathf.Clamp(_chatFontMenuPos.y - boxH - 2f, 8f, VirtH - boxH - 8f), 150f, boxH);
+            WowUi.Panel(box);
+            WowUi.GoldCentered(new Rect(box.x, box.y + 5, box.width, 18), "<b>Taille du texte</b>");
+            float cy = box.y + 26;
+            foreach ((string label, int size) in choices)
+            {
+                bool current = _cfg.ChatFontSize == size;
+                if (current) { WowUi.Highlight(new Rect(box.x + 8, cy, box.width - 16, 21)); }
+                if (GUI.Button(new Rect(box.x + 8, cy, box.width - 16, 21),
+                    "<size=" + size + ">" + label + (current ? " ✔" : "") + "</size>",
+                    new GUIStyle(GUI.skin.button) { richText = true }))
+                {
+                    _cfg.ChatFontSize = size;
+                    _cfg.Save();
+                    _chatFontMenu = false;
+                }
+
+                cy += 24f;
+            }
+        }
+
         // Chat window size (drag the grip): persisted outside the profile system on purpose —
         // one chat size per machine, like the tab layout.
         private float _chatW = 380f;
@@ -6859,7 +6907,8 @@ namespace Aetheria.UnityClient
             }
 
             float W = _chatW;
-            const float LineH = 17f;
+            int fs = Mathf.Clamp(_cfg.ChatFontSize, 9, 22);
+            float LineH = fs + 7f;
             Vector2 chatOff = _cfg.Offset(HudConfig.Frame.Chat);
 
             // Collect the ACTIVE TAB's last lines.
@@ -6919,7 +6968,7 @@ namespace Aetheria.UnityClient
             for (int i = 0; i < show.Count; i++)
             {
                 var lineRect = new Rect(14f + chatOff.x, y0 + ((firstRow + i) * LineH), W - 12f, LineH + 2f);
-                GUI.Label(lineRect, "<size=11>" + FormatChatLine(show[i]) + "</size>", Rich());
+                GUI.Label(lineRect, "<size=" + fs + ">" + FormatChatLine(show[i]) + "</size>", Rich());
 
                 // Click a RECEIVED whisper: the input opens pre-filled to answer its sender.
                 ChatLine cl = show[i];
@@ -6934,6 +6983,18 @@ namespace Aetheria.UnityClient
                     we.Use();
                 }
             }
+
+            // RIGHT-CLICK the history: the « Taille du texte » menu (several font sizes).
+            var historyBox = new Rect(8f + chatOff.x, y0 - 4f, W, historyH + 8f);
+            Event fev = Event.current;
+            if (fev.type == EventType.MouseDown && fev.button == 1 && historyBox.Contains(fev.mousePosition))
+            {
+                _chatFontMenu = !_chatFontMenu;
+                _chatFontMenuPos = fev.mousePosition;
+                fev.Use();
+            }
+
+            DrawChatFontMenu();
 
             // RESIZE grip (top-right corner): drag to change the chat's width and height.
             var grip = new Rect(8f + chatOff.x + W - 16f, y0 - 4f, 16f, 16f);
@@ -6992,12 +7053,13 @@ namespace Aetheria.UnityClient
                 // The coloured tag is a BUTTON: click it to cycle the outgoing channel
                 // (Dire → Groupe → Raid → Guilde → Commerce → Monde → Dire).
                 if (GUI.Button(new Rect(8f + chatOff.x, VirtH - 32f + chatOff.y, tagW, 24f),
-                    "<size=11><color=" + chColor + ">[" + tag + "]</color></size>", Rich()))
+                    "<size=" + fs + "><color=" + chColor + ">[" + tag + "]</color></size>", Rich()))
                 {
                     _chatChannel = NextSendChannel(_chatChannel);
                 }
                 GUI.SetNextControlName("ChatInput");
-                _chatInput = GUI.TextField(new Rect(8f + tagW + chatOff.x, VirtH - 32f + chatOff.y, W - tagW, 24f), _chatInput, 200);
+                _chatInput = GUI.TextField(new Rect(8f + tagW + chatOff.x, VirtH - 32f + chatOff.y, W - tagW, 24f),
+                    _chatInput, 200, new GUIStyle(GUI.skin.textField) { fontSize = fs });
                 GUI.FocusControl("ChatInput");
             }
 
