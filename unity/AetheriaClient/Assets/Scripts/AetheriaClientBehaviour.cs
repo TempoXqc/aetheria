@@ -3599,7 +3599,12 @@ namespace Aetheria.UnityClient
 
             Faction myFaction = Faction.Neutral;
             EntitySnapshot self;
-            if (_client.TryGetSelf(out self)) { myFaction = self.Faction; }
+            bool hasSelf = _client.TryGetSelf(out self);
+            if (hasSelf) { myFaction = self.Faction; }
+
+            // A monster's name only shows up close — otherwise a whole forest of distant
+            // « Goblin Grunt » labels floats through the trees. (Players/NPCs still show far.)
+            const float MonsterNameRange = 26f;
 
             foreach (EntityView view in _views.Values)
             {
@@ -3619,7 +3624,16 @@ namespace Aetheria.UnityClient
                 float x = screen.x / _cfg.UiScale;
                 float y = (Screen.height - screen.y) / _cfg.UiScale;
 
-                if (_cfg.ShowNameplates)
+                // Distant monsters: no floating name (health bar still appears once they aggro).
+                bool nameHidden = false;
+                if (view.Kind == EntityKind.Monster && hasSelf)
+                {
+                    float ndx = view.transform.position.x - self.Position.X;
+                    float ndz = view.transform.position.z - self.Position.Y;
+                    nameHidden = ((ndx * ndx) + (ndz * ndz)) > (MonsterNameRange * MonsterNameRange);
+                }
+
+                if (_cfg.ShowNameplates && !nameHidden)
                 {
                     // Monsters: YELLOW while passive, RED once aggressive (WoW colour language).
                     // BANDITS read red for everyone, with the outlaw's skull.

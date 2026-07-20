@@ -35,16 +35,13 @@ public static class WorldLayout
         public bool JumpableOver => Height <= SimulationConstants.JumpClearance;
     }
 
-    /// <summary>Trees of the open world (trunk position, kept out of walking paths).</summary>
-    public static readonly Obstacle[] Trees =
-    [
-        new(-20f, 22f, 0.55f),
-        new(-28f, -14f, 0.6f),
-        new(14f, -20f, 0.5f),
-        new(30f, 24f, 0.6f),
-        new(-8f, 26f, 0.45f),
-        new(20f, -8f, 0.55f),
-    ];
+    /// <summary>
+    /// Trees of the open world (trunk position = collision circle). A wooded treeline rings the
+    /// central glade so the forest the player SEES is the forest that BLOCKS them — with open
+    /// corridors kept clear to the east (goblin camp) and west (wolf field) so combat zones stay
+    /// walkable. What you see is what stops you: the client plants a tree on every one of these.
+    /// </summary>
+    public static readonly Obstacle[] Trees = BuildForestTrees();
 
     /// <summary>Rocks near the contested dungeon camp. The small ones can be jumped over.</summary>
     public static readonly Obstacle[] Rocks =
@@ -110,6 +107,41 @@ public static class WorldLayout
         }
 
         return true;
+    }
+
+    /// <summary>
+    /// The treeline: two concentric rings of trunks around the glade, with the eastern (camp)
+    /// and western (field) corridors left open. Deterministic so client and server agree exactly.
+    /// </summary>
+    private static Obstacle[] BuildForestTrees()
+    {
+        var trees = new List<Obstacle>();
+        AddTreeRing(trees, radius: 27f, count: 18, radial: 2.0f);
+        AddTreeRing(trees, radius: 41f, count: 22, radial: 3.4f);
+        return trees.ToArray();
+    }
+
+    private static void AddTreeRing(List<Obstacle> trees, float radius, int count, float radial)
+    {
+        for (int i = 0; i < count; i++)
+        {
+            float a = i * MathF.PI * 2f / count;
+            float deg = a * 180f / MathF.PI;
+
+            // Keep the east corridor (toward the goblin camp) and the west corridor (toward the
+            // wolf field) clear so those combat zones aren't walled off by trunks.
+            bool eastGap = deg < 45f || deg > 328f;
+            bool westGap = deg > 148f && deg < 212f;
+            if (eastGap || westGap)
+            {
+                continue;
+            }
+
+            // A gentle deterministic wobble so the rings don't look like a stockade fence.
+            float jitter = (((i * 37) % 11) - 5) * 0.12f * radial;
+            float rr = radius + jitter;
+            trees.Add(new Obstacle(MathF.Cos(a) * rr, MathF.Sin(a) * rr, 0.6f));
+        }
     }
 
     private static Obstacle[] BuildMenhirs()

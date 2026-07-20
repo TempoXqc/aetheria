@@ -761,8 +761,10 @@ namespace Aetheria.UnityClient
             Haystack(r, new Vector3(-54f, 0f, -4f));
             Haystack(r, new Vector3(-47f, 0f, -6f));
 
-            // Trees and rocks from the SHARED layout: what you see is what blocks you.
-            // Nature Starter Kit trees (fully textured) take over when the kit is imported.
+            // Trees from the SHARED layout: what you SEE is what BLOCKS you. On the forest map
+            // these are the demo's own trees (tree_1), so every tree the player sees is a real
+            // obstacle — no more walking through the woods. Nature Starter Kit trees take over
+            // on the plains fallback; primitives when nothing is imported.
             float[] treeScales = { 1.1f, 1.3f, 1.0f, 1.2f, 0.9f, 1.15f };
             WorldLayout.Obstacle[] trees = WorldLayout.Trees;
             var treeRng = new System.Random(1337);
@@ -770,6 +772,12 @@ namespace Aetheria.UnityClient
             {
                 var pos = new Vector3(trees[i].X, 0f, trees[i].Y);
                 float s = treeScales[i % treeScales.Length];
+                if (forest)
+                {
+                    // Big canopy trees (~8–10 u) so the glade reads as deep woods.
+                    if (ForestMap.SpawnTree(r, pos, 8.5f * s) != null) { continue; }
+                }
+
                 if (!NatureKit.HasTrees || NatureKit.SpawnTree(r, treeRng, pos, 7f * s) == null)
                 {
                     Tree(r, pos, s);
@@ -816,7 +824,8 @@ namespace Aetheria.UnityClient
             for (int i = 0; i < r.childCount; i++)
             {
                 Transform child = r.GetChild(i);
-                if (child.name.StartsWith("ForestTerrain"))
+                // The ground mesh and the forest trees are already built at real terrain height.
+                if (child.name.StartsWith("Forest"))
                 {
                     continue;
                 }
