@@ -642,10 +642,24 @@ namespace Aetheria.UnityClient
                 return;
             }
 
+            // FOREST WORLD (TriForge's Fantasy Forest demo): the sculpted, tree-painted terrain
+            // IS the ground — no town, no flat dressing blocks. Everything that still spawns
+            // below is grounded onto the relief by the final grounding pass.
+            bool forest = ForestMap.Available;
+            if (forest)
+            {
+                ForestMap.Build(r);
+            }
+
             // --- SANCTUARY (radius 18 around the origin) ---
             // With Kenney's Retro Fantasy Kit installed, a REAL starting town rises here:
             // cobblestone plaza, bank pavilion, inn, forge, market house, watchtowers, gate.
-            if (RetroModels.Available)
+            // On the forest map the glade itself is the sanctuary — no built town.
+            if (forest)
+            {
+                // nothing: the basin's meadow is the plaza
+            }
+            else if (RetroModels.Available)
             {
                 RetroTown.Build(r);
             }
@@ -662,7 +676,8 @@ namespace Aetheria.UnityClient
             for (int i = 0; i < menhirs.Length; i++)
             {
                 // Four ring points carry WATCHTOWERS (they block exactly like the stones did).
-                if (RetroModels.Available && RetroTown.IsTowerIndex(i))
+                // Not on the forest map: standing stones only — no masonry in the glade.
+                if (!forest && RetroModels.Available && RetroTown.IsTowerIndex(i))
                 {
                     RetroTown.SpawnTower(r, menhirs[i].X, menhirs[i].Y);
                     continue;
@@ -689,8 +704,9 @@ namespace Aetheria.UnityClient
                     new Color(0.50f, 0.52f, 0.58f)), "stone", 1.5f, 1.5f);
             }
 
-            // Bank corner: the kit's pavilion covers it; primitives only as fallback.
-            if (!RetroModels.Available)
+            // Bank corner: the kit's pavilion covers it; primitives as fallback — and on the
+            // forest map too (a simple wooden canopy suits the glade; the castle kit doesn't).
+            if (forest || !RetroModels.Available)
             {
                 Vector3 bank = new Vector3(SimulationConstants.BankChestX, 0f, SimulationConstants.BankChestY);
                 Tex.Apply(Block(r, "BankFloor", bank + new Vector3(0f, 0.03f, 0f), new Vector3(4.5f, 0.06f, 4f),
@@ -707,11 +723,14 @@ namespace Aetheria.UnityClient
                     new Color(0.55f, 0.25f, 0.18f)), "wood", 3f, 3f, new Color(1f, 0.62f, 0.5f));
             }
 
-            // --- Dirt path EAST toward the goblin starter camp ---
-            for (int i = 0; i < 6; i++)
+            // --- Dirt path EAST toward the goblin starter camp (flat slabs — not on relief) ---
+            if (!forest)
             {
-                Tex.Apply(Block(r, "Path", new Vector3(6f + (i * 3.4f), 0.015f, 2f + (i * 1.4f)),
-                    new Vector3(3.0f, 0.03f, 2.2f), new Color(0.42f, 0.33f, 0.22f)), "dirt", 2f, 2f);
+                for (int i = 0; i < 6; i++)
+                {
+                    Tex.Apply(Block(r, "Path", new Vector3(6f + (i * 3.4f), 0.015f, 2f + (i * 1.4f)),
+                        new Vector3(3.0f, 0.03f, 2.2f), new Color(0.42f, 0.33f, 0.22f)), "dirt", 2f, 2f);
+                }
             }
 
             // Goblin camp dressing: crude tents and a totem.
@@ -721,8 +740,11 @@ namespace Aetheria.UnityClient
                 new Color(0.35f, 0.42f, 0.25f));
 
             // --- WOLF FIELD to the WEST: wheat, fences, haystacks ---
-            Tex.Apply(Block(r, "Wheat", new Vector3(-48f, 0.015f, 3f), new Vector3(26f, 0.03f, 24f),
-                new Color(0.72f, 0.62f, 0.28f)), "wheat", 14f, 12f);
+            if (!forest) // the wheat slab is flat; the forest floor replaces it
+            {
+                Tex.Apply(Block(r, "Wheat", new Vector3(-48f, 0.015f, 3f), new Vector3(26f, 0.03f, 24f),
+                    new Color(0.72f, 0.62f, 0.28f)), "wheat", 14f, 12f);
+            }
 
             // Fence posts from the SHARED layout (they block); rails are pure decoration.
             foreach (WorldLayout.Obstacle post in WorldLayout.FencePosts)
@@ -761,13 +783,47 @@ namespace Aetheria.UnityClient
                 Rock(r, new Vector3(rocks[i].X, 0f, rocks[i].Y), rockScales[i % rockScales.Length]);
             }
 
-            // Ashmaw's scorched ground (world raid boss at 80,80).
-            Block(r, "Scorch", new Vector3(80f, 0.01f, 80f), new Vector3(16f, 0.02f, 16f),
-                new Color(0.20f, 0.12f, 0.10f));
+            // Ashmaw's scorched ground (world raid boss at 80,80) — a flat slab, plains only.
+            if (!forest)
+            {
+                Block(r, "Scorch", new Vector3(80f, 0.01f, 80f), new Vector3(16f, 0.02f, 16f),
+                    new Color(0.20f, 0.12f, 0.10f));
+            }
 
-            DressWithNature(r);
-            DressWithNatureKit(r);
+            // The forest terrain paints its own trees and grass: the scatter passes would
+            // only double the foliage. Props (market, torches, camp dressing) stay.
+            if (!forest)
+            {
+                DressWithNature(r);
+                DressWithNatureKit(r);
+            }
+
             DressWithProps(r);
+
+            if (forest)
+            {
+                GroundOnForest(r);
+            }
+        }
+
+        /// <summary>
+        /// The GROUNDING pass: every decor piece was authored for the flat plane (y = 0);
+        /// lift each top-level child onto the terrain under its own footprint. Terrain tiles
+        /// themselves are skipped.
+        /// </summary>
+        private static void GroundOnForest(Transform r)
+        {
+            for (int i = 0; i < r.childCount; i++)
+            {
+                Transform child = r.GetChild(i);
+                if (child.name.StartsWith("ForestTerrain"))
+                {
+                    continue;
+                }
+
+                Vector3 p = child.position;
+                child.position = new Vector3(p.x, p.y + ForestMap.HeightAt(p.x, p.z), p.z);
+            }
         }
 
         /// <summary>

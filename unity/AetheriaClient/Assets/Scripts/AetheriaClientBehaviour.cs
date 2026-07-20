@@ -1474,7 +1474,7 @@ namespace Aetheria.UnityClient
             {
                 // The camera KEEPS whatever angle the player gave it — no auto-recenter while
                 // walking. It only turns when the player drags it (left or right button).
-                _cameraRig.Target = new Vector3(self.Position.X, 0f, self.Position.Y);
+                _cameraRig.Target = ForestMap.At(self.Position.X, self.Position.Y);
             }
         }
 
@@ -1688,8 +1688,9 @@ namespace Aetheria.UnityClient
                 // Distance from the mouse to the character's on-screen SPINE (feet → head):
                 // a click anywhere on the visible body counts, whatever the camera distance —
                 // the old single-point test missed everything but an invisible spot at the hip.
-                Vector3 feet = Camera.main.WorldToScreenPoint(new Vector3(e.Position.X, 0.1f, e.Position.Y));
-                Vector3 head = Camera.main.WorldToScreenPoint(new Vector3(e.Position.X, 2.0f, e.Position.Y));
+                float groundY = ForestMap.HeightAt(e.Position.X, e.Position.Y);
+                Vector3 feet = Camera.main.WorldToScreenPoint(new Vector3(e.Position.X, groundY + 0.1f, e.Position.Y));
+                Vector3 head = Camera.main.WorldToScreenPoint(new Vector3(e.Position.X, groundY + 2.0f, e.Position.Y));
                 if (feet.z < 0f && head.z < 0f) { continue; }
 
                 float d = DistanceToSegmentPx(mouse, feet, head);

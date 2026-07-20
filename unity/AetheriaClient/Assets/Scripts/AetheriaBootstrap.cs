@@ -30,9 +30,11 @@ namespace Aetheria.UnityClient
             bool handmade = GameObject.Find("HandmadeWorld") != null
                 || Object.FindObjectOfType<Terrain>() != null;
 
-            if (!handmade)
+            if (!handmade && !ForestMap.Available)
             {
                 // Ground plane (the server simulates on a flat plane; X/Z maps to server X/Y).
+                // With the Fantasy Forest pack imported, the REAL terrain replaces this plane
+                // (built with the zone decor) — a flat slab underneath would poke through dips.
                 GameObject ground = GameObject.CreatePrimitive(PrimitiveType.Plane);
                 ground.name = "Ground";
                 ground.transform.localScale = new Vector3(40f, 1f, 40f); // 400x400 units

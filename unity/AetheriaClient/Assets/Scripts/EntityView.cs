@@ -261,7 +261,10 @@ namespace Aetheria.UnityClient
             }
 
             // Server plane (X, Y) maps onto Unity ground plane (X, Z); models stand on y=0.
-            _targetPosition = new Vector3(snapshot.Position.X, 0f, snapshot.Position.Y);
+            // The server simulates on a flat plane; the forest terrain (when present) gives
+            // that plane its visual relief — feet follow the ground.
+            _targetPosition = new Vector3(snapshot.Position.X,
+                ForestMap.HeightAt(snapshot.Position.X, snapshot.Position.Y), snapshot.Position.Y);
             if (!_hasTarget)
             {
                 transform.position = _targetPosition; // first sight: snap, don't glide across the map

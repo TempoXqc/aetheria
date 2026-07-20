@@ -128,6 +128,9 @@ namespace Aetheria.UnityClient
 
             MonsterAnimator driver = pivot.AddComponent<MonsterAnimator>();
             driver.BindMecanim(animator);
+            // Skinned bounds lie at bind pose: re-ground during the first animated frames
+            // so the paws end up exactly on the floor instead of sunk into it.
+            driver.GroundTo(root.transform);
             return new MonsterHandle
             {
                 Root = pivot,
@@ -278,6 +281,8 @@ namespace Aetheria.UnityClient
         // --- MECANIM mode (Blink bear): drive the pack's own AnimatorController by state name. ---
         private Animator _mecanim;
         private string _mecanimState;
+        private Transform _groundRoot;
+        private int _groundFrames;
         private static readonly string[] BearAttacks = { "Attack1", "Attack2", "Attack3" };
 
         /// <summary>Bind a Mecanim rig (its controller's state names do the acting).</summary>
@@ -286,6 +291,48 @@ namespace Aetheria.UnityClient
             _mecanim = animator;
             _mecanimState = "Idle";
             _mecanim.Play("Idle");
+        }
+
+        /// <summary>
+        /// Re-ground this model over its first animated frames. Skinned-mesh bounds measured at
+        /// spawn describe the BIND pose, which for quadrupeds can sit well below the real stance —
+        /// that's how the bear ended up buried to the belly. Once the Animator has written a real
+        /// pose we can measure honestly and lift the feet onto the pivot's floor.
+        /// </summary>
+        public void GroundTo(Transform root)
+        {
+            _groundRoot = root;
+            _groundFrames = 6;
+        }
+
+        private void LateUpdate()
+        {
+            if (_groundFrames <= 0 || _groundRoot == null)
+            {
+                return;
+            }
+
+            _groundFrames--;
+            Renderer[] parts = _groundRoot.GetComponentsInChildren<Renderer>();
+            bool first = true;
+            var bounds = new Bounds();
+            foreach (Renderer part in parts)
+            {
+                if (first) { bounds = part.bounds; first = false; }
+                else { bounds.Encapsulate(part.bounds); }
+            }
+
+            if (first)
+            {
+                return;
+            }
+
+            float floor = transform.position.y;      // the pivot sits on the logical ground
+            float sink = bounds.min.y - floor;       // negative = paws below the floor
+            if (sink < -0.01f || sink > 0.05f)
+            {
+                _groundRoot.position += new Vector3(0f, -sink + 0.01f, 0f);
+            }
         }
 
         public void Bind(Animation anim, List<AnimationClip> clips, bool remains)
@@ -332,8 +379,10 @@ namespace Aetheria.UnityClient
                 if (_dead) { return; }
                 if (_lock > 0f) { _lock -= Time.deltaTime; return; }
 
-                string wantState = speed > 3.4f ? "Run Forward"
-                    : speed > 0.25f ? "WalkForward" : "Idle";
+                // Real state names in Blink's BearAnimator: "Walk Forward" has a space,
+                // "RunForward" doesn't. (Verified against the controller asset itself.)
+                string wantState = speed > 3.4f ? "RunForward"
+                    : speed > 0.25f ? "Walk Forward" : "Idle";
                 if (_mecanimState != wantState)
                 {
                     _mecanim.CrossFadeInFixedTime(wantState, 0.15f);
@@ -390,8 +439,8 @@ namespace Aetheria.UnityClient
             if (_mecanim != null)
             {
                 if (_dead || _lock > 0f) { return; } // never interrupt a swing with a flinch
-                _mecanim.CrossFadeInFixedTime("Get Hit Front", 0.05f);
-                _mecanimState = "Get Hit Front";
+                _mecanim.CrossFadeInFixedTime("Hit Front", 0.05f);
+                _mecanimState = "Hit Front";
                 _lock = 0.5f;
                 return;
             }
