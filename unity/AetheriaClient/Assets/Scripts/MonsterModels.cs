@@ -73,7 +73,9 @@ namespace Aetheria.UnityClient
             switch (formId)
             {
                 case 1:
-                    return SpawnNamed(parent, "Yeti", 2.0f, new Color(0.62f, 0.45f, 0.30f)); // bear
+                    // The REAL bear (Blink's Free Stylized Bear) when imported; Yeti fallback.
+                    return SpawnBlinkBear(parent)
+                        ?? SpawnNamed(parent, "Yeti", 2.0f, new Color(0.62f, 0.45f, 0.30f));
                 case 2:
                     return SpawnNamed(parent, "Birb", 1.5f, Color.white);                    // owl
                 case 3:
@@ -81,6 +83,57 @@ namespace Aetheria.UnityClient
                 default:
                     return null;
             }
+        }
+
+        /// <summary>
+        /// Blink's « Free Stylized Bear » (Assets/Resources/Animals/Bear): the normal-coloured
+        /// Bear_4 prefab with its own AnimatorController — idle, walk, run, attacks, the lot.
+        /// Returns null when the pack is absent so the caller can fall back.
+        /// </summary>
+        private static MonsterHandle SpawnBlinkBear(Transform parent)
+        {
+            GameObject prefab = Resources.Load<GameObject>("Animals/Bear/Bear_Prefabs/Bear_4");
+            if (prefab == null)
+            {
+                return null;
+            }
+
+            var pivot = new GameObject("Druid_Bear");
+            pivot.transform.SetParent(parent, false);
+
+            GameObject root = Object.Instantiate(prefab, pivot.transform, false);
+            root.transform.localRotation = Quaternion.identity;
+
+            // Height-normalize by measured bounds; feet exactly on the ground.
+            Bounds bounds = MeasureBounds(root);
+            if (bounds.size.y > 0.001f)
+            {
+                float k = 1.6f / bounds.size.y;
+                root.transform.localScale = Vector3.one * k;
+                bounds = MeasureBounds(root);
+                root.transform.localPosition = new Vector3(0f, -bounds.min.y, 0f);
+            }
+
+            Animator animator = root.GetComponentInChildren<Animator>();
+            if (animator == null)
+            {
+                animator = root.AddComponent<Animator>();
+            }
+
+            if (animator.runtimeAnimatorController == null)
+            {
+                animator.runtimeAnimatorController =
+                    Resources.Load<RuntimeAnimatorController>("Animals/Bear/Bear_Prefabs/BearAnimator");
+            }
+
+            MonsterAnimator driver = pivot.AddComponent<MonsterAnimator>();
+            driver.BindMecanim(animator);
+            return new MonsterHandle
+            {
+                Root = pivot,
+                Animator = driver,
+                HeadHeight = 1.9f,
+            };
         }
 
         /// <summary>Spawn the SLAIN monster: it plays its death clip once and stays down.</summary>
@@ -222,6 +275,19 @@ namespace Aetheria.UnityClient
         private float _lock; // seconds a one-shot still owns the body
         private bool _dead;
 
+        // --- MECANIM mode (Blink bear): drive the pack's own AnimatorController by state name. ---
+        private Animator _mecanim;
+        private string _mecanimState;
+        private static readonly string[] BearAttacks = { "Attack1", "Attack2", "Attack3" };
+
+        /// <summary>Bind a Mecanim rig (its controller's state names do the acting).</summary>
+        public void BindMecanim(Animator animator)
+        {
+            _mecanim = animator;
+            _mecanimState = "Idle";
+            _mecanim.Play("Idle");
+        }
+
         public void Bind(Animation anim, List<AnimationClip> clips, bool remains)
         {
             _anim = anim;
@@ -261,6 +327,22 @@ namespace Aetheria.UnityClient
         /// <summary>Locomotion from measured speed; one-shots keep priority while they play.</summary>
         public void SetSpeed(float speed)
         {
+            if (_mecanim != null)
+            {
+                if (_dead) { return; }
+                if (_lock > 0f) { _lock -= Time.deltaTime; return; }
+
+                string wantState = speed > 3.4f ? "Run Forward"
+                    : speed > 0.25f ? "WalkForward" : "Idle";
+                if (_mecanimState != wantState)
+                {
+                    _mecanim.CrossFadeInFixedTime(wantState, 0.15f);
+                    _mecanimState = wantState;
+                }
+
+                return;
+            }
+
             if (_dead || _anim == null)
             {
                 return;
@@ -283,6 +365,16 @@ namespace Aetheria.UnityClient
 
         public void PlayAttack()
         {
+            if (_mecanim != null)
+            {
+                if (_dead) { return; }
+                string swing = BearAttacks[UnityEngine.Random.Range(0, BearAttacks.Length)];
+                _mecanim.CrossFadeInFixedTime(swing, 0.05f);
+                _mecanimState = swing;
+                _lock = 0.8f; // roughly one swing; locomotion resumes after
+                return;
+            }
+
             if (_dead || _anim == null || _attack == null)
             {
                 return;
@@ -295,6 +387,15 @@ namespace Aetheria.UnityClient
 
         public void PlayHit()
         {
+            if (_mecanim != null)
+            {
+                if (_dead || _lock > 0f) { return; } // never interrupt a swing with a flinch
+                _mecanim.CrossFadeInFixedTime("Get Hit Front", 0.05f);
+                _mecanimState = "Get Hit Front";
+                _lock = 0.5f;
+                return;
+            }
+
             // Never interrupt an attack mid-swing with a flinch.
             if (_dead || _anim == null || _hit == null || _lock > 0f)
             {
