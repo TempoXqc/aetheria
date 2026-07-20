@@ -4886,6 +4886,60 @@ namespace Aetheria.UnityClient
         }
 
         /// <summary>L — the QUEST LOG: the chain with states, click a quest to track its zone.</summary>
+        private byte _questDetailId; // completed quest opened for reading (0 = none)
+
+        /// <summary>The finished quest's STORY pane: offer text, farewell, and the loot received.</summary>
+        private void DrawQuestDetailPane(Rect pane, Aetheria.Shared.Data.QuestDefinition q)
+        {
+            // A soft divider between the list and the story.
+            Color prev = GUI.color;
+            GUI.color = new Color(1f, 1f, 1f, 0.15f);
+            GUI.DrawTexture(new Rect(pane.x - 8, pane.y, 1, pane.height - 8), Texture2D.whiteTexture);
+            GUI.color = prev;
+
+            float y = pane.y + 4;
+            GUI.Label(new Rect(pane.x, y, pane.width, 20),
+                "<size=12><color=#ffd100><b>" + q.Name + "</b></color>  <color=#30d040>✔ Terminée</color></size>",
+                Rich());
+            y += 26;
+
+            GUI.Label(new Rect(pane.x, y, pane.width, 96),
+                "<size=10><color=#d8d0c0>" + q.Description + "</color></size>",
+                new GUIStyle(GUI.skin.label) { richText = true, wordWrap = true });
+            y += 100;
+
+            GUI.Label(new Rect(pane.x, y, pane.width, 56),
+                "<size=10><i><color=#a89868>« " + q.TurnInText + " »</color></i></size>",
+                new GUIStyle(GUI.skin.label) { richText = true, wordWrap = true });
+            y += 62;
+
+            GUI.Label(new Rect(pane.x, y, pane.width, 16),
+                "<size=11><color=#70c0ff><b>Récompenses reçues</b></color></size>", Rich());
+            y += 22;
+            GUI.Label(new Rect(pane.x + 4, y, pane.width - 8, 16),
+                "<size=10>Expérience : <b>" + q.RewardXp + " XP</b></size>", Rich());
+            y += 20;
+            if (q.RewardGold > 0)
+            {
+                GUI.Label(new Rect(pane.x + 4, y, pane.width - 8, 16),
+                    "<size=10>Or : <b>" + FormatMoney(q.RewardGold) + "</b></size>", Rich());
+                y += 20;
+            }
+
+            if (q.RewardItemId != 0 && Data.HasItem(q.RewardItemId))
+            {
+                Aetheria.Shared.Data.ItemDefinition item = Data.GetItem(q.RewardItemId);
+                var iconRect = new Rect(pane.x + 4, y, 26, 26);
+                DrawItemIcon(iconRect, q.RewardItemId, 1);
+                GUI.Label(new Rect(iconRect.xMax + 6, y + 4, pane.width - 40, 18),
+                    "<size=10><color=" + QualityHex(item) + ">" + item.Name + "</color></size>", Rich());
+                if (new Rect(pane.x, y, pane.width, 26).Contains(Event.current.mousePosition))
+                {
+                    _tooltip = ItemTooltip(item, 1);
+                }
+            }
+        }
+
         private void DrawQuestLogWindow()
         {
             if (!_questLogOpen || _client.QuestCatalog == null)
@@ -4893,16 +4947,37 @@ namespace Aetheria.UnityClient
                 return;
             }
 
-            var win = new Rect((VirtW / 2f) - 420, (VirtH / 2f) - 240, 380, 480);
+            // A COMPLETED quest opened for reading GROWS the window with a story pane.
+            Aetheria.Shared.Data.QuestDefinition? detail = null;
+            if (_questDetailId != 0 && _questLogTab == 1)
+            {
+                foreach (Aetheria.Shared.Data.QuestDefinition q in _client.QuestCatalog)
+                {
+                    if (q.Id == _questDetailId && q.Id <= _client.QuestCompletedUpTo) { detail = q; }
+                }
+            }
+
+            float extraW = detail != null ? 290f : 0f;
+            var win = new Rect((VirtW / 2f) - 420, (VirtH / 2f) - 240, 380 + extraW, 480);
             WowUi.Panel(win);
-            WowUi.GoldCentered(new Rect(win.x, win.y + 8, win.width, 20), "<b>Carnet de quêtes</b>");
-            if (GUI.Button(new Rect(win.xMax - 26, win.y + 5, 21, 21), "X")) { _questLogOpen = false; return; }
+            WowUi.GoldCentered(new Rect(win.x, win.y + 8, win.width - extraW, 20), "<b>Carnet de quêtes</b>");
+            if (GUI.Button(new Rect(win.xMax - 26, win.y + 5, 21, 21), "X"))
+            {
+                _questLogOpen = false;
+                _questDetailId = 0;
+                return;
+            }
 
             // TABS: the finished quests live in their own tab — the first shows only the hunt.
             if (_questLogTab == 0) { WowUi.Highlight(new Rect(win.x + 12, win.y + 30, 110, 24)); }
-            if (WowUi.Button(new Rect(win.x + 12, win.y + 30, 110, 24), "Actives")) { _questLogTab = 0; }
+            if (WowUi.Button(new Rect(win.x + 12, win.y + 30, 110, 24), "Actives")) { _questLogTab = 0; _questDetailId = 0; }
             if (_questLogTab == 1) { WowUi.Highlight(new Rect(win.x + 130, win.y + 30, 110, 24)); }
             if (WowUi.Button(new Rect(win.x + 130, win.y + 30, 110, 24), "Terminées")) { _questLogTab = 1; }
+
+            if (detail != null)
+            {
+                DrawQuestDetailPane(new Rect(win.x + 380, win.y + 30, extraW - 14, win.height - 44), detail);
+            }
 
             float y = win.y + 62;
             foreach (Aetheria.Shared.Data.QuestDefinition q in _client.QuestCatalog)
@@ -4933,14 +5008,23 @@ namespace Aetheria.UnityClient
                 GUI.Label(new Rect(row.x + 6, row.y + 2, row.width - 12, 18),
                     state + " <b>" + q.Name + "</b>" + progress, Rich());
                 GUI.Label(new Rect(row.x + 20, row.y + 20, row.width - 26, 16),
-                    "<size=10><color=#909090>" + (q.ZoneRadius > 0f
-                        ? "Clique pour voir la zone de chasse sur la carte"
-                        : "") + "</color></size>", Rich());
+                    "<size=10><color=#909090>" + (done
+                        ? "Clique pour relire le récit et les récompenses"
+                        : q.ZoneRadius > 0f ? "Clique pour voir la zone de chasse sur la carte" : "") +
+                    "</color></size>", Rich());
 
                 Event evt = Event.current;
                 if (evt.type == EventType.MouseDown && row.Contains(evt.mousePosition))
                 {
-                    _trackedQuestId = _trackedQuestId == q.Id ? (byte)0 : q.Id;
+                    if (done)
+                    {
+                        _questDetailId = _questDetailId == q.Id ? (byte)0 : q.Id; // read the story
+                    }
+                    else
+                    {
+                        _trackedQuestId = _trackedQuestId == q.Id ? (byte)0 : q.Id;
+                    }
+
                     evt.Use();
                 }
 
