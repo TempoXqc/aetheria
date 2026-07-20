@@ -87,6 +87,19 @@ public sealed class ServerEntity
 
     /// <summary>Delay before this entity respawns after dying (instances slow monsters down).</summary>
     public int RespawnDelayTicks { get; set; } = SimulationConstants.RespawnDelayTicks;
+
+    /// <summary>BANDIT mode (players): may strike his own faction; marked for all to see.</summary>
+    public bool IsBandit { get; set; }
+
+    /// <summary>PvP kill points — a trophy count that only ever grows.</summary>
+    public int HonorPoints { get; set; }
+
+    /// <summary>Standing with each camp: killing its members costs, killing its foes pays.</summary>
+    public int RepAlliance { get; set; }
+    public int RepHorde { get; set; }
+
+    /// <summary>The FINAL monster of an instance: its corpse always carries a loot-table drop.</summary>
+    public bool IsBoss { get; set; }
     public uint LastCombatTick { get; private set; }
 
     public int? AiTargetId { get; set; }

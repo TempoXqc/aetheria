@@ -58,6 +58,9 @@ namespace Aetheria.UnityClient
 
         /// <summary>Monsters: aggressive right now (red name, visible health bar).</summary>
         public bool Aggro { get; private set; }
+
+        /// <summary>BANDIT player: red name + skull, attackable by everyone.</summary>
+        public bool Bandit { get; private set; }
         public int Health { get; private set; }
         public int MaxHealth { get; private set; }
         public bool IsBoss { get; private set; }
@@ -236,6 +239,7 @@ namespace Aetheria.UnityClient
             DisplayName = snapshot.Name;
             RaceId = snapshot.RaceId;
             Aggro = snapshot.IsAggro;
+            Bandit = snapshot.IsBandit;
             Level = snapshot.Level;
             Faction = snapshot.Faction;
             IsBoss = Kind == EntityKind.Monster && snapshot.MaxHealth >= 300;

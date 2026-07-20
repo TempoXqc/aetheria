@@ -198,6 +198,12 @@ public sealed class InstanceDefinition
     /// <summary>Extra monster damage per player beyond the first.</summary>
     public float DamageScalingPerExtraPlayer { get; init; } = 0.25f;
 
+    /// <summary>
+    /// The instance's RANDOM LOOT TABLE (item ids): every kill inside rolls a chance at one,
+    /// and the BOSS (the last spawn) always drops one. Shown in the client's Codex.
+    /// </summary>
+    public byte[] LootTable { get; init; } = [];
+
     public InstanceSpawn[] Spawns { get; init; } = [];
 }
 

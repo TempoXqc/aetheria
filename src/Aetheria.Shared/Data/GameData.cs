@@ -324,6 +324,7 @@ public sealed class GameData
             new InstanceDefinition
             {
                 Id = 1, Name = "Ragefire Depths", IsRaid = false, MinPlayers = 2, MaxPlayers = 6,
+                LootTable = [6, 7, 8, 9, 14],
                 HealthScalingPerExtraPlayer = 0.5f, DamageScalingPerExtraPlayer = 0.25f,
                 Spawns =
                 [
@@ -336,6 +337,7 @@ public sealed class GameData
             new InstanceDefinition
             {
                 Id = 2, Name = "Molten Sanctum", IsRaid = true, MinPlayers = 2, MaxPlayers = 40,
+                LootTable = [14, 16, 22, 9],
                 HealthScalingPerExtraPlayer = 0.35f, DamageScalingPerExtraPlayer = 0.15f,
                 Spawns =
                 [

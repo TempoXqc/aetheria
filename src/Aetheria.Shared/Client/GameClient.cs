@@ -81,6 +81,12 @@ public sealed class GameClient
     public int EffectiveAttack { get; private set; }
     public int EffectiveDefense { get; private set; }
 
+    // --- PvP ledger (Réputation tab) ---
+    public int Honor { get; private set; }
+    public int RepAlliance { get; private set; }
+    public int RepHorde { get; private set; }
+    public bool IsBandit { get; private set; }
+
     // --- Account bank (from BankState) ---
     public int BankGold { get; private set; }
     public IReadOnlyList<ItemStack> BankItems { get; private set; } = [];
@@ -167,6 +173,9 @@ public sealed class GameClient
 
     /// <summary>Drink/eat a consumable from the bags.</summary>
     public void SendUseItem(byte itemId) => Send(new UseItem(itemId));
+
+    /// <summary>Toggle BANDIT mode (strike your own faction — and wear the mark).</summary>
+    public void SendSetBandit(bool enabled) => SendWith(new SetBanditMode(enabled).Write);
 
     /// <summary>Permanently delete this server's character (character screen only).</summary>
     public void SendDeleteCharacter()
@@ -420,6 +429,10 @@ public sealed class GameClient
                     Gold = status.Gold;
                     EffectiveAttack = status.EffectiveAttack;
                     EffectiveDefense = status.EffectiveDefense;
+                    Honor = status.Honor;
+                    RepAlliance = status.RepAlliance;
+                    RepHorde = status.RepHorde;
+                    IsBandit = status.IsBandit;
                     break;
 
                 case MessageType.InventoryState:

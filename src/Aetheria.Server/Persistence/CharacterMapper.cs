@@ -37,6 +37,10 @@ public static class CharacterMapper
             QuestCompletedUpTo = entity.QuestCompletedUpTo,
             EquippedWeaponId = entity.EquippedWeaponId,
             EquippedArmorId = entity.EquippedArmorId,
+            Honor = entity.HonorPoints,
+            RepAlliance = entity.RepAlliance,
+            RepHorde = entity.RepHorde,
+            Bandit = entity.IsBandit,
         };
 
         for (int i = 1; i < EquipSlots.Count; i++)
@@ -90,6 +94,10 @@ public static class CharacterMapper
 
         entity.HomeX = record.HomeX;
         entity.HomeY = record.HomeY;
+        entity.HonorPoints = record.Honor;
+        entity.RepAlliance = record.RepAlliance;
+        entity.RepHorde = record.RepHorde;
+        entity.IsBandit = record.Bandit;
 
         if (record.Equipment.Count > 0)
         {

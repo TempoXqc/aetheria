@@ -48,6 +48,7 @@ public enum MessageType : byte
     Hearthstone = 38,
     SetHome = 39,
     UseItem = 40,
+    SetBandit = 41,
 
     // --- Server -> Client ---
     ConnectAccepted = 128,

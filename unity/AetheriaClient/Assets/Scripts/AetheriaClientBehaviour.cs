@@ -461,6 +461,7 @@ namespace Aetheria.UnityClient
                 else if (_sheetOpen) { _sheetOpen = false; }
                 else if (_worldMapOpen) { _worldMapOpen = false; }
                 else if (_questLogOpen) { _questLogOpen = false; }
+                else if (_codexOpen) { _codexOpen = false; }
                 else if (_logoutAt > 0f) { _logoutAt = -1f; } // Escape cancels the logout timer
                 else if (_targetId >= 0) { SetAttackIntent(-1); } // Escape drops the target first
                 else { _menuOpen = !_menuOpen; _optionsTab = -1; _layoutEditMode = false; }
@@ -473,6 +474,7 @@ namespace Aetheria.UnityClient
                 Vector2 gm = GuiMouse();
                 _uiPress = (_sheetOpen && SheetWindowRect().Contains(gm)) ||
                            (_bagsOpen && FrameRect(HudConfig.Frame.Bags).Contains(gm)) ||
+                           (_shopOpen && _lastShopRect.Contains(gm)) ||
                            (_client.OpenCorpseId >= 0 && LootWindowRect().Contains(gm));
             }
             else if (!Input.GetMouseButton(0) && !Input.GetMouseButton(1) &&
@@ -1486,6 +1488,12 @@ namespace Aetheria.UnityClient
             // Instances have PHYSICAL gates now: walk into the portal, no keyboard shortcut.
             if (_cfg.Down(HudConfig.Bind.WorldMap)) { _worldMapOpen = !_worldMapOpen; }
             if (_cfg.Down(HudConfig.Bind.QuestLog)) { _questLogOpen = !_questLogOpen; }
+
+            // Consumable bar, WoW-style: 7/8/9/0 swallow the assigned potion or food.
+            if (Input.GetKeyDown(KeyCode.Alpha7)) { UseConsSlot(0); }
+            if (Input.GetKeyDown(KeyCode.Alpha8)) { UseConsSlot(1); }
+            if (Input.GetKeyDown(KeyCode.Alpha9)) { UseConsSlot(2); }
+            if (Input.GetKeyDown(KeyCode.Alpha0)) { UseConsSlot(3); }
         }
 
         private void HandleMouse()
@@ -1541,7 +1549,8 @@ namespace Aetheria.UnityClient
             EntitySnapshot target = picked.Value;
             bool hostile = target.Id != self.Id &&
                            (target.Kind == EntityKind.Monster ||
-                            (target.Kind == EntityKind.Player && target.Faction != self.Faction) ||
+                            (target.Kind == EntityKind.Player &&
+                             (target.Faction != self.Faction || target.IsBandit || _client.IsBandit)) ||
                             target.Id == _client.DuelOpponentId);
 
             if (hostile)
@@ -1620,17 +1629,19 @@ namespace Aetheria.UnityClient
                     SetAttackIntent(target.Id);
                     break;
 
-                case EntityKind.Player when target.Faction != self.Faction || target.Id == _client.DuelOpponentId:
-                    SetAttackIntent(target.Id);
+                case EntityKind.Player when target.Faction != self.Faction ||
+                                            target.Id == _client.DuelOpponentId ||
+                                            target.IsBandit || (_client.IsBandit && target.Id != self.Id):
+                    SetAttackIntent(target.Id); // enemies, outlaws — and everyone, when YOU are one
                     break;
 
                 case EntityKind.Player:
-                    _targetHostile = false;                // ally: select AND open the menu
+                    // Ally: just SELECT. The actions menu lives on his ICON — right-click his
+                    // frame (target frame or party frame), not his body.
+                    _autoTargetPicked = false;
+                    _targetHostile = false;
                     _targetId = target.Id;
                     _client.SendAttackTarget(0);
-                    _contextEntityId = target.Id;
-                    _contextPos = new Vector2(Input.mousePosition.x / _cfg.UiScale,
-                        (Screen.height - Input.mousePosition.y) / _cfg.UiScale);
                     break;
             }
         }
@@ -1943,9 +1954,13 @@ namespace Aetheria.UnityClient
                     return new Rect(8 + o.x, VirtH - 58 - (_chatLines * 17f) + o.y,
                         _chatW, (_chatLines * 17f) + 24);
                 case HudConfig.Frame.MicroBar:
-                    return new Rect(VirtW - 16 - (5 * 29f) + o.x, VirtH - 34 + o.y, 5 * 29f, 26);
+                    return new Rect(VirtW - 16 - (6 * 29f) + o.x, VirtH - 34 + o.y, 6 * 29f, 26);
                 case HudConfig.Frame.CastBar:
                     return new Rect(((VirtW - 260f) / 2f) + o.x, VirtH - 150f + o.y, 260f, 22f);
+                case HudConfig.Frame.Shop:
+                    return new Rect(20 + o.x, (VirtH / 2f) - 200 + o.y, 330, 400);
+                case HudConfig.Frame.ConsumableBar:
+                    return new Rect((VirtW / 2f) + 132 + o.x, VirtH - 64 + o.y, (4 * 31f) + 2, 30);
                 case HudConfig.Frame.Bags:
                 {
                     const float Icon = 34f;
@@ -2004,6 +2019,8 @@ namespace Aetheria.UnityClient
             DrawSocialNotices();
             DrawTradeWindow();
             DrawMicroBar();
+            DrawConsumableBar();
+            DrawCodexWindow();
             DrawInnDialog();
             DrawInspectWindow();
             DrawQuestLogWindow();
@@ -3128,6 +3145,21 @@ namespace Aetheria.UnityClient
             WowUi.Panel(frame);
             string name = string.IsNullOrEmpty(target.Name) ? target.Kind.ToString() : target.Name;
 
+            // The ACTIONS MENU lives here now: right-click the frame (his icon) of a friendly
+            // player to invite / inspect / duel — no more menu popping on his body in the world.
+            EntitySnapshot selfForMenu;
+            bool friendlyPlayer = target.Kind == EntityKind.Player &&
+                _client.TryGetSelf(out selfForMenu) && target.Id != selfForMenu.Id &&
+                target.Faction == selfForMenu.Faction;
+            Event tf = Event.current;
+            if (friendlyPlayer && tf.type == EventType.MouseDown && tf.button == 1 &&
+                frame.Contains(tf.mousePosition))
+            {
+                _contextEntityId = target.Id;
+                _contextPos = new Vector2(frame.x, frame.yMax + 4);
+                tf.Use();
+            }
+
             // Mirrored WoW target frame: bars left, round portrait on the RIGHT.
             Rect portrait = new Rect(frame.xMax - 58, frame.y + 5, 52, 52);
             WowUi.Portrait(portrait, new Color(0.62f, 0.16f, 0.14f),
@@ -3137,7 +3169,8 @@ namespace Aetheria.UnityClient
 
             float bw = portrait.x - frame.x - 14;
             GUI.Label(new Rect(frame.x + 8, frame.y + 4, bw, 20),
-                "<b><color=#ffd100>" + name + "</color></b>" +
+                "<b><color=" + (target.IsBandit ? "#ff4a3c" : "#ffd100") + ">" +
+                (target.IsBandit ? "☠ " : "") + name + "</color></b>" +
                 (target.Kind == EntityKind.Player ? "  <size=10>" + target.Faction + "</size>" : ""), Rich());
             DrawBar(new Rect(frame.x + 8, frame.y + 28, bw, 16),
                 target.Health / (float)Mathf.Max(1, target.MaxHealth),
@@ -3390,14 +3423,18 @@ namespace Aetheria.UnityClient
                 if (_cfg.ShowNameplates)
                 {
                     // Monsters: YELLOW while passive, RED once aggressive (WoW colour language).
+                    // BANDITS read red for everyone, with the outlaw's skull.
                     bool hostile = (view.Kind == EntityKind.Monster && view.Aggro) ||
-                                   (view.Kind == EntityKind.Player && view.Faction != myFaction);
+                                   (view.Kind == EntityKind.Player &&
+                                    (view.Faction != myFaction || view.Bandit));
                     string colour = hostile ? "#ff6060" :
                         view.Kind == EntityKind.Monster ? "#ffd100" :
                         view.Kind == EntityKind.Npc ? "#f0d060" : "#60a0ff";
 
                     // NAME ONLY — level, stats and gear are for right-click → Inspecter.
-                    string label = "<color=" + colour + "><size=11>" + view.DisplayName + "</size></color>";
+                    string label = "<color=" + colour + "><size=11>" +
+                        (view.Kind == EntityKind.Player && view.Bandit ? "☠ " : "") +
+                        view.DisplayName + "</size></color>";
                     GUI.Label(new Rect(x - 80, y - 18, 160, 16), label, RichCentered());
                 }
 
@@ -4236,8 +4273,11 @@ namespace Aetheria.UnityClient
             bool smith = _nearbyMerchantType == 8;
             byte[] stock = smith ? SimulationConstants.VendorStockSmith : SimulationConstants.VendorStock;
             float height = 78f + (stock.Length * 30f) + 40f;
-            Rect win = new Rect(20, (VirtH / 2f) - (height / 2f), 330, height);
+            Vector2 shopOff = _cfg.Offset(HudConfig.Frame.Shop);
+            Rect win = new Rect(20 + shopOff.x, (VirtH / 2f) - (height / 2f) + shopOff.y, 330, height);
+            _lastShopRect = win;
             WowUi.Panel(win);
+            DragTitle(HudConfig.Frame.Shop, new Rect(win.x, win.y, win.width - 32, 26));
             WowUi.GoldCentered(new Rect(win.x, win.y + 7, win.width, 18),
                 smith ? "<b>Brom le Forgeron</b>" : "<b>Mira la Marchande</b>");
 
@@ -4383,12 +4423,26 @@ namespace Aetheria.UnityClient
 
             // OPAQUE WoW-style framed panel — no more see-through window.
             WowUi.Panel(win);
+            DragTitle(HudConfig.Frame.CharSheet, new Rect(win.x, win.y, win.width - 32, 26));
             WowUi.GoldCentered(new Rect(win.x, win.y + 8, win.width, 20),
                 "<size=13><b>" + _name + "</b> — niveau " + _client.Level + "</size>");
 
             if (GUI.Button(new Rect(win.x + win.width - 26, win.y + 5, 21, 21), "X"))
             {
                 _sheetOpen = false;
+                return;
+            }
+
+            // TABS: Équipement | Réputation (the PvP ledger + the bandit switch).
+            var tabEquip = new Rect(win.x + 12, win.yMax - 26, 110, 20);
+            var tabRep = new Rect(win.x + 128, win.yMax - 26, 110, 20);
+            if (_sheetTab == 1) { WowUi.Highlight(tabRep); } else { WowUi.Highlight(tabEquip); }
+            if (GUI.Button(tabEquip, "<size=10>Équipement</size>", new GUIStyle(GUI.skin.button) { richText = true })) { _sheetTab = 0; }
+            if (GUI.Button(tabRep, "<size=10>Réputation</size>", new GUIStyle(GUI.skin.button) { richText = true })) { _sheetTab = 1; }
+
+            if (_sheetTab == 1)
+            {
+                DrawReputationTab(win);
                 return;
             }
 
@@ -4835,6 +4889,7 @@ namespace Aetheria.UnityClient
                 ("Q", "Carnet de quêtes (" + KeyLabel(HudConfig.Bind.QuestLog) + ")", () => _questLogOpen = !_questLogOpen),
                 ("C", "Carte du monde (" + KeyLabel(HudConfig.Bind.WorldMap) + ")", () => _worldMapOpen = !_worldMapOpen),
                 ("S", "Sacs (" + KeyLabel(HudConfig.Bind.Bags) + ")", () => _bagsOpen = !_bagsOpen),
+                ("📖", "Codex — donjons, raids et leurs butins", () => _codexOpen = !_codexOpen),
             };
 
             const float B = 26f;
@@ -4908,6 +4963,302 @@ namespace Aetheria.UnityClient
 
         // --- Bags (WoW-style separate window, bottom right) ---
 
+        private int _sheetTab; // 0 = équipement, 1 = réputation
+
+        // ------- CODEX: every dungeon and raid, its bosses, and its loot tables. -------
+        private bool _codexOpen;
+        private Vector2 _codexScroll;
+
+        private void DrawCodexWindow()
+        {
+            if (!_codexOpen) { return; }
+
+            var win = new Rect((VirtW / 2f) - 230, (VirtH / 2f) - 220, 460, 440);
+            WowUi.Panel(win);
+            WowUi.GoldCentered(new Rect(win.x, win.y + 8, win.width, 20),
+                "<size=13><b>📖 Codex — Donjons & Raids</b></size>");
+            if (GUI.Button(new Rect(win.x + win.width - 26, win.y + 5, 21, 21), "X"))
+            {
+                _codexOpen = false;
+                return;
+            }
+
+            var view = new Rect(win.x + 10, win.y + 32, win.width - 20, win.height - 42);
+            float contentH = 0f;
+            foreach (Aetheria.Shared.Data.InstanceDefinition inst in Data.Instances)
+            {
+                contentH += 66f + (inst.LootTable.Length * 17f);
+                var seen = new HashSet<byte>();
+                foreach (Aetheria.Shared.Data.InstanceSpawn sp in inst.Spawns)
+                {
+                    if (seen.Add(sp.MonsterId)) { contentH += 20f; }
+                }
+
+                contentH += 14f;
+            }
+
+            _codexScroll = GUI.BeginScrollView(view, _codexScroll,
+                new Rect(0, 0, view.width - 18, contentH));
+            float y = 0f;
+            foreach (Aetheria.Shared.Data.InstanceDefinition inst in Data.Instances)
+            {
+                GUI.Label(new Rect(4, y, view.width - 26, 20),
+                    "<size=13><color=#ffd100><b>" + inst.Name + "</b></color>  <size=10><color=#a0a0a0>" +
+                    (inst.IsRaid ? "Raid" : "Donjon") + " · " + inst.MinPlayers + "–" + inst.MaxPlayers +
+                    " joueurs</color></size></size>", Rich());
+                y += 24f;
+
+                // The dwellers — the LAST listed monster of the template is the boss.
+                var listed = new HashSet<byte>();
+                byte bossId = inst.Spawns.Length > 0 ? inst.Spawns[inst.Spawns.Length - 1].MonsterId : (byte)0;
+                foreach (Aetheria.Shared.Data.InstanceSpawn sp in inst.Spawns)
+                {
+                    if (!listed.Add(sp.MonsterId)) { continue; }
+
+                    Aetheria.Shared.Data.MonsterDefinition mob = Data.GetMonster(sp.MonsterId);
+                    bool boss = sp.MonsterId == bossId;
+                    GUI.Label(new Rect(16, y, view.width - 38, 18),
+                        "<size=11>" + (boss ? "<color=#ff8030>👑 " : "<color=#e0e0e0>") + mob.Name +
+                        "</color>  <size=9><color=#909090>niv." + mob.Level + (boss ? " — boss" : "") +
+                        "</color></size></size>", Rich());
+                    y += 20f;
+                }
+
+                // The prize: the table every corpse inside rolls on (boss: guaranteed).
+                GUI.Label(new Rect(16, y + 2, view.width - 38, 16),
+                    "<size=10><color=#70c0ff><b>Table de butin</b> — 15 % par monstre, garanti sur le boss :</color></size>",
+                    Rich());
+                y += 20f;
+                foreach (byte itemId in inst.LootTable)
+                {
+                    Aetheria.Shared.Data.ItemDefinition item = Data.GetItem(itemId);
+                    GUI.Label(new Rect(28, y, view.width - 50, 16),
+                        "<size=10><color=" + QualityHex(item) + ">" + item.Name + "</color>" +
+                        (item.AttackBonus > 0 ? "  <color=#909090>+" + item.AttackBonus + " att.</color>" : "") +
+                        (item.DefenseBonus > 0 ? "  <color=#909090>+" + item.DefenseBonus + " déf.</color>" : "") +
+                        "</size>", Rich());
+                    y += 17f;
+                }
+
+                y += 22f;
+            }
+
+            GUI.EndScrollView();
+        }
+
+        /// <summary>The PvP ledger: honor trophies, camp standings, and the BANDIT switch.</summary>
+        private void DrawReputationTab(Rect win)
+        {
+            float y = win.y + 40;
+            WowUi.GoldCentered(new Rect(win.x, y, win.width, 20),
+                "<size=12><b>Hauts faits de guerre</b></size>");
+            y += 28;
+
+            GUI.Label(new Rect(win.x + 20, y, win.width - 40, 18),
+                "<size=12>Points d'honneur : <color=#ffd100><b>" + _client.Honor + "</b></color></size>", Rich());
+            y += 30;
+
+            // One standing bar per camp: −10000 (haï) … +10000 (exalté), zero in the middle.
+            DrawRepBar(new Rect(win.x + 20, y, win.width - 40, 30), "Alliance",
+                _client.RepAlliance, new Color(0.25f, 0.45f, 0.95f));
+            y += 44;
+            DrawRepBar(new Rect(win.x + 20, y, win.width - 40, 30), "Horde",
+                _client.RepHorde, new Color(0.85f, 0.20f, 0.20f));
+            y += 50;
+
+            GUI.Label(new Rect(win.x + 20, y, win.width - 40, 52),
+                "<size=10><color=#a0a0a0>Tuer un joueur ENNEMI : +25 auprès de ton camp, +10 honneur.\n" +
+                "Tuer un joueur de TON camp (bandit) : −50 auprès de ton camp, +10 honneur.</color></size>", Rich());
+            y += 58;
+
+            // THE BANDIT SWITCH — the outlaw's life, marked ☠ for all to see.
+            bool bandit = _client.IsBandit;
+            string banditLabel = bandit ? "☠ Désactiver le mode bandit" : "☠ Activer le mode bandit";
+            var banditBtn = new Rect(win.x + (win.width / 2f) - 110, y, 220, 26);
+            Color prevBtn = GUI.color;
+            if (bandit) { GUI.color = new Color(1f, 0.55f, 0.5f); }
+            if (GUI.Button(banditBtn, "<size=11><b>" + banditLabel + "</b></size>",
+                new GUIStyle(GUI.skin.button) { richText = true }))
+            {
+                _client.SendSetBandit(!bandit);
+            }
+
+            GUI.color = prevBtn;
+            y += 32;
+            GUI.Label(new Rect(win.x + 20, y, win.width - 40, 40),
+                "<size=9><color=#808080>Bandit : tu peux frapper ta propre faction hors des sanctuaires — " +
+                "mais ton nom vire au rouge et TOUT LE MONDE peut te frapper.</color></size>", Rich());
+        }
+
+        private void DrawRepBar(Rect r, string camp, int value, Color color)
+        {
+            GUI.Label(new Rect(r.x, r.y, r.width, 15),
+                "<size=11><b>" + camp + "</b>  <color=#c8c8c8>" + value + " / 10000</color></size>", Rich());
+            var bar = new Rect(r.x, r.y + 16, r.width, 12);
+            Color prev = GUI.color;
+            GUI.color = new Color(0f, 0f, 0f, 0.6f);
+            GUI.DrawTexture(bar, Texture2D.whiteTexture);
+
+            // Zero sits mid-bar: positive standing fills right in the camp's colour,
+            // negative fills LEFT in angry red.
+            float mid = bar.x + (bar.width / 2f);
+            float span = bar.width / 2f * Mathf.Clamp(Mathf.Abs(value) / 10000f, 0f, 1f);
+            GUI.color = value >= 0 ? color : new Color(0.8f, 0.25f, 0.2f);
+            GUI.DrawTexture(value >= 0
+                ? new Rect(mid, bar.y, span, bar.height)
+                : new Rect(mid - span, bar.y, span, bar.height), Texture2D.whiteTexture);
+            GUI.color = new Color(1f, 1f, 1f, 0.5f);
+            GUI.DrawTexture(new Rect(mid - 1, bar.y, 2, bar.height), Texture2D.whiteTexture);
+            GUI.color = prev;
+        }
+
+        private Rect _lastShopRect; // last drawn shop window (for UI-press detection)
+
+        // ------- CONSUMABLE BAR: four quick slots (keys 7/8/9/0) for potions and food.
+        // Drag a consumable from the bags onto a slot to assign it; right-click clears. -------
+        private readonly byte[] _consSlots = new byte[4];
+        private bool _consLoaded;
+        private float _potionCdUntil; // local display of the shared 30 s potion cooldown
+
+        private void EnsureConsSlots()
+        {
+            if (_consLoaded) { return; }
+
+            _consLoaded = true;
+            string[] parts = PlayerPrefs.GetString("aeth.consbar", "").Split(',');
+            for (int i = 0; i < _consSlots.Length && i < parts.Length; i++)
+            {
+                byte id;
+                if (byte.TryParse(parts[i], out id)) { _consSlots[i] = id; }
+            }
+        }
+
+        private void SaveConsSlots()
+        {
+            PlayerPrefs.SetString("aeth.consbar",
+                _consSlots[0] + "," + _consSlots[1] + "," + _consSlots[2] + "," + _consSlots[3]);
+        }
+
+        private Rect ConsSlotRect(int i)
+        {
+            Rect bar = FrameRect(HudConfig.Frame.ConsumableBar);
+            return new Rect(bar.x + (i * 31f), bar.y, 28, 28);
+        }
+
+        private int InventoryCountOf(byte itemId)
+        {
+            int total = 0;
+            foreach (ItemStack s in _client.InventoryItems)
+            {
+                if (s.ItemId == itemId) { total += s.Quantity; }
+            }
+
+            return total;
+        }
+
+        private void UseConsSlot(int i)
+        {
+            byte id = _consSlots[i];
+            if (id == 0) { return; }
+            if (InventoryCountOf(id) <= 0) { ShowError("Tu n'en as plus dans les sacs."); return; }
+
+            ItemDefinition def = Data.GetItem(id);
+            bool isPotion = def.ConsumeDurationTicks == 0;
+            if (isPotion && Time.time < _potionCdUntil)
+            {
+                ShowError("Potion pas encore prête.");
+                return;
+            }
+
+            _client.SendUseItem(id);
+            if (isPotion) { _potionCdUntil = Time.time + 30f; }
+        }
+
+        private void DrawConsumableBar()
+        {
+            EnsureConsSlots();
+            string[] keys = { "7", "8", "9", "0" };
+            for (int i = 0; i < _consSlots.Length; i++)
+            {
+                Rect r = ConsSlotRect(i);
+                WowUi.Slot(new Rect(r.x - 1, r.y - 1, r.width + 2, r.height + 2));
+                byte id = _consSlots[i];
+
+                if (GUI.Button(r, "") && id != 0)
+                {
+                    UseConsSlot(i);
+                }
+
+                if (id != 0)
+                {
+                    int count = InventoryCountOf(id);
+                    DrawItemIcon(new Rect(r.x + 2, r.y + 2, r.width - 4, r.height - 4), id, count);
+                    ItemDefinition def = Data.GetItem(id);
+                    bool isPotion = def.ConsumeDurationTicks == 0;
+                    float cd = isPotion ? _potionCdUntil - Time.time : 0f;
+                    if (cd > 0f)
+                    {
+                        Dim(r, 0.65f);
+                        GUI.Label(r, "<size=10>" + Mathf.CeilToInt(cd) + "</size>", RichCentered());
+                    }
+                    else if (count <= 0)
+                    {
+                        Dim(r, 0.6f);
+                    }
+
+                    if (r.Contains(Event.current.mousePosition))
+                    {
+                        _tooltip = "<b>" + def.Name + "</b>\n<color=#a0a0a0>Touche " + keys[i] +
+                            " — clic droit : retirer de la barre.</color>";
+                    }
+
+                    Event ce = Event.current;
+                    if (ce.type == EventType.MouseDown && ce.button == 1 && r.Contains(ce.mousePosition))
+                    {
+                        _consSlots[i] = 0;
+                        SaveConsSlots();
+                        ce.Use();
+                    }
+                }
+                else if (r.Contains(Event.current.mousePosition))
+                {
+                    _tooltip = "<b>Emplacement rapide " + keys[i] + "</b>\n<color=#a0a0a0>Glisse une potion " +
+                        "ou de la nourriture depuis les sacs pour l'assigner.</color>";
+                }
+
+                GUI.Label(new Rect(r.x + 1, r.y - 1, 12, 12),
+                    "<size=8><color=#c8c8c8>" + keys[i] + "</color></size>", Rich());
+            }
+        }
+
+        // ------- generic window dragging: grab the TITLE BAND with the left button. -------
+        private HudConfig.Frame? _dragWindowFrame;
+        private Vector2 _dragWindowMouse;
+        private Vector2 _dragWindowOrigin;
+
+        private void DragTitle(HudConfig.Frame frame, Rect grabRect)
+        {
+            Event e = Event.current;
+            if (e.type == EventType.MouseDown && e.button == 0 && grabRect.Contains(e.mousePosition))
+            {
+                _dragWindowFrame = frame;
+                _dragWindowMouse = e.mousePosition;
+                _dragWindowOrigin = _cfg.Offset(frame);
+                e.Use();
+            }
+            else if (_dragWindowFrame == frame && e.type == EventType.MouseDrag)
+            {
+                _cfg.SetOffset(frame, _dragWindowOrigin + (e.mousePosition - _dragWindowMouse));
+                e.Use();
+            }
+            else if (_dragWindowFrame == frame && e.type == EventType.MouseUp)
+            {
+                _dragWindowFrame = null;
+                _cfg.Save();
+                e.Use();
+            }
+        }
+
         private void DrawBagsWindow()
         {
             if (!_bagsOpen) { return; }
@@ -4918,36 +5269,44 @@ namespace Aetheria.UnityClient
             Rect win = FrameRect(HudConfig.Frame.Bags);
             float w = win.width;
             WowUi.Panel(win); // opaque WoW backpack, not a see-through box
+            DragTitle(HudConfig.Frame.Bags, new Rect(win.x + 8 + (EquipSlots.Bags.Length * 26f), win.y,
+                win.width - 40 - (EquipSlots.Bags.Length * 26f), 26));
             WowUi.GoldCentered(new Rect(win.x, win.y + 7, win.width, 18), "<b>Sacs</b>");
 
-            // The WORN BAG's slot, top-left of the window: shows the equipped bag (right-click
-            // a bag in the cells to wear it; wearing a bigger one grows the grid live).
-            var bagSlot = new Rect(win.x + 8, win.y + 4, 24, 24);
+            // The FIVE worn-bag slots, top-left of the window (WoW-style): capacities add up.
+            // Right-click a bag in the cells to wear it (first empty slot); right-click a worn
+            // bag to put it away.
             IReadOnlyList<byte> gearForBag = _client.EquipmentSlots;
-            byte wornBag = gearForBag != null && (int)EquipSlot.Bag < gearForBag.Count
-                ? gearForBag[(int)EquipSlot.Bag] : (byte)0;
-            WowUi.Slot(bagSlot);
-            if (wornBag != 0)
+            for (int bi = 0; bi < EquipSlots.Bags.Length; bi++)
             {
-                DrawItemIcon(new Rect(bagSlot.x + 2, bagSlot.y + 2, 20, 20), wornBag, 1);
-                if (bagSlot.Contains(Event.current.mousePosition))
+                EquipSlot bslot = EquipSlots.Bags[bi];
+                var bagSlot = new Rect(win.x + 8 + (bi * 26f), win.y + 4, 24, 24);
+                byte wornBag = gearForBag != null && (int)bslot < gearForBag.Count
+                    ? gearForBag[(int)bslot] : (byte)0;
+                WowUi.Slot(bagSlot);
+                if (wornBag != 0)
                 {
-                    ItemDefinition bagDef = Data.GetItem(wornBag);
-                    _tooltip = "<b>" + bagDef.Name + "</b>\n<color=#a0a0a0>+" + bagDef.BagCapacity +
-                        " emplacements</color>\n<size=9><color=#808080>Clic droit : ranger le sac</color></size>";
-                }
+                    DrawItemIcon(new Rect(bagSlot.x + 2, bagSlot.y + 2, 20, 20), wornBag, 1);
+                    if (bagSlot.Contains(Event.current.mousePosition))
+                    {
+                        ItemDefinition bagDef = Data.GetItem(wornBag);
+                        _tooltip = "<b>" + bagDef.Name + "</b>\n<color=#a0a0a0>+" + bagDef.BagCapacity +
+                            " emplacements</color>\n<size=9><color=#808080>Clic droit : ranger le sac</color></size>";
+                    }
 
-                Event bagEvt = Event.current;
-                if (bagEvt.type == EventType.MouseDown && bagEvt.button == 1 && bagSlot.Contains(bagEvt.mousePosition))
-                {
-                    _client.SendEquipItem(0, (byte)EquipSlot.Bag); // unequip (must fit the base cells)
-                    bagEvt.Use();
+                    Event bagEvt = Event.current;
+                    if (bagEvt.type == EventType.MouseDown && bagEvt.button == 1 &&
+                        bagSlot.Contains(bagEvt.mousePosition))
+                    {
+                        _client.SendEquipItem(0, (byte)bslot); // unequip (everything must still fit)
+                        bagEvt.Use();
+                    }
                 }
-            }
-            else if (bagSlot.Contains(Event.current.mousePosition))
-            {
-                _tooltip = "<b>Emplacement de sac</b>\n<color=#a0a0a0>Équipe un sac (clic droit dessus) " +
-                    "pour agrandir ton inventaire — en vente chez Mira.</color>";
+                else if (bagSlot.Contains(Event.current.mousePosition))
+                {
+                    _tooltip = "<b>Emplacement de sac " + (bi + 1) + "/5</b>\n<color=#a0a0a0>Équipe un sac " +
+                        "(clic droit dessus) pour agrandir ton inventaire — en vente chez Mira.</color>";
+                }
             }
 
             if (GUI.Button(new Rect(win.x + win.width - 26, win.y + 5, 21, 21), "X"))
@@ -5453,6 +5812,23 @@ namespace Aetheria.UnityClient
                         }
 
                         return; // dropped inside the bag: never on the ground
+                    }
+                }
+
+                // Dropped onto the CONSUMABLE BAR: assign that slot (consumables only) —
+                // the item stays right where it is in the bags.
+                for (int ci = 0; ci < _consSlots.Length; ci++)
+                {
+                    if (ConsSlotRect(ci).Contains(m))
+                    {
+                        if (Data.GetItem(s.ItemId).Type == ItemType.Consumable)
+                        {
+                            EnsureConsSlots();
+                            _consSlots[ci] = s.ItemId;
+                            SaveConsSlots();
+                        }
+
+                        return;
                     }
                 }
 

@@ -236,11 +236,24 @@ public sealed class World
                 return false;
             }
 
-            // Unequipping the BAG: everything (plus the bag itself) must fit the base cells.
-            if (slot == EquipSlot.Bag &&
-                player.Inventory.Stacks.Count + 1 > SimulationConstants.PlayerInventoryCapacity)
+            // Unequipping a BAG: everything (plus the bag itself) must fit what remains —
+            // the base cells and the OTHER worn bags' bonuses.
+            if (EquipSlots.IsBagSlot(slot))
             {
-                return false;
+                int remaining = SimulationConstants.PlayerInventoryCapacity;
+                foreach (EquipSlot b in EquipSlots.Bags)
+                {
+                    byte worn = player.GetEquipped(b);
+                    if (b != slot && worn != 0 && _gameData.HasItem(worn))
+                    {
+                        remaining += _gameData.GetItem(worn).BagCapacity;
+                    }
+                }
+
+                if (player.Inventory.Stacks.Count + 1 > remaining)
+                {
+                    return false;
+                }
             }
 
             ItemDefinition currentDef = _gameData.GetItem(current);
@@ -274,11 +287,30 @@ public sealed class World
         // The item's OWN slot decides where it goes (a helm can only sit on the head).
         EquipSlot target = def.Slot;
 
-        // Swapping BAGS: refuse when the smaller capacity could not hold the current cells
-        // (the new bag leaves the bags, the old one drops in — net cell change is zero).
+        // BAGS fill the FIVE bag slots: first empty one wins; all full → swap the first.
+        // Refuse when the resulting total capacity could not hold the current cells.
         if (target == EquipSlot.Bag)
         {
+            target = EquipSlot.Bag; // default: swap slot 1 when everything is occupied
+            foreach (EquipSlot b in EquipSlots.Bags)
+            {
+                if (player.GetEquipped(b) == 0)
+                {
+                    target = b;
+                    break;
+                }
+            }
+
             int newCapacity = SimulationConstants.PlayerInventoryCapacity + def.BagCapacity;
+            foreach (EquipSlot b in EquipSlots.Bags)
+            {
+                byte worn = player.GetEquipped(b);
+                if (b != target && worn != 0 && _gameData.HasItem(worn))
+                {
+                    newCapacity += _gameData.GetItem(worn).BagCapacity;
+                }
+            }
+
             if (player.Inventory.Stacks.Count > newCapacity)
             {
                 return false;
@@ -326,9 +358,17 @@ public sealed class World
         entity.EquipmentDefenseBonus = def;
         entity.EquipmentHealthBonus = hp;
 
-        // The worn BAG sets the carried capacity: base cells + the bag's bonus.
-        byte bagId = entity.GetEquipped(EquipSlot.Bag);
-        int bagBonus = bagId != 0 && _gameData.HasItem(bagId) ? _gameData.GetItem(bagId).BagCapacity : 0;
+        // The worn BAGS set the carried capacity: base cells + every bag's bonus (5 slots).
+        int bagBonus = 0;
+        foreach (EquipSlot b in EquipSlots.Bags)
+        {
+            byte bagId = entity.GetEquipped(b);
+            if (bagId != 0 && _gameData.HasItem(bagId))
+            {
+                bagBonus += _gameData.GetItem(bagId).BagCapacity;
+            }
+        }
+
         entity.Inventory.SetCapacity(SimulationConstants.PlayerInventoryCapacity + bagBonus);
     }
 
@@ -696,9 +736,11 @@ public sealed class World
         }
 
         // Faction rule: players cannot attack players of their own camp. Opposite factions can —
-        // that is open-world PvP. Exception: an active DUEL pair may always fight each other.
+        // that is open-world PvP. Exceptions: an active DUEL pair, a BANDIT striking his own
+        // camp, or striking a BANDIT of your own camp (outlaws protect no one).
         if (attacker.Kind == EntityKind.Player && target.Kind == EntityKind.Player &&
-            attacker.Faction == target.Faction && !IsDuelPair(attackerId, targetId))
+            attacker.Faction == target.Faction && !IsDuelPair(attackerId, targetId) &&
+            !attacker.IsBandit && !target.IsBandit)
         {
             return false;
         }
@@ -1165,6 +1207,12 @@ public sealed class World
                     flags |= 2;
                 }
 
+                // Bit 2: a BANDIT player — everyone sees the outlaw (red name, attackable).
+                if (e.Kind == EntityKind.Player && e.IsBandit)
+                {
+                    flags |= 4;
+                }
+
                 result.Add(new EntitySnapshot(
                     e.Id, e.Kind, e.Faction, e.Position,
                     e.Health, e.EffectiveMaxHealth, (int)e.CurrentResource, e.EffectiveMaxResource,
@@ -1462,6 +1510,23 @@ public sealed class World
 
         if (victim.Kind == EntityKind.Player)
         {
+            // PVP LEDGER: a player's killing blow moves honor and reputation. Killing the
+            // ENEMY camp raises your own camp's esteem; killing YOUR OWN (bandit work)
+            // costs it dearly. Honor is a trophy count — it only ever grows.
+            if (killer.Kind == EntityKind.Player && killer.Id != victim.Id)
+            {
+                killer.HonorPoints += 10;
+                int delta = killer.Faction == victim.Faction ? -50 : +25;
+                if (killer.Faction == Faction.Alliance)
+                {
+                    killer.RepAlliance = Math.Clamp(killer.RepAlliance + delta, -10000, 10000);
+                }
+                else if (killer.Faction == Faction.Horde)
+                {
+                    killer.RepHorde = Math.Clamp(killer.RepHorde + delta, -10000, 10000);
+                }
+            }
+
             // Full loot: the player's carried inventory, equipped gear, and gold drop as a lootable
             // corpse anyone can plunder.
             SpawnCorpse(victim);
@@ -1530,7 +1595,7 @@ public sealed class World
 
             // NOTHING is auto-looted for the killer: gold, body parts and gear all wait inside
             // the corpse on the ground — right-click it to open its loot window.
-            SpawnMonsterCorpse(victim, def);
+            SpawnMonsterCorpse(victim, def, killer.Name);
         }
     }
 
@@ -1538,17 +1603,18 @@ public sealed class World
     /// Leave the slain creature's remains on the ground as a LOOTABLE corpse holding its gold,
     /// guaranteed body parts and rolled gear. Despawns after ~90 seconds or once emptied.
     /// </summary>
-    private void SpawnMonsterCorpse(ServerEntity victim, MonsterDefinition def)
+    private void SpawnMonsterCorpse(ServerEntity victim, MonsterDefinition def, string killerName = "")
     {
         int id = _ids.Next();
         var remains = new ServerEntity(id, EntityKind.MonsterCorpse, victim.Position,
             new StatBlock(1, 0f, 0, 0, 0f), 0)
         {
-            Name = victim.Name,
+            // The corpse WEARS its hunter's name: everyone sees whose kill (and loot) it is.
+            Name = killerName.Length > 0 ? victim.Name + " (" + killerName + ")" : victim.Name,
             Faction = Faction.Neutral,
             MonsterId = victim.MonsterId,
             Level = victim.Level,
-            LootContainer = BuildMonsterLoot(def),
+            LootContainer = BuildMonsterLoot(def, victim.IsBoss),
             DespawnAtTick = Tick + (uint)(SimulationConstants.TickRate * 90),
         };
 
@@ -1563,7 +1629,7 @@ public sealed class World
     /// Kill loot, WoW-style windowed: the monster's gold, its GUARANTEED body parts (no RNG —
     /// "bring me 10 goblin heads" is deterministic), and one chance roll per listed gear piece.
     /// </summary>
-    private Inventory BuildMonsterLoot(MonsterDefinition def)
+    private Inventory BuildMonsterLoot(MonsterDefinition def, bool isBoss = false)
     {
         var loot = new Inventory(SimulationConstants.CorpseLootCapacity);
         loot.AddGold(def.GoldReward);
@@ -1591,8 +1657,23 @@ public sealed class World
             loot.TryAdd(drop.ItemId, 1, item.Stackable, item.MaxStack);
         }
 
+        // INSTANCE LOOT TABLE (see the Codex): every kill inside rolls a 15% chance at one
+        // random table piece — and the BOSS always drops one.
+        if (BonusLootTable.Length > 0 && (isBoss || LootRng.Next(100) < 15))
+        {
+            byte bonus = BonusLootTable[LootRng.Next(BonusLootTable.Length)];
+            if (_gameData.HasItem(bonus))
+            {
+                ItemDefinition item = _gameData.GetItem(bonus);
+                loot.TryAdd(bonus, 1, item.Stackable, item.MaxStack);
+            }
+        }
+
         return loot;
     }
+
+    /// <summary>This world's random loot table (instances set it from their definition).</summary>
+    public byte[] BonusLootTable { get; set; } = [];
 
     private void SpawnCorpse(ServerEntity dead)
     {

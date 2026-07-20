@@ -28,14 +28,18 @@ public enum EquipSlot : byte
     Waist = 8,
     Back = 9,
     OffHand = 10,
-    Bag = 11, // the carried bag (raises inventory capacity; not part of the visual loadout)
+    Bag = 11,  // first bag slot (raises inventory capacity; not part of the visual loadout)
+    Bag2 = 12, // WoW-style: up to FIVE bags worn at once, capacities add up
+    Bag3 = 13,
+    Bag4 = 14,
+    Bag5 = 15,
 }
 
 /// <summary>Helpers for iterating the real equipment slots.</summary>
 public static class EquipSlots
 {
     /// <summary>Array length for per-slot storage (index = (int)EquipSlot).</summary>
-    public const int Count = 12;
+    public const int Count = 16;
 
     /// <summary>Every wearable slot, in display order (the character sheet's layout).</summary>
     public static readonly EquipSlot[] All =
@@ -43,6 +47,15 @@ public static class EquipSlots
         EquipSlot.Head, EquipSlot.Shoulders, EquipSlot.Back, EquipSlot.Chest, EquipSlot.Hands,
         EquipSlot.Waist, EquipSlot.Legs, EquipSlot.Feet, EquipSlot.Weapon, EquipSlot.OffHand,
     ];
+
+    /// <summary>The five bag slots, in fill order.</summary>
+    public static readonly EquipSlot[] Bags =
+    [
+        EquipSlot.Bag, EquipSlot.Bag2, EquipSlot.Bag3, EquipSlot.Bag4, EquipSlot.Bag5,
+    ];
+
+    public static bool IsBagSlot(EquipSlot slot)
+        => slot is EquipSlot.Bag or EquipSlot.Bag2 or EquipSlot.Bag3 or EquipSlot.Bag4 or EquipSlot.Bag5;
 }
 
 /// <summary>A bank transaction direction: move gold or an item between the player and their account bank.</summary>

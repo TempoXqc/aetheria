@@ -354,3 +354,23 @@ public readonly struct ChatMessage
     public static ChatMessage Read(ref PacketReader r)
         => new((ChatChannel)r.ReadByte(), r.ReadString(), r.ReadString(), r.ReadString());
 }
+
+/// <summary>
+/// Toggle BANDIT mode (client → server). A bandit may strike players of his OWN faction
+/// (outside sanctuaries) — and wears a mark everyone can see. Honor and reputation shift
+/// with every player kill; see the character sheet's Réputation tab.
+/// </summary>
+public readonly struct SetBanditMode
+{
+    public readonly bool Enabled;
+
+    public SetBanditMode(bool enabled) => Enabled = enabled;
+
+    public void Write(PacketWriter w)
+    {
+        w.WriteByte((byte)MessageType.SetBandit);
+        w.WriteBool(Enabled);
+    }
+
+    public static SetBanditMode Read(ref PacketReader r) => new(r.ReadBool());
+}

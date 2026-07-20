@@ -71,6 +71,12 @@ public sealed class CharacterRecord
 
     /// <summary>Weapon/spell proficiency per skill line (key: line id as string, for JSON friendliness).</summary>
     public Dictionary<string, int> Skills { get; set; } = new();
+
+    // PvP ledger: honor trophies, per-camp standing, and the bandit switch.
+    public int Honor { get; set; }
+    public int RepAlliance { get; set; }
+    public int RepHorde { get; set; }
+    public bool Bandit { get; set; }
 }
 
 public sealed class ItemStackRecord

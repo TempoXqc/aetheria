@@ -23,7 +23,7 @@ namespace Aetheria.UnityClient
         {
             PlayerFrame, TargetFrame, ActionBar, Messages, XpBar,
             Minimap, QuestTracker, CharSheet, Bags, PartyFrames,
-            Chat, MicroBar, CastBar,
+            Chat, MicroBar, CastBar, Shop, ConsumableBar,
         }
 
         private static readonly Dictionary<Bind, KeyCode> Defaults = new Dictionary<Bind, KeyCode>

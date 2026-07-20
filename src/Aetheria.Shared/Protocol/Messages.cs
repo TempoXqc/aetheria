@@ -205,6 +205,9 @@ public readonly struct EntitySnapshot
     /// <summary>Monsters: currently chasing/fighting someone (red name + health bar).</summary>
     public bool IsAggro => (Flags & 2) != 0;
 
+    /// <summary>Players: BANDIT mode on — attackable by (and hostile to) everyone.</summary>
+    public bool IsBandit => (Flags & 4) != 0;
+
     /// <summary>Ability currently being INCANTED (0 = not casting). Drives cast bars.</summary>
     public readonly byte CastAbilityId;
 
@@ -451,8 +454,19 @@ public readonly struct PlayerStatus
     public readonly int EffectiveAttack;
     public readonly int EffectiveDefense;
 
+    /// <summary>PvP kill points (never decrease — a trophy count).</summary>
+    public readonly int Honor;
+
+    /// <summary>Reputation with each camp: killing its members costs, killing its foes pays.</summary>
+    public readonly int RepAlliance;
+    public readonly int RepHorde;
+
+    /// <summary>BANDIT mode: this player may strike his own faction (outside sanctuaries).</summary>
+    public readonly bool IsBandit;
+
     public PlayerStatus(int level, int totalXp, int xpForNextLevel, int gold,
-        int effectiveAttack = 0, int effectiveDefense = 0)
+        int effectiveAttack = 0, int effectiveDefense = 0,
+        int honor = 0, int repAlliance = 0, int repHorde = 0, bool isBandit = false)
     {
         Level = level;
         TotalXp = totalXp;
@@ -460,6 +474,10 @@ public readonly struct PlayerStatus
         Gold = gold;
         EffectiveAttack = effectiveAttack;
         EffectiveDefense = effectiveDefense;
+        Honor = honor;
+        RepAlliance = repAlliance;
+        RepHorde = repHorde;
+        IsBandit = isBandit;
     }
 
     public void Write(PacketWriter w)
@@ -471,6 +489,10 @@ public readonly struct PlayerStatus
         w.WriteInt(Gold);
         w.WriteInt(EffectiveAttack);
         w.WriteInt(EffectiveDefense);
+        w.WriteInt(Honor);
+        w.WriteInt(RepAlliance);
+        w.WriteInt(RepHorde);
+        w.WriteBool(IsBandit);
     }
 
     public static PlayerStatus Read(ref PacketReader r)
@@ -481,7 +503,12 @@ public readonly struct PlayerStatus
         int gold = r.ReadInt();
         int attack = r.ReadInt();
         int defense = r.ReadInt();
-        return new PlayerStatus(level, totalXp, xpForNext, gold, attack, defense);
+        int honor = r.ReadInt();
+        int repA = r.ReadInt();
+        int repH = r.ReadInt();
+        bool bandit = r.ReadBool();
+        return new PlayerStatus(level, totalXp, xpForNext, gold, attack, defense,
+            honor, repA, repH, bandit);
     }
 }
 

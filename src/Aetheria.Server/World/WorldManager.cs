@@ -85,9 +85,16 @@ public sealed class WorldManager
         // Dungeon packs come back SLOWLY (3 min), not on the open world's 5-second treadmill.
         world.MonsterRespawnDelayTicks = Aetheria.Shared.SimulationConstants.InstanceRespawnDelayTicks;
 
-        foreach (InstanceSpawn spawn in def.Spawns)
+        // The instance's random loot table feeds every corpse inside (see the Codex).
+        world.BonusLootTable = def.LootTable;
+
+        for (int i = 0; i < def.Spawns.Length; i++)
         {
-            world.SpawnMonster(spawn.MonsterId, new Vec2(spawn.X, spawn.Y), hpMult, dmgMult);
+            InstanceSpawn spawn = def.Spawns[i];
+            ServerEntity mob = world.SpawnMonster(spawn.MonsterId, new Vec2(spawn.X, spawn.Y), hpMult, dmgMult);
+
+            // Convention: the LAST spawn of the template is the boss — guaranteed table drop.
+            mob.IsBoss = i == def.Spawns.Length - 1;
         }
 
         // The way OUT: an exit portal behind the entrance — walk into it to leave (no key).

@@ -118,6 +118,31 @@ public static class EquipmentTests
         Assert.Equal((byte)23, p.GetEquipped(EquipSlot.Bag)); // still worn
     }
 
+    [Test("FIVE bag slots: capacities add up, each bag fills the first empty slot.")]
+    public static void Bags_FiveSlots_CapacitiesAddUp()
+    {
+        var world = new World();
+        ServerEntity p = world.SpawnPlayer(new PeerId(4), "Caravanier", raceId: 1, classId: 1);
+        int baseCells = SimulationConstants.PlayerInventoryCapacity;
+
+        // Wear three bags: +8, +8, +16 — each must land in the NEXT free slot.
+        world.AddItem(p, 23, 1);
+        world.AddItem(p, 23, 1);
+        world.AddItem(p, 24, 1);
+        Assert.True(world.TryEquipItem(p.Id, 23, EquipSlot.None));
+        Assert.True(world.TryEquipItem(p.Id, 23, EquipSlot.None));
+        Assert.True(world.TryEquipItem(p.Id, 24, EquipSlot.None));
+
+        Assert.Equal((byte)23, p.GetEquipped(EquipSlot.Bag));
+        Assert.Equal((byte)23, p.GetEquipped(EquipSlot.Bag2));
+        Assert.Equal((byte)24, p.GetEquipped(EquipSlot.Bag3));
+        Assert.Equal(baseCells + 8 + 8 + 16, p.Inventory.Capacity);
+
+        // Take the middle one off: the OTHER bags keep their bonuses.
+        Assert.True(world.TryEquipItem(p.Id, 0, EquipSlot.Bag2));
+        Assert.Equal(baseCells + 8 + 16, p.Inventory.Capacity);
+    }
+
     [Test("Hardcore full loot: on death EVERY worn piece drops to the corpse.")]
     public static void Death_DropsEverySlotToTheCorpse()
     {

@@ -170,6 +170,23 @@ public sealed class GameServer
             world.Step(dt);
         }
 
+        // Death INSIDE an instance sends you home: the full-loot corpse stays where you fell,
+        // but the reborn character wakes at the SANCTUARY — never back inside the dungeon.
+        foreach ((PeerId _, PlayerSession session) in _sessions)
+        {
+            if (session.HandshakeComplete &&
+                !ReferenceEquals(session.CurrentWorld, _worlds.OpenWorld) &&
+                TryGetEntity(session, out ServerEntity? fallen) && fallen is not null && fallen.IsDead)
+            {
+                World.World from = session.CurrentWorld;
+                if (WorldManager.TransferPlayer(from, _worlds.OpenWorld, session.EntityId, Vec2.Zero))
+                {
+                    session.CurrentWorld = _worlds.OpenWorld;
+                    _worlds.DestroyInstanceIfEmpty(from);
+                }
+            }
+        }
+
         TickHearthstones(); // finished 5-second channels teleport home
 
         BroadcastSnapshots();
@@ -434,6 +451,19 @@ public sealed class GameServer
                     else if (refusal.Length > 0)
                     {
                         SendWith(peer, new ChatMessage(ChatChannel.System, "", "", refusal).Write);
+                    }
+
+                    break;
+
+                case MessageType.SetBandit:
+                    SetBanditMode bandit = SetBanditMode.Read(ref reader);
+                    if (TryGetEntity(session, out ServerEntity? outlaw) && outlaw is not null && outlaw.IsAlive)
+                    {
+                        outlaw.IsBandit = bandit.Enabled;
+                        SendSelfState(peer, session);
+                        SendWith(peer, new ChatMessage(ChatChannel.System, "", "", bandit.Enabled
+                            ? "Mode BANDIT activé : tu peux frapper ta propre faction — et elle le sait."
+                            : "Mode bandit désactivé.").Write);
                     }
 
                     break;
@@ -1855,7 +1885,8 @@ public sealed class GameServer
         ProgressionConfig progression = _worlds.GameData.Progression;
         Send(peer, new PlayerStatus(
             self!.Level, self.TotalXp, progression.XpForNextLevel(self.TotalXp), self.Inventory.Gold,
-            self.EffectiveAttackPower, self.EffectiveDefense));
+            self.EffectiveAttackPower, self.EffectiveDefense,
+            self.HonorPoints, self.RepAlliance, self.RepHorde, self.IsBandit));
         Send(peer, new InventoryState(self.CopyEquipment(), self.Inventory.Stacks, self.Inventory.Capacity));
     }
 
@@ -1925,7 +1956,8 @@ public sealed class GameServer
 
             Send(peer, new PlayerStatus(
                 self!.Level, self.TotalXp, progression.XpForNextLevel(self.TotalXp), self.Inventory.Gold,
-            self.EffectiveAttackPower, self.EffectiveDefense));
+                self.EffectiveAttackPower, self.EffectiveDefense,
+                self.HonorPoints, self.RepAlliance, self.RepHorde, self.IsBandit));
             Send(peer, new InventoryState(self.CopyEquipment(), self.Inventory.Stacks, self.Inventory.Capacity));
         }
     }
