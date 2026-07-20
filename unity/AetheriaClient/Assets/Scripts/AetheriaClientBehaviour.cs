@@ -4898,10 +4898,10 @@ namespace Aetheria.UnityClient
             GUI.color = prev;
 
             float y = pane.y + 4;
-            GUI.Label(new Rect(pane.x, y, pane.width, 20),
+            GUI.Label(new Rect(pane.x, y, pane.width, 24),
                 "<size=12><color=#ffd100><b>" + q.Name + "</b></color>  <color=#30d040>✔ Terminée</color></size>",
                 Rich());
-            y += 26;
+            y += 30;
 
             GUI.Label(new Rect(pane.x, y, pane.width, 96),
                 "<size=10><color=#d8d0c0>" + q.Description + "</color></size>",
@@ -4913,17 +4913,17 @@ namespace Aetheria.UnityClient
                 new GUIStyle(GUI.skin.label) { richText = true, wordWrap = true });
             y += 62;
 
-            GUI.Label(new Rect(pane.x, y, pane.width, 16),
+            GUI.Label(new Rect(pane.x, y, pane.width, 22),
                 "<size=11><color=#70c0ff><b>Récompenses reçues</b></color></size>", Rich());
-            y += 22;
-            GUI.Label(new Rect(pane.x + 4, y, pane.width - 8, 16),
+            y += 26;
+            GUI.Label(new Rect(pane.x + 4, y, pane.width - 8, 22),
                 "<size=10>Expérience : <b>" + q.RewardXp + " XP</b></size>", Rich());
-            y += 20;
+            y += 24;
             if (q.RewardGold > 0)
             {
-                GUI.Label(new Rect(pane.x + 4, y, pane.width - 8, 16),
+                GUI.Label(new Rect(pane.x + 4, y, pane.width - 8, 22),
                     "<size=10>Or : <b>" + FormatMoney(q.RewardGold) + "</b></size>", Rich());
-                y += 20;
+                y += 24;
             }
 
             if (q.RewardItemId != 0 && Data.HasItem(q.RewardItemId))
@@ -4995,7 +4995,7 @@ namespace Aetheria.UnityClient
                     continue; // still locked behind the chain: keep the log clean
                 }
 
-                var row = new Rect(win.x + 10, y, win.width - 20, 40);
+                var row = new Rect(win.x + 10, y, win.width - 20, 46);
                 if (_trackedQuestId == q.Id) { WowUi.Highlight(row); }
 
                 string state = done ? "<color=#30d040>✔</color>"
@@ -5005,9 +5005,9 @@ namespace Aetheria.UnityClient
                 string progress = active
                     ? "  <color=#c8c8c8>" + Mathf.Min(_client.QuestKills, q.RequiredKills) + " / " + q.RequiredKills + "</color>"
                     : "";
-                GUI.Label(new Rect(row.x + 6, row.y + 2, row.width - 12, 18),
+                GUI.Label(new Rect(row.x + 6, row.y + 2, row.width - 12, 20),
                     state + " <b>" + q.Name + "</b>" + progress, Rich());
-                GUI.Label(new Rect(row.x + 20, row.y + 20, row.width - 26, 16),
+                GUI.Label(new Rect(row.x + 20, row.y + 23, row.width - 26, 20),
                     "<size=10><color=#909090>" + (done
                         ? "Clique pour relire le récit et les récompenses"
                         : q.ZoneRadius > 0f ? "Clique pour voir la zone de chasse sur la carte" : "") +
@@ -5028,8 +5028,8 @@ namespace Aetheria.UnityClient
                     evt.Use();
                 }
 
-                y += 44f;
-                if (y > win.yMax - 60) { break; }
+                y += 50f;
+                if (y > win.yMax - 66) { break; }
             }
 
             Aetheria.Shared.Data.QuestDefinition? sel = HighlightedQuest();
@@ -5379,6 +5379,7 @@ namespace Aetheria.UnityClient
         private bool _codexOpen;
         private byte _codexInstance;
         private byte _codexMonster;
+        private Vector2 _codexLootScroll;
         private Rect _lastCodexRect;
 
         private void DrawCodexWindow()
@@ -5398,9 +5399,9 @@ namespace Aetheria.UnityClient
             }
 
             // LEFT COLUMN: the instances. Click one to browse it.
-            float ly = win.y + 36;
-            GUI.Label(new Rect(win.x + 12, ly, 150, 16), "<size=10><color=#a0a0a0>Instances</color></size>", Rich());
-            ly += 18;
+            float ly = win.y + 34;
+            GUI.Label(new Rect(win.x + 12, ly, 170, 20), "<size=10><color=#a0a0a0>Instances</color></size>", Rich());
+            ly += 22;
             foreach (Aetheria.Shared.Data.InstanceDefinition inst in Data.Instances)
             {
                 var btn = new Rect(win.x + 12, ly, 150, 24);
@@ -5429,15 +5430,15 @@ namespace Aetheria.UnityClient
                 return;
             }
 
-            GUI.Label(new Rect(win.x + 196, win.y + 32, win.width - 210, 18),
+            GUI.Label(new Rect(win.x + 196, win.y + 32, win.width - 210, 22),
                 "<size=11><color=#ffd100><b>" + sel.Name + "</b></color>  <size=9><color=#a0a0a0>" +
                 (sel.IsRaid ? "Raid" : "Donjon") + " · " + sel.MinPlayers + "–" + sel.MaxPlayers +
                 " joueurs</color></size></size>", Rich());
 
             // MIDDLE COLUMN: its monsters (👑 = boss, the last of the template).
-            float my = win.y + 56;
-            GUI.Label(new Rect(win.x + 196, my, 170, 16), "<size=10><color=#a0a0a0>Habitants</color></size>", Rich());
-            my += 18;
+            float my = win.y + 58;
+            GUI.Label(new Rect(win.x + 196, my, 170, 20), "<size=10><color=#a0a0a0>Habitants</color></size>", Rich());
+            my += 22;
             byte bossId = sel.Spawns.Length > 0 ? sel.Spawns[sel.Spawns.Length - 1].MonsterId : (byte)0;
             var listed = new HashSet<byte>();
             foreach (Aetheria.Shared.Data.InstanceSpawn sp in sel.Spawns)
@@ -5464,35 +5465,46 @@ namespace Aetheria.UnityClient
             }
 
             // RIGHT PANE: the selected monster's loot — hover a line for the item's tooltip.
-            float rx = win.x + 396;
-            float ry = win.y + 56;
+            // The list SCROLLS: long tables must never spill past the window.
+            float paneX = win.x + 396;
+            float paneW = win.width - (paneX - win.x) - 14;
             if (_codexMonster == 0)
             {
-                WowUi.Body(new Rect(rx, ry + 60, win.width - (rx - win.x) - 14, 60),
+                WowUi.Body(new Rect(paneX, win.y + 116, paneW, 60),
                     "<color=#a0a0a0>Choisis un monstre pour voir son butin.</color>");
                 return;
             }
 
             Aetheria.Shared.Data.MonsterDefinition chosen = Data.GetMonster(_codexMonster);
             bool chosenBoss = _codexMonster == bossId;
-            GUI.Label(new Rect(rx, ry, win.width - (rx - win.x) - 14, 16),
+            GUI.Label(new Rect(paneX, win.y + 56, paneW, 22),
                 "<size=10><color=#70c0ff><b>Butin de " + chosen.Name + "</b></color></size>", Rich());
-            ry += 20;
+
+            var pane = new Rect(paneX, win.y + 80, paneW, win.height - 96);
+            int rows = chosen.BodyParts.Count + chosen.GearDrops.Count + sel.LootTable.Length;
+            float contentH = (rows * 26f) + 48f;
+            _codexLootScroll = GUI.BeginScrollView(pane, _codexLootScroll,
+                new Rect(0, 0, pane.width - 18, contentH));
+            float rx = 0f;
+            float ry = 0f;
 
             // Icon + coloured NAME only — chance, quantity and stats live in the tooltip,
             // anchored right beside the hovered line (WoW-style).
             void LootLine(byte itemId, string detail)
             {
                 Aetheria.Shared.Data.ItemDefinition item = Data.GetItem(itemId);
-                var row = new Rect(rx, ry, win.width - (rx - win.x) - 14, 24);
+                var row = new Rect(rx, ry, pane.width - 22, 24);
                 DrawItemIcon(new Rect(row.x, row.y + 1, 22, 22), itemId, 1);
-                GUI.Label(new Rect(row.x + 27, row.y + 3, row.width - 27, 18),
+                GUI.Label(new Rect(row.x + 27, row.y + 2, row.width - 27, 21),
                     "<size=10><color=" + QualityHex(item) + ">" + item.Name + "</color></size>", Rich());
                 if (row.Contains(Event.current.mousePosition))
                 {
                     _tooltip = ItemTooltip(item, 1) +
                         "\n<size=9><color=#70c0ff>" + detail + "</color></size>";
-                    _tooltipAnchor = row;
+
+                    // The anchor must live in WINDOW coordinates, not scroll-local ones.
+                    _tooltipAnchor = new Rect(pane.x + row.x, pane.y + row.y - _codexLootScroll.y,
+                        row.width, row.height);
                 }
 
                 ry += 26;
@@ -5509,9 +5521,9 @@ namespace Aetheria.UnityClient
             }
 
             ry += 6;
-            GUI.Label(new Rect(rx, ry, win.width - (rx - win.x) - 14, 16),
+            GUI.Label(new Rect(rx, ry, pane.width - 22, 20),
                 "<size=9><color=#70c0ff>Table de l'instance :</color></size>", Rich());
-            ry += 17;
+            ry += 22;
             foreach (byte itemId in sel.LootTable)
             {
                 LootLine(itemId, chosenBoss
@@ -5519,8 +5531,10 @@ namespace Aetheria.UnityClient
                     : "Table de l'instance — 15 % par monstre");
             }
 
-            GUI.Label(new Rect(rx, win.yMax - 24, win.width - (rx - win.x) - 14, 16),
+            ry += 4;
+            GUI.Label(new Rect(rx, ry, pane.width - 22, 18),
                 "<size=8><color=#707070>Or : " + chosen.GoldReward + " pc par kill.</color></size>", Rich());
+            GUI.EndScrollView();
         }
 
         /// <summary>The PvP ledger: honor trophies, camp standings, and the BANDIT switch.</summary>
