@@ -1504,6 +1504,12 @@ namespace Aetheria.UnityClient
             // Instances have PHYSICAL gates now: walk into the portal, no keyboard shortcut.
             if (_cfg.Down(HudConfig.Bind.WorldMap)) { _worldMapOpen = !_worldMapOpen; }
             if (_cfg.Down(HudConfig.Bind.QuestLog)) { _questLogOpen = !_questLogOpen; }
+            if (_cfg.Down(HudConfig.Bind.Codex)) { _codexOpen = !_codexOpen; }
+            if (_cfg.Down(HudConfig.Bind.Friends))
+            {
+                _friendsOpen = !_friendsOpen;
+                if (_friendsOpen) { _client.SendFriendAction(FriendOp.Refresh); }
+            }
 
             // Consumable bar, WoW-style: 7/8/9/0 swallow the assigned potion or food.
             if (Input.GetKeyDown(KeyCode.Alpha7)) { UseConsSlot(0); }
@@ -3100,7 +3106,7 @@ namespace Aetheria.UnityClient
             if (member == null) { _partyMenuFor = -1; return; }
 
             bool iAmLeader = _client.PartyLeader == _name;
-            float h = 12 + 26 + 26 + (iAmLeader ? 26 : 0) + 26;
+            float h = 12 + 26 + 26 + 26 + (iAmLeader ? 26 : 0) + 26;
             var win = new Rect(_partyMenuPos.x, _partyMenuPos.y, 170, h);
             WowUi.Panel(win);
             float y = win.y + 6;
@@ -3110,6 +3116,16 @@ namespace Aetheria.UnityClient
                 _targetId = member.EntityId;
                 _targetHostile = false;
                 _client.SendAttackTarget(0);
+                _partyMenuFor = -1;
+            }
+
+            y += 26;
+            if (GUI.Button(new Rect(win.x + 8, y, win.width - 16, 22), "Chuchoter"))
+            {
+                _chatInputActive = true;
+                _chatChannel = ChatChannel.Whisper;
+                _whisperTarget = member.Name;
+                _chatInput = "";
                 _partyMenuFor = -1;
             }
 
@@ -5147,8 +5163,8 @@ namespace Aetheria.UnityClient
                 ("Q", "Carnet de quêtes (" + KeyLabel(HudConfig.Bind.QuestLog) + ")", () => _questLogOpen = !_questLogOpen),
                 ("C", "Carte du monde (" + KeyLabel(HudConfig.Bind.WorldMap) + ")", () => _worldMapOpen = !_worldMapOpen),
                 ("S", "Sacs (" + KeyLabel(HudConfig.Bind.Bags) + ")", () => _bagsOpen = !_bagsOpen),
-                ("📖", "Codex — donjons, raids et leurs butins", () => _codexOpen = !_codexOpen),
-                ("👥", "Amis", () => { _friendsOpen = !_friendsOpen; if (_friendsOpen) { _client.SendFriendAction(FriendOp.Refresh); } }),
+                ("📖", "Codex (" + KeyLabel(HudConfig.Bind.Codex) + ") — donjons, raids et butins", () => _codexOpen = !_codexOpen),
+                ("👥", "Amis (" + KeyLabel(HudConfig.Bind.Friends) + ")", () => { _friendsOpen = !_friendsOpen; if (_friendsOpen) { _client.SendFriendAction(FriendOp.Refresh); } }),
             };
 
             const float B = 26f;
@@ -5959,10 +5975,21 @@ namespace Aetheria.UnityClient
             EntitySnapshot target;
             if (!_client.TryGetEntity(_contextEntityId, out target)) { _contextEntityId = -1; return; }
 
-            Rect win = new Rect(_contextPos.x, _contextPos.y, 180, 202);
+            Rect win = new Rect(_contextPos.x, _contextPos.y, 180, 230);
             GUI.Box(win, "<b>" + (string.IsNullOrEmpty(target.Name) ? "Joueur" : target.Name) + "</b>", RichCenteredBox());
 
             float y = win.y + 26f;
+            if (GUI.Button(new Rect(win.x + 8, y, win.width - 16, 24), "Chuchoter"))
+            {
+                _chatInputActive = true;
+                _chatChannel = ChatChannel.Whisper;
+                _whisperTarget = target.Name;
+                _chatInput = "";
+                _contextEntityId = -1;
+                return;
+            }
+
+            y += 28f;
             if (GUI.Button(new Rect(win.x + 8, y, win.width - 16, 24), "Inviter au groupe"))
             {
                 _client.SendPartyInvite(_contextEntityId);

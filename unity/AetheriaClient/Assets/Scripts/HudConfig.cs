@@ -15,7 +15,7 @@ namespace Aetheria.UnityClient
         {
             Attack1, Attack2, Renew, Racial, Interact, CharSheet,
             Invite, AcceptInvite, LeaveParty, Dungeon, Raid, LeaveInstance, NextTarget,
-            Bags, WorldMap, QuestLog,
+            Bags, WorldMap, QuestLog, Friends, Codex,
         }
 
         /// <summary>Movable HUD frames (shown in Options → Déplacer l'interface).</summary>
@@ -41,6 +41,8 @@ namespace Aetheria.UnityClient
             { Bind.WorldMap, KeyCode.M },
             { Bind.QuestLog, KeyCode.L },
             { Bind.NextTarget, KeyCode.Tab },
+            { Bind.Friends, KeyCode.O },
+            { Bind.Codex, KeyCode.K },
         };
 
         public static readonly Dictionary<Bind, string> Labels = new Dictionary<Bind, string>
@@ -58,6 +60,8 @@ namespace Aetheria.UnityClient
             { Bind.WorldMap, "Carte du monde" },
             { Bind.QuestLog, "Carnet de quêtes" },
             { Bind.NextTarget, "Cible suivante" },
+            { Bind.Friends, "Amis" },
+            { Bind.Codex, "Codex" },
         };
 
         private readonly Dictionary<Bind, KeyCode> _binds = new Dictionary<Bind, KeyCode>();
