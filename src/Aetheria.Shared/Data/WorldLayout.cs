@@ -71,7 +71,17 @@ public static class WorldLayout
     public static readonly Obstacle[] FencePosts = BuildFences();
 
     /// <summary>Everything that blocks movement, concatenated. The server iterates this.</summary>
-    public static readonly Obstacle[] All = Concat(Trees, Rocks, Menhirs, BankPosts, FencePosts);
+    /// <summary>
+    /// The starting town's building shells (Marla's inn and Mira's market house): solid cores
+    /// so nobody strolls through a stone wall. The bank pavilion and the forge stay open.
+    /// </summary>
+    public static readonly Obstacle[] TownHouses =
+    [
+        new Obstacle(8.2f, -7.2f, 2.4f),
+        new Obstacle(-7.8f, 8.6f, 2.4f),
+    ];
+
+    public static readonly Obstacle[] All = Concat(Trees, Rocks, Menhirs, BankPosts, FencePosts, TownHouses);
 
     /// <summary>
     /// LINE OF SIGHT between two points in the OPEN WORLD: false when a TALL obstacle (tree,

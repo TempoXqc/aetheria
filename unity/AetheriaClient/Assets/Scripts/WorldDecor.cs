@@ -339,6 +339,287 @@ namespace Aetheria.UnityClient
     /// goblin starter camp, and the WOLF FIELD to the west — golden wheat, fences and haystacks.
     /// Pure visuals: the server knows nothing about any of it.
     /// </summary>
+    /// <summary>
+    /// Loader for Kenney's « Retro Fantasy Kit » (CC0, Assets/Resources/RetroFantasy): modular
+    /// town pieces on a clean 1×1×1 grid, pivot at the base. One measured reference piece sets
+    /// the GLOBAL scale so every module keeps fitting the grid whatever the FBX import scale.
+    /// </summary>
+    public static class RetroModels
+    {
+        private const string Root = "RetroFantasy/";
+
+        private static readonly System.Collections.Generic.Dictionary<string, GameObject> Cache =
+            new System.Collections.Generic.Dictionary<string, GameObject>();
+        private static readonly System.Collections.Generic.Dictionary<string, Texture2D> TexCache =
+            new System.Collections.Generic.Dictionary<string, Texture2D>();
+        private static bool _checked;
+        private static bool _available;
+        private static float _scale = -1f;
+
+        /// <summary>One storey / one grid tile, in world units (characters are ~1.8 u tall).</summary>
+        public const float Tile = 2.6f;
+
+        public static bool Available
+        {
+            get
+            {
+                if (!_checked)
+                {
+                    _checked = true;
+                    _available = Load("wall") != null;
+                }
+
+                return _available;
+            }
+        }
+
+        /// <summary>Uniform scale turning the kit's native module into <see cref="Tile"/> units.</summary>
+        public static float Scale
+        {
+            get
+            {
+                if (_scale > 0f) { return _scale; }
+
+                _scale = Tile; // sane default if measuring fails (native module = 1 unit)
+                GameObject prefab = Load("wall");
+                if (prefab != null)
+                {
+                    GameObject probe = Object.Instantiate(prefab);
+                    var bounds = new Bounds(probe.transform.position, Vector3.zero);
+                    bool first = true;
+                    foreach (Renderer r in probe.GetComponentsInChildren<Renderer>(true))
+                    {
+                        if (first) { bounds = r.bounds; first = false; }
+                        else { bounds.Encapsulate(r.bounds); }
+                    }
+
+                    if (!first && bounds.size.y > 0.001f)
+                    {
+                        _scale = Tile / bounds.size.y; // whatever the import scale, one storey = Tile
+                    }
+
+                    Object.Destroy(probe);
+                }
+
+                return _scale;
+            }
+        }
+
+        private static GameObject Load(string name)
+        {
+            GameObject cached;
+            if (!Cache.TryGetValue(name, out cached))
+            {
+                cached = Resources.Load<GameObject>(Root + name);
+                Cache[name] = cached;
+            }
+
+            return cached;
+        }
+
+        /// <summary>Spawn a kit piece on the town grid (uniform scale, textures wired).</summary>
+        public static GameObject Spawn(Transform parent, string name, Vector3 pos, float yawDegrees,
+            float scaleMul = 1f)
+        {
+            GameObject prefab = Load(name);
+            if (prefab == null)
+            {
+                return null;
+            }
+
+            GameObject go = Object.Instantiate(prefab, parent, false);
+            go.name = name;
+            go.transform.localPosition = pos;
+            go.transform.localRotation = Quaternion.Euler(0f, yawDegrees, 0f);
+            float k = Scale * scaleMul;
+            go.transform.localScale = new Vector3(k, k, k);
+            ApplyTextures(go);
+            return go;
+        }
+
+        private static void ApplyTextures(GameObject go)
+        {
+            foreach (Renderer r in go.GetComponentsInChildren<Renderer>(true))
+            {
+                foreach (Material m in r.materials)
+                {
+                    if (m == null) { continue; }
+
+                    Texture2D tex = TextureFor(m.name);
+                    if (tex != null)
+                    {
+                        m.mainTexture = tex;
+                        m.color = Color.white;
+                    }
+                }
+            }
+        }
+
+        /// <summary>The kit names materials after their palette page — resolve explicitly.</summary>
+        private static Texture2D TextureFor(string materialName)
+        {
+            string n = materialName.Replace(" (Instance)", "").Replace("(Instance)", "").Trim().ToLowerInvariant();
+            if (n.Contains("stones")) { return LoadTexture("cobblestone"); }
+            if (n.Contains("bricks")) { return LoadTexture("cobblestoneAlternative"); }
+            if (n.Contains("planks")) { return LoadTexture("planks"); }
+            if (n.Contains("roof")) { return LoadTexture("roof"); }
+            if (n.Contains("tree")) { return LoadTexture("tree"); }
+            if (n.Contains("barrel")) { return LoadTexture("barrel"); }
+            if (n.Contains("details")) { return LoadTexture("details"); }
+            if (n.Contains("fence")) { return LoadTexture("fence"); }
+            if (n.Contains("water")) { return LoadTexture("water"); }
+            return null;
+        }
+
+        private static Texture2D LoadTexture(string name)
+        {
+            Texture2D cached;
+            if (!TexCache.TryGetValue(name, out cached))
+            {
+                cached = Resources.Load<Texture2D>(Root + "Textures/" + name);
+                TexCache[name] = cached;
+            }
+
+            return cached;
+        }
+    }
+
+    /// <summary>
+    /// The STARTING TOWN inside the sanctuary, built from the Retro Fantasy Kit: cobblestone
+    /// plaza, bank pavilion, Marla's inn, Brom's forge, Mira's market house, watchtowers on the
+    /// sanctuary ring and a gate over the east road. Purely deterministic placement.
+    /// </summary>
+    public static class RetroTown
+    {
+        private const float T = RetroModels.Tile;
+
+        /// <summary>Sanctuary-ring indices (of the 14 menhirs) that carry a WATCHTOWER.</summary>
+        public static bool IsTowerIndex(int i) => i is 0 or 4 or 7 or 11;
+
+        public static void SpawnTower(Transform r, float x, float z)
+        {
+            RetroModels.Spawn(r, "tower-base", new Vector3(x, 0f, z), 0f);
+            RetroModels.Spawn(r, "tower", new Vector3(x, T, z), 0f);
+            RetroModels.Spawn(r, "tower-top", new Vector3(x, 2f * T, z), 0f);
+        }
+
+        public static void Build(Transform r)
+        {
+            // --- COBBLESTONE PLAZA: 7×7 tiles centred on the spawn. ---
+            for (int gx = -3; gx <= 3; gx++)
+            {
+                for (int gz = -3; gz <= 3; gz++)
+                {
+                    RetroModels.Spawn(r, "floor-flat", new Vector3(gx * T, 0.012f, gz * T), 0f);
+                }
+            }
+
+            // --- BANK PAVILION over the chest (8,6): open on all sides, the chest stays usable. ---
+            var bank = new Vector3(SimulationConstants.BankChestX, 0f, SimulationConstants.BankChestY);
+            RetroModels.Spawn(r, "wood-floor", bank + new Vector3(-T / 2f, 0.02f, -T / 2f), 0f);
+            RetroModels.Spawn(r, "wood-floor", bank + new Vector3(T / 2f, 0.02f, -T / 2f), 0f);
+            RetroModels.Spawn(r, "wood-floor", bank + new Vector3(-T / 2f, 0.02f, T / 2f), 0f);
+            RetroModels.Spawn(r, "wood-floor", bank + new Vector3(T / 2f, 0.02f, T / 2f), 0f);
+            foreach ((float cx, float cz) in new[] { (-1f, -1f), (1f, -1f), (-1f, 1f), (1f, 1f) })
+            {
+                RetroModels.Spawn(r, "column", bank + new Vector3(cx * T * 0.92f, 0f, cz * T * 0.92f), 0f,
+                    scaleMul: 1.05f);
+            }
+
+            PyramidRoof(r, bank + new Vector3(0f, T * 1.05f, 0f));
+            RetroModels.Spawn(r, "barrels", bank + new Vector3(-T * 1.1f, 0f, T * 0.7f), 35f);
+
+            // --- MARLA'S INN (south-east) — the door looks north, toward her spot (6.2,-2.5). ---
+            House(r, new Vector3(8.2f, 0f, -7.2f), doorNorth: true, wood: true);
+
+            // --- BROM'S FORGE (south-west): an open smithy — poles and a plank roof. ---
+            var forge = new Vector3(-8.6f, 0f, -6.8f);
+            RetroModels.Spawn(r, "wood-floor", forge + new Vector3(-T / 2f, 0.02f, -T / 2f), 0f);
+            RetroModels.Spawn(r, "wood-floor", forge + new Vector3(T / 2f, 0.02f, -T / 2f), 0f);
+            RetroModels.Spawn(r, "wood-floor", forge + new Vector3(-T / 2f, 0.02f, T / 2f), 0f);
+            RetroModels.Spawn(r, "wood-floor", forge + new Vector3(T / 2f, 0.02f, T / 2f), 0f);
+            foreach ((float cx, float cz) in new[] { (-1f, -1f), (1f, -1f), (-1f, 1f), (1f, 1f) })
+            {
+                RetroModels.Spawn(r, "structure-pole", forge + new Vector3(cx * T * 0.92f, 0f, cz * T * 0.92f), 0f);
+            }
+
+            PyramidRoof(r, forge + new Vector3(0f, T * 1.0f, 0f));
+            RetroModels.Spawn(r, "detail-crate", forge + new Vector3(T * 1.15f, 0f, -T * 0.6f), 15f);
+            RetroModels.Spawn(r, "barrels", forge + new Vector3(T * 1.2f, 0f, T * 0.5f), -20f);
+
+            // --- MIRA'S MARKET HOUSE (north-west) — stone walls, door looking south-east. ---
+            House(r, new Vector3(-7.8f, 0f, 8.6f), doorNorth: false, wood: false);
+            RetroModels.Spawn(r, "detail-crate", new Vector3(-5.2f, 0f, 7.0f), 40f);
+            RetroModels.Spawn(r, "detail-crate-small", new Vector3(-5.5f, 0f, 7.9f), 10f);
+
+            // --- EAST GATE over the goblin road (aligned with the dirt path). ---
+            RetroModels.Spawn(r, "wall-gate", new Vector3(16.6f, 0f, 6.4f), 69f, scaleMul: 1.6f);
+
+            // --- Plaza dressing: fences framing the south side, trees, greenery. ---
+            for (int i = -3; i <= 3; i++)
+            {
+                if (i is -1 or 0 or 1) { continue; } // gap: the south walkway stays open
+                RetroModels.Spawn(r, "fence-wood", new Vector3(i * T, 0.02f, -3.6f * T), 0f);
+            }
+
+            RetroModels.Spawn(r, "tree-large", new Vector3(-11.5f, 0f, -10f), 25f, scaleMul: 1.4f);
+            RetroModels.Spawn(r, "tree-large", new Vector3(12f, 0f, -10.5f), 130f, scaleMul: 1.5f);
+            RetroModels.Spawn(r, "tree-large", new Vector3(-11f, 0f, 11.5f), 250f, scaleMul: 1.3f);
+            RetroModels.Spawn(r, "tree-shrub", new Vector3(10.6f, 0f, -4.6f), 0f);
+            RetroModels.Spawn(r, "tree-shrub", new Vector3(-10.2f, 0f, 4.4f), 70f);
+        }
+
+        /// <summary>A 2×2-tile pyramid roof from four corner pieces (yaw picks each quadrant).</summary>
+        private static void PyramidRoof(Transform r, Vector3 apexBase)
+        {
+            RetroModels.Spawn(r, "roof-corner", apexBase + new Vector3(-T / 2f, 0f, -T / 2f), 0f);
+            RetroModels.Spawn(r, "roof-corner", apexBase + new Vector3(T / 2f, 0f, -T / 2f), 90f);
+            RetroModels.Spawn(r, "roof-corner", apexBase + new Vector3(T / 2f, 0f, T / 2f), 180f);
+            RetroModels.Spawn(r, "roof-corner", apexBase + new Vector3(-T / 2f, 0f, T / 2f), 270f);
+        }
+
+        /// <summary>
+        /// A 3×2-tile house: walls one storey high, door centred on the long side (north or
+        /// south), windows beside it, a gabled roof of two slope rows meeting at the ridge.
+        /// </summary>
+        private static void House(Transform r, Vector3 c, bool doorNorth, bool wood)
+        {
+            string wall = wood ? "wall-pane-wood" : "wall";
+            string door = wood ? "wall-pane-wood-door" : "wall-door";
+            string window = wood ? "wall-pane-wood-window" : "wall-window";
+            float halfD = T / 2f;
+
+            // LONG sides (3 tiles): the door side faces the town, the back is plain.
+            for (int i = -1; i <= 1; i++)
+            {
+                float x = c.x + (i * T);
+                string front = i == 0 ? door : window;
+                if (doorNorth)
+                {
+                    RetroModels.Spawn(r, front, new Vector3(x, 0f, c.z + halfD), 0f);
+                    RetroModels.Spawn(r, wall, new Vector3(x, 0f, c.z - halfD), 180f);
+                }
+                else
+                {
+                    RetroModels.Spawn(r, front, new Vector3(x, 0f, c.z - halfD), 180f);
+                    RetroModels.Spawn(r, wall, new Vector3(x, 0f, c.z + halfD), 0f);
+                }
+            }
+
+            // SHORT sides (the gables): one wall tile each, centred.
+            RetroModels.Spawn(r, wall, new Vector3(c.x - (1.5f * T), 0f, c.z), 90f);
+            RetroModels.Spawn(r, wall, new Vector3(c.x + (1.5f * T), 0f, c.z), 270f);
+
+            // GABLED ROOF: two rows of slopes rising to the shared ridge.
+            for (int i = -1; i <= 1; i++)
+            {
+                float x = c.x + (i * T);
+                RetroModels.Spawn(r, "roof-side", new Vector3(x, T, c.z + halfD), 180f);
+                RetroModels.Spawn(r, "roof-side", new Vector3(x, T, c.z - halfD), 0f);
+            }
+        }
+    }
+
     public sealed class WorldDecor
     {
         private GameObject _root;
@@ -362,16 +643,31 @@ namespace Aetheria.UnityClient
             }
 
             // --- SANCTUARY (radius 18 around the origin) ---
-            // Paved plaza and a ring of standing stones marking the safe border.
-            Tex.Apply(Block(r, "Plaza", new Vector3(0f, 0.02f, 0f), new Vector3(9f, 0.04f, 9f),
-                new Color(0.47f, 0.46f, 0.44f)), "stone", 5f, 5f);
-            Tex.Apply(Block(r, "PlazaTrim", new Vector3(0f, 0.045f, 0f), new Vector3(5f, 0.04f, 5f),
-                new Color(0.55f, 0.54f, 0.50f)), "stone", 3f, 3f, new Color(1.0f, 1.0f, 0.95f));
+            // With Kenney's Retro Fantasy Kit installed, a REAL starting town rises here:
+            // cobblestone plaza, bank pavilion, inn, forge, market house, watchtowers, gate.
+            if (RetroModels.Available)
+            {
+                RetroTown.Build(r);
+            }
+            else
+            {
+                Tex.Apply(Block(r, "Plaza", new Vector3(0f, 0.02f, 0f), new Vector3(9f, 0.04f, 9f),
+                    new Color(0.47f, 0.46f, 0.44f)), "stone", 5f, 5f);
+                Tex.Apply(Block(r, "PlazaTrim", new Vector3(0f, 0.045f, 0f), new Vector3(5f, 0.04f, 5f),
+                    new Color(0.55f, 0.54f, 0.50f)), "stone", 3f, 3f, new Color(1.0f, 1.0f, 0.95f));
+            }
 
             // Menhirs come from the SHARED layout: they block movement exactly where they stand.
             WorldLayout.Obstacle[] menhirs = WorldLayout.Menhirs;
             for (int i = 0; i < menhirs.Length; i++)
             {
+                // Four ring points carry WATCHTOWERS (they block exactly like the stones did).
+                if (RetroModels.Available && RetroTown.IsTowerIndex(i))
+                {
+                    RetroTown.SpawnTower(r, menhirs[i].X, menhirs[i].Y);
+                    continue;
+                }
+
                 float h = 1.7f + ((i % 3) * 0.3f);
 
                 if (NatureModels.Available)
@@ -393,20 +689,23 @@ namespace Aetheria.UnityClient
                     new Color(0.50f, 0.52f, 0.58f)), "stone", 1.5f, 1.5f);
             }
 
-            // Bank corner: a canopy over the chest (the chest itself is a server entity).
-            Vector3 bank = new Vector3(SimulationConstants.BankChestX, 0f, SimulationConstants.BankChestY);
-            Tex.Apply(Block(r, "BankFloor", bank + new Vector3(0f, 0.03f, 0f), new Vector3(4.5f, 0.06f, 4f),
-                new Color(0.38f, 0.33f, 0.28f)), "wood", 3f, 3f);
-            Block(r, "BankPost1", bank + new Vector3(-1.8f, 1.1f, -1.5f), new Vector3(0.18f, 2.2f, 0.18f),
-                new Color(0.30f, 0.20f, 0.11f));
-            Block(r, "BankPost2", bank + new Vector3(1.8f, 1.1f, -1.5f), new Vector3(0.18f, 2.2f, 0.18f),
-                new Color(0.30f, 0.20f, 0.11f));
-            Block(r, "BankPost3", bank + new Vector3(-1.8f, 1.1f, 1.5f), new Vector3(0.18f, 2.2f, 0.18f),
-                new Color(0.30f, 0.20f, 0.11f));
-            Block(r, "BankPost4", bank + new Vector3(1.8f, 1.1f, 1.5f), new Vector3(0.18f, 2.2f, 0.18f),
-                new Color(0.30f, 0.20f, 0.11f));
-            Tex.Apply(Block(r, "BankRoof", bank + new Vector3(0f, 2.35f, 0f), new Vector3(4.8f, 0.14f, 4.3f),
-                new Color(0.55f, 0.25f, 0.18f)), "wood", 3f, 3f, new Color(1f, 0.62f, 0.5f));
+            // Bank corner: the kit's pavilion covers it; primitives only as fallback.
+            if (!RetroModels.Available)
+            {
+                Vector3 bank = new Vector3(SimulationConstants.BankChestX, 0f, SimulationConstants.BankChestY);
+                Tex.Apply(Block(r, "BankFloor", bank + new Vector3(0f, 0.03f, 0f), new Vector3(4.5f, 0.06f, 4f),
+                    new Color(0.38f, 0.33f, 0.28f)), "wood", 3f, 3f);
+                Block(r, "BankPost1", bank + new Vector3(-1.8f, 1.1f, -1.5f), new Vector3(0.18f, 2.2f, 0.18f),
+                    new Color(0.30f, 0.20f, 0.11f));
+                Block(r, "BankPost2", bank + new Vector3(1.8f, 1.1f, -1.5f), new Vector3(0.18f, 2.2f, 0.18f),
+                    new Color(0.30f, 0.20f, 0.11f));
+                Block(r, "BankPost3", bank + new Vector3(-1.8f, 1.1f, 1.5f), new Vector3(0.18f, 2.2f, 0.18f),
+                    new Color(0.30f, 0.20f, 0.11f));
+                Block(r, "BankPost4", bank + new Vector3(1.8f, 1.1f, 1.5f), new Vector3(0.18f, 2.2f, 0.18f),
+                    new Color(0.30f, 0.20f, 0.11f));
+                Tex.Apply(Block(r, "BankRoof", bank + new Vector3(0f, 2.35f, 0f), new Vector3(4.8f, 0.14f, 4.3f),
+                    new Color(0.55f, 0.25f, 0.18f)), "wood", 3f, 3f, new Color(1f, 0.62f, 0.5f));
+            }
 
             // --- Dirt path EAST toward the goblin starter camp ---
             for (int i = 0; i < 6; i++)
