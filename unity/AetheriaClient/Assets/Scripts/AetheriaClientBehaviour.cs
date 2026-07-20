@@ -4202,7 +4202,7 @@ namespace Aetheria.UnityClient
         {
             if (string.IsNullOrEmpty(_tooltip)) { return; }
 
-            const float W = 240f;
+            const float W = 270f;
             float h = TooltipHeight(_tooltip);
 
             Rect win;
@@ -4229,7 +4229,7 @@ namespace Aetheria.UnityClient
             }
 
             Dim(win, 0.82f);
-            GUI.Label(new Rect(win.x + 9, win.y + 7, win.width - 18, win.height - 12), _tooltip, Rich());
+            GUI.Label(new Rect(win.x + 9, win.y + 7, win.width - 18, win.height - 12), _tooltip, TooltipStyle());
 
             if (!string.IsNullOrEmpty(_tooltipCompare))
             {
@@ -4242,19 +4242,23 @@ namespace Aetheria.UnityClient
                 Rect win2 = new Rect(x2, y2, W, h2);
                 Dim(win2, 0.82f);
                 GUI.Label(new Rect(win2.x + 9, win2.y + 7, win2.width - 18, win2.height - 12),
-                    _tooltipCompare, Rich());
+                    _tooltipCompare, TooltipStyle());
             }
         }
 
+        private static GUIStyle _tooltipStyle;
+
+        /// <summary>Rich + WRAPPING label style for tooltips (built lazily inside OnGUI).</summary>
+        private static GUIStyle TooltipStyle()
+        {
+            return _tooltipStyle ??= new GUIStyle(GUI.skin.label) { richText = true, wordWrap = true };
+        }
+
+        /// <summary>Measured with the REAL font and wrapping — newline counting undersized the
+        /// box on machines whose system font renders taller, clipping the last lines.</summary>
         private static float TooltipHeight(string text)
         {
-            int lines = 1;
-            for (int i = 0; i < text.Length; i++)
-            {
-                if (text[i] == '\n') { lines++; }
-            }
-
-            return (lines * 17f) + 16f;
+            return TooltipStyle().CalcHeight(new GUIContent(text), 270f - 18f) + 16f;
         }
 
         private static readonly Dictionary<byte, Texture2D> IconCache = new Dictionary<byte, Texture2D>();
