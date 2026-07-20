@@ -189,6 +189,13 @@ public sealed class GameServer
 
         TickHearthstones(); // finished 5-second channels teleport home
 
+        // PRESENCE sidecar (~every 5 s): who is online, for the launcher's live friends list
+        // (the patch server reads and serves it over HTTP).
+        if (_worlds.OpenWorld.Tick % 100 == 0)
+        {
+            WritePresence();
+        }
+
         BroadcastSnapshots();
 
         bool playerDied = false;
@@ -1015,6 +1022,32 @@ public sealed class GameServer
     }
 
     // ---------------------------------------------------------------- Friends
+
+    /// <summary>Write the online roster beside the state file (launcher live presence).</summary>
+    private void WritePresence()
+    {
+        if (_store is not JsonFilePersistenceStore fileStore)
+        {
+            return;
+        }
+
+        try
+        {
+            var players = new List<object>();
+            foreach (PlayerSession s in _sessions.Values)
+            {
+                if (s.HandshakeComplete && TryGetEntity(s, out ServerEntity? body) && body is not null)
+                {
+                    players.Add(new { name = s.Name, level = body.Level, classId = (int)body.ClassId });
+                }
+            }
+
+            string json = System.Text.Json.JsonSerializer.Serialize(new { server = ServerName, players });
+            File.WriteAllText(fileStore.FilePath + ".presence.json", json);
+        }
+        catch (IOException) { /* transient lock: next tick writes again */ }
+    }
+
 
     private void HandleFriendAction(PeerId peer, PlayerSession session, FriendAction action)
     {

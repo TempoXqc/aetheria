@@ -73,6 +73,30 @@ app.MapGet("/api/state", async () =>
     return Results.Content(result.ToJsonString(jsonOptions), "application/json; charset=utf-8");
 });
 
+// LIVE FRIENDS relayed from the patch server (uses the saved account name).
+app.MapGet("/api/friends", async (HttpRequest request) =>
+{
+    string channel = SafeChannel(request.Query["channel"].ToString());
+    JsonNode config = LoadConfig();
+    string account = config["account"]!.GetValue<string>();
+    if (string.IsNullOrWhiteSpace(account))
+    {
+        return Results.Content("{\"friends\":[]}", "application/json");
+    }
+
+    try
+    {
+        string host = await PatchHostAsync();
+        string body = await http.GetStringAsync(
+            $"http://{host}/friends/{channel}?account={Uri.EscapeDataString(account.Trim())}");
+        return Results.Content(body, "application/json");
+    }
+    catch (Exception)
+    {
+        return Results.Content("{\"friends\":[]}", "application/json");
+    }
+});
+
 // Patch notes relayed from the patch server.
 app.MapGet("/api/news", async () =>
 {

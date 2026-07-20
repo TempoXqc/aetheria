@@ -38,6 +38,9 @@ public sealed class JsonFilePersistenceStore : IPersistenceStore
 
     private readonly string _path;
 
+    /// <summary>Where the state lives on disk (presence sidecar files derive from it).</summary>
+    public string FilePath => _path;
+
     public JsonFilePersistenceStore(string path)
     {
         _path = path;

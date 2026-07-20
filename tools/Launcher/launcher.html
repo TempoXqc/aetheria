@@ -228,10 +228,10 @@
   </div>
 </div>
 
-<!-- ============================================= RIGHT: friends -->
+<!-- ============================================= RIGHT: friends (live) -->
 <div id="friends">
   <h2>Amis</h2>
-  <div class="soon">La liste d'amis arrive bientôt.</div>
+  <div id="friendsList"><div class="soon">Chargement…</div></div>
 </div>
 
 <script>
@@ -242,6 +242,39 @@ let busy = false;
 let firstRunPrompted = false;
 
 function localStorage_getItem_safe(k) { try { return localStorage.getItem(k); } catch (e) { return null; } }
+
+/* -------- LIVE FRIENDS: green lamp online (level + realm), grey with last-seen otherwise. */
+function escHtml(t) { return String(t).replace(/[&<>"]/g, c => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;'}[c])); }
+function agoFr(min) {
+  if (min < 0) return 'jamais vu en ligne';
+  if (min < 1) return "à l'instant";
+  if (min < 60) return 'il y a ' + min + ' min';
+  if (min < 1440) return 'il y a ' + Math.floor(min / 60) + ' h';
+  return 'il y a ' + Math.floor(min / 1440) + ' j';
+}
+let lastFriendsJson = '';
+async function loadFriends() {
+  let data;
+  try { data = await (await fetch('/api/friends?channel=' + channel)).json(); } catch (e) { return; }
+  const el = document.getElementById('friendsList');
+  if (!el) { return; }
+  const json = JSON.stringify(data);
+  if (json === lastFriendsJson) { return; }
+  lastFriendsJson = json;
+  if (!data.friends || data.friends.length === 0) {
+    el.innerHTML = '<div class="soon">Ajoute des amis en jeu (bouton 👥) — ils apparaîtront ici, en direct.</div>';
+    return;
+  }
+  el.innerHTML = data.friends.map(f =>
+    '<div style="padding:7px 4px; border-bottom:1px solid var(--border);">' +
+    '<span style="color:' + (f.online ? '#3ddc5a' : '#5a5f6c') + '; font-size:11px;">●</span> ' +
+    '<b style="color:' + (f.online ? 'var(--text)' : '#8a8f9c') + ';">' + escHtml(f.name) + '</b><br>' +
+    '<span style="font-size:11px; color:' + (f.online ? '#3ddc5a' : 'var(--dim)') + ';">' +
+    (f.online ? 'En ligne — niv.' + f.level + ' · ' + escHtml(f.server) : 'Vu ' + agoFr(f.minutesSinceSeen)) +
+    '</span></div>').join('');
+}
+setInterval(loadFriends, 8000);
+setTimeout(loadFriends, 800);
 function localStorage_setItem_safe(k, v) { try { localStorage.setItem(k, v); } catch (e) {} }
 
 async function refresh() {

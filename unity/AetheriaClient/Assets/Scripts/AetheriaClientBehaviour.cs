@@ -1974,6 +1974,10 @@ namespace Aetheria.UnityClient
                     return new Rect(20 + o.x, (VirtH / 2f) - 200 + o.y, 330, 400);
                 case HudConfig.Frame.ConsumableBar:
                     return new Rect((VirtW / 2f) + 132 + o.x, VirtH - 64 + o.y, (4 * 31f) + 2, 30);
+                case HudConfig.Frame.Codex:
+                    return new Rect((VirtW / 2f) - 320 + o.x, (VirtH / 2f) - 235 + o.y, 640, 470);
+                case HudConfig.Frame.Friends:
+                    return new Rect(VirtW - 270 + o.x, 244 + o.y, 258, 400);
                 case HudConfig.Frame.Bags:
                 {
                     const float Icon = 34f;
@@ -3245,6 +3249,139 @@ namespace Aetheria.UnityClient
             (1, "Ours"), (2, "Hibou"), (3, "Tigre"),
         };
 
+        // ------- procedural SPELL & FORM icons (no art assets needed, cached). -------
+        private static readonly Dictionary<int, Texture2D> AbilityIcons = new Dictionary<int, Texture2D>();
+        private static readonly Texture2D[] FormIcons = new Texture2D[4];
+
+        private static Texture2D AbilityIconTex(AbilityDefinition def)
+        {
+            Texture2D cached;
+            if (AbilityIcons.TryGetValue(def.Id, out cached) && cached != null) { return cached; }
+
+            const int S = 32;
+            var tex = new Texture2D(S, S, TextureFormat.RGBA32, false);
+            bool heal = def.Effect == EffectType.Heal || def.Effect == EffectType.Regen ||
+                        def.Effect == EffectType.RestoreResource;
+            bool buff = def.Effect == EffectType.BuffAttack || def.Effect == EffectType.BuffDefense ||
+                        def.Effect == EffectType.BuffMoveSpeed;
+            bool ranged = def.Range > 3f && def.BaseDamage > 0;
+            Color bg = heal ? new Color(0.09f, 0.28f, 0.13f)
+                : buff ? new Color(0.30f, 0.24f, 0.07f)
+                : ranged ? new Color(0.10f, 0.15f, 0.36f)
+                : new Color(0.23f, 0.22f, 0.26f);
+            Color fg = heal ? new Color(0.55f, 1f, 0.6f)
+                : buff ? new Color(1f, 0.85f, 0.35f)
+                : ranged ? new Color(0.55f, 0.8f, 1f)
+                : new Color(0.92f, 0.92f, 0.96f);
+
+            for (int py = 0; py < S; py++)
+            {
+                for (int px = 0; px < S; px++)
+                {
+                    bool border = px == 0 || py == 0 || px == S - 1 || py == S - 1;
+                    Color c = border ? new Color(0.05f, 0.05f, 0.06f) : bg;
+
+                    if (!border)
+                    {
+                        if (heal)
+                        {
+                            // Thick CROSS.
+                            if ((px >= 13 && px <= 18 && py >= 6 && py <= 25) ||
+                                (py >= 13 && py <= 18 && px >= 6 && px <= 25)) { c = fg; }
+                        }
+                        else if (buff)
+                        {
+                            // Upward CHEVRON.
+                            int d = System.Math.Abs(px - (S / 2));
+                            if (py >= 8 + d && py <= 13 + d && d <= 10) { c = fg; }
+                        }
+                        else if (ranged)
+                        {
+                            // ORB with a trail.
+                            int dx = px - 19, dy = py - 19;
+                            if ((dx * dx) + (dy * dy) <= 36) { c = fg; }
+                            int tx = px - 9, ty = py - 9;
+                            if ((tx * tx) + (ty * ty) <= 6) { c = fg * 0.8f; }
+                        }
+                        else
+                        {
+                            // Diagonal BLADE + hilt.
+                            if (System.Math.Abs(px - py) <= 2 && px >= 6 && px <= 26) { c = fg; }
+                            if (System.Math.Abs((S - px) - py) <= 1 && px >= 8 && px <= 13) { c = fg * 0.75f; }
+                        }
+                    }
+
+                    tex.SetPixel(px, S - 1 - py, c);
+                }
+            }
+
+            tex.Apply();
+            AbilityIcons[def.Id] = tex;
+            return tex;
+        }
+
+        private static Texture2D FormIconTex(byte form)
+        {
+            if (form < FormIcons.Length && FormIcons[form] != null) { return FormIcons[form]; }
+
+            const int S = 32;
+            var tex = new Texture2D(S, S, TextureFormat.RGBA32, false);
+            Color bg = form == 1 ? new Color(0.28f, 0.18f, 0.09f)   // bear: brown
+                : form == 2 ? new Color(0.12f, 0.16f, 0.30f)        // owl: night blue
+                : new Color(0.34f, 0.20f, 0.07f);                   // cat: tawny
+            for (int py = 0; py < S; py++)
+            {
+                for (int px = 0; px < S; px++)
+                {
+                    bool border = px == 0 || py == 0 || px == S - 1 || py == S - 1;
+                    Color c = border ? new Color(0.05f, 0.05f, 0.06f) : bg;
+                    if (!border)
+                    {
+                        if (form == 1)
+                        {
+                            // BEAR PAW: a pad + three toes.
+                            int dx = px - 16, dy = py - 20;
+                            if ((dx * dx / 2) + (dy * dy) <= 30) { c = new Color(0.85f, 0.7f, 0.5f); }
+                            foreach (int tx in new[] { 9, 16, 23 })
+                            {
+                                int ox = px - tx, oy = py - 10;
+                                if ((ox * ox) + (oy * oy) <= 7) { c = new Color(0.85f, 0.7f, 0.5f); }
+                            }
+                        }
+                        else if (form == 2)
+                        {
+                            // OWL: two big round eyes.
+                            foreach (int ex in new[] { 11, 21 })
+                            {
+                                int ox = px - ex, oy = py - 15;
+                                int rr = (ox * ox) + (oy * oy);
+                                if (rr <= 26) { c = new Color(0.95f, 0.9f, 0.55f); }
+                                if (rr <= 6) { c = new Color(0.08f, 0.07f, 0.05f); }
+                            }
+                        }
+                        else
+                        {
+                            // CAT: two pointy ears + eye slits.
+                            int d1 = System.Math.Abs(px - 10);
+                            int d2 = System.Math.Abs(px - 22);
+                            if ((py >= 6 + d1 && py <= 14 && d1 <= 4) ||
+                                (py >= 6 + d2 && py <= 14 && d2 <= 4)) { c = new Color(0.9f, 0.65f, 0.3f); }
+                            if (py >= 19 && py <= 21 && ((px >= 8 && px <= 13) || (px >= 19 && px <= 24)))
+                            {
+                                c = new Color(0.2f, 0.9f, 0.4f);
+                            }
+                        }
+                    }
+
+                    tex.SetPixel(px, S - 1 - py, c);
+                }
+            }
+
+            tex.Apply();
+            if (form < FormIcons.Length) { FormIcons[form] = tex; }
+            return tex;
+        }
+
         private void DrawActionBar()
         {
             Rect bar = FrameRect(HudConfig.Frame.ActionBar);
@@ -3289,6 +3426,8 @@ namespace Aetheria.UnityClient
                 }
 
                 WowUi.Slot(new Rect(r.x - 2, r.y - 2, r.width + 4, r.height + 4)); // WoW slot trim
+                GUI.DrawTexture(new Rect(r.x + 1, r.y + 1, r.width - 2, r.height - 2),
+                    AbilityIconTex(def), ScaleMode.StretchToFill);
                 if (outOfRange)
                 {
                     Color prevRange = GUI.color;
@@ -3312,8 +3451,8 @@ namespace Aetheria.UnityClient
                     _tooltip = AbilityTooltip(def); // WoW spell tooltip at the screen edge
                 }
 
-                GUI.Label(new Rect(r.x + 3, r.y + 2, r.width - 6, 16), "<size=10>" + def.Name + "</size>", Rich());
-                GUI.Label(new Rect(r.x + 3, r.y + r.height - 18, 30, 16), "<b>" + key + "</b>", Rich());
+                // The SHORTCUT takes the name's place — the name lives in the tooltip.
+                GUI.Label(new Rect(r.x + 3, r.y + 1, r.width - 6, 16), "<size=11><b>" + key + "</b></size>", Rich());
                 if (def.ResourceCost > 0)
                 {
                     GUI.Label(new Rect(r.x + r.width - 24, r.y + r.height - 18, 22, 16),
@@ -3359,9 +3498,8 @@ namespace Aetheria.UnityClient
                     _client.SendHearthstone(); // starts the 5-second channel (cast bar shows)
                 }
 
-                GUI.Label(new Rect(hr.x + 3, hr.y + 2, hr.width - 6, 16), "<size=10>Foyer</size>", Rich());
-                GUI.Label(new Rect(hr.x + (hr.width / 2f) - 10, hr.y + (hr.height / 2f) - 10, 20, 20),
-                    "<size=14>⌂</size>", RichCentered());
+                GUI.Label(new Rect(hr.x + (hr.width / 2f) - 12, hr.y + (hr.height / 2f) - 12, 24, 24),
+                    "<size=18>⌂</size>", RichCentered());
                 if (hearthCd > 0f)
                 {
                     Dim(hr, 0.7f);
@@ -3394,10 +3532,10 @@ namespace Aetheria.UnityClient
                         _client.SendShapeShift(current == form ? (byte)0 : form);
                     }
 
-                    GUI.Label(new Rect(r.x + 3, r.y + 2, r.width - 6, 16),
-                        "<size=10>" + label + "</size>", Rich());
-                    GUI.Label(new Rect(r.x + 3, r.y + r.height - 18, 30, 16),
-                        "<b>" + (4 + f) + "</b>", Rich());
+                    GUI.DrawTexture(new Rect(r.x + 1, r.y + 1, r.width - 2, r.height - 2),
+                        FormIconTex(form), ScaleMode.StretchToFill);
+                    GUI.Label(new Rect(r.x + 3, r.y + 1, r.width - 6, 16),
+                        "<size=11><b>" + (4 + f) + "</b></size>", Rich());
 
                     if (r.Contains(Event.current.mousePosition))
                     {
@@ -5078,12 +5216,14 @@ namespace Aetheria.UnityClient
             if (!_selfMenuOpen) { return; }
 
             Rect frame = FrameRect(HudConfig.Frame.PlayerFrame);
-            var box = new Rect(frame.x, frame.yMax + 6, 240, 62);
+            bool tallMenu = _client.PartyMembers != null && _client.PartyMembers.Count > 1;
+            var box = new Rect(frame.x, frame.yMax + 6, 240, tallMenu ? 86 : 62);
             WowUi.Panel(box);
 
             EntitySnapshot self;
             bool inSanctuary = _client.TryGetSelf(out self) && !_client.InInstance && IsSafePos(self.Position);
             bool bandit = _client.IsBandit;
+            bool grouped = _client.PartyMembers != null && _client.PartyMembers.Count > 1;
 
             if (inSanctuary)
             {
@@ -5101,7 +5241,19 @@ namespace Aetheria.UnityClient
                     Rich());
             }
 
-            if (WowUi.Button(new Rect(box.x + 10, box.y + 34, box.width - 20, 20), "Fermer"))
+            float extraY = box.y + 34;
+            if (grouped)
+            {
+                if (WowUi.Button(new Rect(box.x + 10, extraY, box.width - 20, 20), "Quitter le groupe"))
+                {
+                    _client.SendPartyLeave();
+                    _selfMenuOpen = false;
+                }
+
+                extraY += 24;
+            }
+
+            if (WowUi.Button(new Rect(box.x + 10, extraY, box.width - 20, 20), "Fermer"))
             {
                 _selfMenuOpen = false;
             }
@@ -5117,9 +5269,10 @@ namespace Aetheria.UnityClient
         {
             if (!_codexOpen) { return; }
 
-            var win = new Rect((VirtW / 2f) - 250, (VirtH / 2f) - 200, 500, 400);
+            Rect win = FrameRect(HudConfig.Frame.Codex);
             _lastCodexRect = win;
             WowUi.Panel(win);
+            DragTitle(HudConfig.Frame.Codex, new Rect(win.x, win.y, win.width - 32, 26));
             WowUi.GoldCentered(new Rect(win.x, win.y + 8, win.width, 20),
                 "<size=13><b>📖 Codex — Donjons & Raids</b></size>");
             if (GUI.Button(new Rect(win.x + win.width - 26, win.y + 5, 21, 21), "X"))
@@ -5160,14 +5313,14 @@ namespace Aetheria.UnityClient
                 return;
             }
 
-            GUI.Label(new Rect(win.x + 176, win.y + 32, win.width - 190, 18),
+            GUI.Label(new Rect(win.x + 196, win.y + 32, win.width - 210, 18),
                 "<size=11><color=#ffd100><b>" + sel.Name + "</b></color>  <size=9><color=#a0a0a0>" +
                 (sel.IsRaid ? "Raid" : "Donjon") + " · " + sel.MinPlayers + "–" + sel.MaxPlayers +
                 " joueurs</color></size></size>", Rich());
 
             // MIDDLE COLUMN: its monsters (👑 = boss, the last of the template).
             float my = win.y + 56;
-            GUI.Label(new Rect(win.x + 176, my, 150, 16), "<size=10><color=#a0a0a0>Habitants</color></size>", Rich());
+            GUI.Label(new Rect(win.x + 196, my, 170, 16), "<size=10><color=#a0a0a0>Habitants</color></size>", Rich());
             my += 18;
             byte bossId = sel.Spawns.Length > 0 ? sel.Spawns[sel.Spawns.Length - 1].MonsterId : (byte)0;
             var listed = new HashSet<byte>();
@@ -5177,7 +5330,7 @@ namespace Aetheria.UnityClient
 
                 Aetheria.Shared.Data.MonsterDefinition mob = Data.GetMonster(sp.MonsterId);
                 bool boss = sp.MonsterId == bossId;
-                var btn = new Rect(win.x + 176, my, 150, 24);
+                var btn = new Rect(win.x + 196, my, 176, 24);
                 if (_codexMonster == sp.MonsterId) { WowUi.Highlight(btn); }
                 if (GUI.Button(btn, "<size=10>" + (boss ? "👑 " : "") + mob.Name + "</size>",
                     new GUIStyle(GUI.skin.button) { richText = true }))
@@ -5195,7 +5348,7 @@ namespace Aetheria.UnityClient
             }
 
             // RIGHT PANE: the selected monster's loot — hover a line for the item's tooltip.
-            float rx = win.x + 340;
+            float rx = win.x + 396;
             float ry = win.y + 56;
             if (_codexMonster == 0)
             {
@@ -5267,12 +5420,12 @@ namespace Aetheria.UnityClient
             y += 30;
 
             // One standing bar per camp: −10000 (haï) … +10000 (exalté), zero in the middle.
-            DrawRepBar(new Rect(win.x + 20, y, win.width - 40, 30), "Alliance",
+            DrawRepBar(new Rect(win.x + 20, y, win.width - 40, 36), "Alliance",
                 _client.RepAlliance, new Color(0.25f, 0.45f, 0.95f));
-            y += 44;
-            DrawRepBar(new Rect(win.x + 20, y, win.width - 40, 30), "Horde",
+            y += 52;
+            DrawRepBar(new Rect(win.x + 20, y, win.width - 40, 36), "Horde",
                 _client.RepHorde, new Color(0.85f, 0.20f, 0.20f));
-            y += 50;
+            y += 58;
 
             GUI.Label(new Rect(win.x + 20, y, win.width - 40, 52),
                 "<size=10><color=#a0a0a0>Tuer un joueur ENNEMI : +25 auprès de ton camp, +10 honneur.\n" +
@@ -5300,9 +5453,9 @@ namespace Aetheria.UnityClient
 
         private void DrawRepBar(Rect r, string camp, int value, Color color)
         {
-            GUI.Label(new Rect(r.x, r.y, r.width, 15),
+            GUI.Label(new Rect(r.x, r.y, r.width, 20),
                 "<size=11><b>" + camp + "</b>  <color=#c8c8c8>" + value + " / 10000</color></size>", Rich());
-            var bar = new Rect(r.x, r.y + 16, r.width, 12);
+            var bar = new Rect(r.x, r.y + 22, r.width, 12);
             Color prev = GUI.color;
             GUI.color = new Color(0f, 0f, 0f, 0.6f);
             GUI.DrawTexture(bar, Texture2D.whiteTexture);
@@ -5484,8 +5637,9 @@ namespace Aetheria.UnityClient
                 _client.SendFriendAction(FriendOp.Refresh);
             }
 
-            var win = new Rect(VirtW - 262, 96, 250, 340);
+            Rect win = FrameRect(HudConfig.Frame.Friends);
             WowUi.Panel(win);
+            DragTitle(HudConfig.Frame.Friends, new Rect(win.x, win.y, win.width - 32, 26));
             WowUi.GoldCentered(new Rect(win.x, win.y + 8, win.width, 18), "<b>👥 Amis</b>");
             if (GUI.Button(new Rect(win.x + win.width - 26, win.y + 5, 21, 21), "X"))
             {
@@ -5513,18 +5667,18 @@ namespace Aetheria.UnityClient
 
             foreach (FriendInfo f in friends)
             {
-                var row = new Rect(win.x + 8, y, win.width - 16, 34);
+                var row = new Rect(win.x + 8, y, win.width - 16, 42);
                 WowUi.Highlight(row);
 
                 // Presence lamp + name; the second line tells the story.
                 string lamp = f.Online ? "#20d848" : "#707070";
-                GUI.Label(new Rect(row.x + 6, row.y + 1, row.width - 12, 16),
+                GUI.Label(new Rect(row.x + 6, row.y + 3, row.width - 12, 18),
                     "<size=11><color=" + lamp + ">●</color> <b><color=" +
                     (f.Online ? "#ffffff" : "#909098") + ">" + f.Name + "</color></b></size>", Rich());
                 string detail = f.Online
                     ? "<color=#20d848>niv." + f.Level + " · " + ClassNameOf(f.ClassId) + " · " + f.Server + "</color>"
                     : "<color=#808088>" + (f.MinutesSinceSeen < 0 ? "Jamais vu en ligne" : "Vu " + FormatAgo(f.MinutesSinceSeen)) + "</color>";
-                GUI.Label(new Rect(row.x + 18, row.y + 17, row.width - 24, 15),
+                GUI.Label(new Rect(row.x + 18, row.y + 22, row.width - 24, 17),
                     "<size=9>" + detail + "</size>", Rich());
 
                 Event fe = Event.current;
@@ -5537,7 +5691,7 @@ namespace Aetheria.UnityClient
                 // The little menu, inline under the row.
                 if (_friendMenuFor == f.Name)
                 {
-                    y += 36;
+                    y += 44;
                     if (f.Online && WowUi.Button(new Rect(row.x + 14, y, 100, 20), "Inviter"))
                     {
                         _client.SendFriendAction(FriendOp.Invite, f.Name);
@@ -5562,10 +5716,10 @@ namespace Aetheria.UnityClient
                 }
                 else
                 {
-                    y += 38;
+                    y += 46;
                 }
 
-                if (y > win.yMax - 40) { break; } // roster longer than the window: cut politely
+                if (y > win.yMax - 46) { break; } // roster longer than the window: cut politely
             }
 
             GUI.Label(new Rect(win.x + 10, win.yMax - 20, win.width - 20, 16),
@@ -6620,8 +6774,21 @@ namespace Aetheria.UnityClient
             int firstRow = _chatLines - show.Count;
             for (int i = 0; i < show.Count; i++)
             {
-                GUI.Label(new Rect(14f + chatOff.x, y0 + ((firstRow + i) * LineH), W - 12f, LineH + 2f),
-                    "<size=11>" + FormatChatLine(show[i]) + "</size>", Rich());
+                var lineRect = new Rect(14f + chatOff.x, y0 + ((firstRow + i) * LineH), W - 12f, LineH + 2f);
+                GUI.Label(lineRect, "<size=11>" + FormatChatLine(show[i]) + "</size>", Rich());
+
+                // Click a RECEIVED whisper: the input opens pre-filled to answer its sender.
+                ChatLine cl = show[i];
+                Event we = Event.current;
+                if (cl.Channel == ChatChannel.Whisper && cl.From.Length > 0 && cl.From != _name &&
+                    we.type == EventType.MouseDown && we.button == 0 && lineRect.Contains(we.mousePosition))
+                {
+                    _chatInputActive = true;
+                    _chatChannel = ChatChannel.Whisper;
+                    _whisperTarget = cl.From;
+                    _chatInput = "";
+                    we.Use();
+                }
             }
 
             // RESIZE grip (top-right corner): drag to change the chat's width and height.

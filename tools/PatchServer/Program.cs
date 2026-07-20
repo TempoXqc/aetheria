@@ -36,6 +36,76 @@ builder.Logging.SetMinimumLevel(LogLevel.Warning);
 WebApplication app = builder.Build();
 app.Urls.Add($"http://0.0.0.0:{Port}");
 
+// LIVE FRIENDS for the launcher: merge the realm's durable state (friends, last-seen)
+// with its presence sidecar (who is online right now).
+app.MapGet("/friends/{channel}", (string channel, HttpRequest request) =>
+{
+    string account = request.Query["account"].ToString().Trim().ToLowerInvariant();
+    string baseName = Safe(channel) == "staging" ? "aetheria-tts" : "aetheria-prod";
+    string stateFile = Path.Combine(root, "state", baseName + ".json");
+    string presenceFile = stateFile + ".presence.json";
+    var friends = new List<object>();
+    string serverLabel = Safe(channel) == "staging" ? "PTR" : "Zul'jin";
+
+    try
+    {
+        // Who is online right now (name → level), from the presence sidecar.
+        var online = new Dictionary<string, int>(StringComparer.OrdinalIgnoreCase);
+        if (File.Exists(presenceFile))
+        {
+            using JsonDocument presence = JsonDocument.Parse(File.ReadAllText(presenceFile));
+            if (presence.RootElement.TryGetProperty("players", out JsonElement players))
+            {
+                foreach (JsonElement pl in players.EnumerateArray())
+                {
+                    online[pl.GetProperty("name").GetString() ?? ""] = pl.GetProperty("level").GetInt32();
+                }
+            }
+        }
+
+        if (account.Length > 0 && File.Exists(stateFile))
+        {
+            using JsonDocument state = JsonDocument.Parse(File.ReadAllText(stateFile));
+            JsonElement accounts = state.RootElement.GetProperty("Accounts");
+            JsonElement names = state.RootElement.GetProperty("Names");
+            long now = DateTimeOffset.UtcNow.ToUnixTimeSeconds();
+            if (accounts.TryGetProperty(account, out JsonElement me) &&
+                me.TryGetProperty("Friends", out JsonElement list))
+            {
+                foreach (JsonElement friendKey in list.EnumerateArray())
+                {
+                    string key = friendKey.GetString() ?? "";
+                    if (key.Length == 0) { continue; }
+
+                    string display = key;
+                    long lastSeen = 0;
+                    if (names.TryGetProperty(key, out JsonElement ownerKey) &&
+                        accounts.TryGetProperty(ownerKey.GetString() ?? "", out JsonElement owner) &&
+                        owner.TryGetProperty("Characters", out JsonElement chars) &&
+                        chars.TryGetProperty(key, out JsonElement rec))
+                    {
+                        if (rec.TryGetProperty("Name", out JsonElement dn)) { display = dn.GetString() ?? key; }
+                        if (rec.TryGetProperty("LastSeenUnix", out JsonElement seen)) { lastSeen = seen.GetInt64(); }
+                    }
+
+                    bool isOn = online.TryGetValue(display, out int level);
+                    friends.Add(new
+                    {
+                        name = display,
+                        online = isOn,
+                        level = isOn ? level : 0,
+                        minutesSinceSeen = lastSeen > 0 ? (long)Math.Max(0, (now - lastSeen) / 60) : -1,
+                        server = serverLabel,
+                    });
+                }
+            }
+        }
+    }
+    catch (Exception) { /* half-written files: answer with what we have */ }
+
+    return Results.Json(new { friends });
+});
+
 // The channel manifest: version + per-file hashes. The launcher diffs against this.
 app.MapGet("/manifest/{channel}", (string channel) =>
 {
