@@ -529,7 +529,7 @@ namespace Aetheria.UnityClient
             PumpChat();
             TrackSocialState();
 
-            if (!_menuOpen && _awaitingBind == null && !_chatInputActive)
+            if (!_menuOpen && _awaitingBind == null && !_chatInputActive && !_layoutEditMode)
             {
                 // Jump: play locally right away (snappy), and relay through the next input packet.
                 if (Input.GetKeyDown(KeyCode.Space))
@@ -2001,6 +2001,10 @@ namespace Aetheria.UnityClient
                 DrawTooltip();
                 return;
             }
+
+            // LAYOUT EDIT MODE eats the mouse FIRST: while frames are being moved, nothing
+            // underneath (spell slots, consumables, portraits) may react to the clicks.
+            if (_layoutEditMode) { LayoutEditorEvents(); }
 
             if (_cfg.ShowHealthBars || _cfg.ShowNameplates) { DrawNameplates(); }
             DrawChatBubbles();
@@ -5126,38 +5130,44 @@ namespace Aetheria.UnityClient
                 "<size=10><color=#70c0ff><b>Butin de " + chosen.Name + "</b></color></size>", Rich());
             ry += 20;
 
-            void LootLine(byte itemId, string suffix)
+            // Icon + coloured NAME only — chance, quantity and stats live in the tooltip,
+            // anchored right beside the hovered line (WoW-style).
+            void LootLine(byte itemId, string detail)
             {
                 Aetheria.Shared.Data.ItemDefinition item = Data.GetItem(itemId);
-                var row = new Rect(rx, ry, win.width - (rx - win.x) - 14, 17);
-                GUI.Label(row, "<size=10><color=" + QualityHex(item) + ">" + item.Name + "</color>" +
-                    "  <color=#909090>" + suffix + "</color></size>", Rich());
+                var row = new Rect(rx, ry, win.width - (rx - win.x) - 14, 24);
+                DrawItemIcon(new Rect(row.x, row.y + 1, 22, 22), itemId, 1);
+                GUI.Label(new Rect(row.x + 27, row.y + 3, row.width - 27, 18),
+                    "<size=10><color=" + QualityHex(item) + ">" + item.Name + "</color></size>", Rich());
                 if (row.Contains(Event.current.mousePosition))
                 {
-                    _tooltip = ItemTooltip(item, 1);
+                    _tooltip = ItemTooltip(item, 1) +
+                        "\n<size=9><color=#70c0ff>" + detail + "</color></size>";
+                    _tooltipAnchor = row;
                 }
 
-                ry += 17;
+                ry += 26;
             }
 
             foreach (Aetheria.Shared.Data.LootEntry part in chosen.BodyParts)
             {
-                LootLine(part.ItemId, "×" + part.Quantity + " (garanti)");
+                LootLine(part.ItemId, "Garanti — ×" + part.Quantity + " par kill");
             }
 
             foreach (Aetheria.Shared.Data.GearDrop drop in chosen.GearDrops)
             {
-                LootLine(drop.ItemId, drop.ChancePercent + " %");
+                LootLine(drop.ItemId, "Chance de butin : " + drop.ChancePercent + " %");
             }
 
             ry += 6;
             GUI.Label(new Rect(rx, ry, win.width - (rx - win.x) - 14, 16),
-                "<size=9><color=#70c0ff>Table de l'instance " + (chosenBoss ? "(garanti — boss)" : "(15 %)") +
-                " :</color></size>", Rich());
+                "<size=9><color=#70c0ff>Table de l'instance :</color></size>", Rich());
             ry += 17;
             foreach (byte itemId in sel.LootTable)
             {
-                LootLine(itemId, chosenBoss ? "1 garanti au choix du sort" : "15 %");
+                LootLine(itemId, chosenBoss
+                    ? "Table de l'instance — GARANTI sur le boss (une pièce au hasard)"
+                    : "Table de l'instance — 15 % par monstre");
             }
 
             GUI.Label(new Rect(rx, win.yMax - 24, win.width - (rx - win.x) - 14, 16),
@@ -6166,10 +6176,22 @@ namespace Aetheria.UnityClient
                 GUI.color = Color.white;
                 GUI.Label(r, "<b>" + frame + "</b>", RichCentered());
             }
+        }
 
-            // GRAB the SMALLEST frame under the cursor: big frames (chat, fiche, sacs) were
-            // shadowing the little ones stacked on top of them — those became un-draggable.
+        /// <summary>
+        /// The layout editor's MOUSE pass, run at the very TOP of OnGUI: it consumes every
+        /// click so the HUD underneath (spells, consumables, portraits) stays inert while
+        /// frames are being moved. Grabs the SMALLEST frame under the cursor — big frames
+        /// (chat, fiche, sacs) used to shadow the little ones stacked on them.
+        /// </summary>
+        private void LayoutEditorEvents()
+        {
             Event e2 = Event.current;
+
+            // The « Terminer » button keeps its own clicks (same rect as in DrawLayoutEditor).
+            var terminer = new Rect((VirtW / 2f) - 80, 70, 160, 26);
+            if (terminer.Contains(e2.mousePosition)) { return; }
+
             if (e2.type == EventType.MouseDown)
             {
                 HudConfig.Frame? best = null;
@@ -6190,18 +6212,27 @@ namespace Aetheria.UnityClient
                     _draggingFrame = best;
                     _dragStartMouse = e2.mousePosition;
                     _dragStartOffset = _cfg.Offset(best.Value);
-                    e2.Use();
                 }
+
+                e2.Use(); // even a MISS goes nowhere: no casting spells while redecorating
             }
-            else if (e2.type == EventType.MouseDrag && _draggingFrame != null)
+            else if (e2.type == EventType.MouseDrag)
             {
-                _cfg.SetOffset(_draggingFrame.Value, _dragStartOffset + (e2.mousePosition - _dragStartMouse));
+                if (_draggingFrame != null)
+                {
+                    _cfg.SetOffset(_draggingFrame.Value, _dragStartOffset + (e2.mousePosition - _dragStartMouse));
+                }
+
                 e2.Use();
             }
-            else if (e2.type == EventType.MouseUp && _draggingFrame != null)
+            else if (e2.type == EventType.MouseUp)
             {
-                _draggingFrame = null;
-                _cfg.Save();
+                if (_draggingFrame != null)
+                {
+                    _draggingFrame = null;
+                    _cfg.Save();
+                }
+
                 e2.Use();
             }
         }
