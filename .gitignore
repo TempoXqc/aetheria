@@ -11,6 +11,7 @@ x86/
 .vs/
 artifacts/
 artifacts-host/
+artifacts-player/
 TestResults/
 *.trx
 *.coverage

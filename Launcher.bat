@@ -9,4 +9,13 @@ if not errorlevel 1 (
     exit /b 0
 )
 
-dotnet run -c Release --project tools\Launcher
+rem Le launcher JOUEUR compile dans SON propre dossier (artifacts-player) : ni le
+rem launcher serveur ni un ancien processus ne peuvent verrouiller sa DLL.
+dotnet run -c Release --project tools\Launcher -p:ArtifactsPath=artifacts-player
+if errorlevel 1 (
+    echo.
+    echo ======================================================
+    echo   Le launcher n'a pas pu demarrer ^(voir plus haut^).
+    echo ======================================================
+    pause
+)
