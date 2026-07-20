@@ -10,6 +10,7 @@ x86/
 *.userprefs
 .vs/
 artifacts/
+artifacts-host/
 TestResults/
 *.trx
 *.coverage

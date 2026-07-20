@@ -9,4 +9,7 @@ if not errorlevel 1 (
     exit /b 0
 )
 
-dotnet run -c Release --project tools\Launcher -- --host
+rem Le launcher SERVEUR compile dans SON propre dossier (artifacts-host) : le launcher
+rem joueur (port 5180) verrouille artifacts\bin\Launcher — plus jamais de collision
+rem "The file is locked by .NET Host" entre les deux.
+dotnet run -c Release --project tools\Launcher -p:ArtifactsPath=artifacts-host -- --host
