@@ -459,6 +459,15 @@ public sealed class GameServer
                     SetBanditMode bandit = SetBanditMode.Read(ref reader);
                     if (TryGetEntity(session, out ServerEntity? outlaw) && outlaw is not null && outlaw.IsAlive)
                     {
+                        // The switch only flips INSIDE a sanctuary: no turning outlaw (or
+                        // repenting) in the middle of a fight.
+                        if (!ReferenceEquals(world, _worlds.OpenWorld) || !world.IsSafePosition(outlaw.Position))
+                        {
+                            SendWith(peer, new ChatMessage(ChatChannel.System, "", "",
+                                "Tu dois être dans un sanctuaire pour changer de statut de bandit.").Write);
+                            break;
+                        }
+
                         outlaw.IsBandit = bandit.Enabled;
                         SendSelfState(peer, session);
                         SendWith(peer, new ChatMessage(ChatChannel.System, "", "", bandit.Enabled
@@ -1164,13 +1173,16 @@ public sealed class GameServer
             if (member != peer.Value &&
                 _sessions.TryGetValue(memberPeer, out PlayerSession? ms) && ms.EntityId == kick.TargetEntityId)
             {
-                Party? left = _parties.Leave(member);
+                // Snapshot the roster BEFORE the kick: a 2-man party DISBANDS on kick, and
+                // iterating the (then empty) remainder left the LEADER with a stale party icon.
+                int[] everyone = party.Members.ToArray();
+                _parties.Leave(member);
                 Send(memberPeer, new PartyState(string.Empty, []));
-                if (left != null)
+                foreach (int rest in everyone)
                 {
-                    foreach (int rest in left.Members)
+                    if (rest != member)
                     {
-                        SendPartyStateTo(new PeerId(rest));
+                        SendPartyStateTo(new PeerId(rest)); // no party left → empty roster
                     }
                 }
 

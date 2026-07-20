@@ -449,6 +449,7 @@ namespace Aetheria.UnityClient
                 else if (_chatTabConfig >= 0) { _chatTabConfig = -1; }
                 else if (_awaitingBind != null) { _awaitingBind = null; }
                 else if (_partyMenuFor >= 0) { _partyMenuFor = -1; }
+                else if (_selfMenuOpen) { _selfMenuOpen = false; }
                 else if (_contextEntityId >= 0) { _contextEntityId = -1; }
                 else if (_innDialogOpen) { _innDialogOpen = false; }
                 else if (_client.TradeActive) { _client.SendTradeCancel(); }
@@ -487,6 +488,17 @@ namespace Aetheria.UnityClient
             if (_cameraRig != null)
             {
                 _cameraRig.SuppressDrag = _uiPress || _layoutEditMode || _draggingItem != null;
+
+                // The mouse WHEEL belongs to the window under the cursor (codex, fiche,
+                // sacs, boutique, minimap, grande carte) — never to the camera through it.
+                Vector2 wheelAt = GuiMouse();
+                _cameraRig.SuppressZoom =
+                    _worldMapOpen || _questLogOpen ||
+                    (_codexOpen && _lastCodexRect.Contains(wheelAt)) ||
+                    (_sheetOpen && SheetWindowRect().Contains(wheelAt)) ||
+                    (_bagsOpen && FrameRect(HudConfig.Frame.Bags).Contains(wheelAt)) ||
+                    (_shopOpen && _lastShopRect.Contains(wheelAt)) ||
+                    FrameRect(HudConfig.Frame.Minimap).Contains(wheelAt);
             }
 
             // The server's quest catalogue overrides the built-in defaults: quests written in
@@ -1949,7 +1961,7 @@ namespace Aetheria.UnityClient
                 case HudConfig.Frame.Minimap: return new Rect(VirtW - 196 + o.x, 8 + o.y, 188, 226);
                 case HudConfig.Frame.QuestTracker: return new Rect(VirtW - 236 + o.x, 232 + o.y, 228, 66);
                 case HudConfig.Frame.PartyFrames: return new Rect(12 + o.x, 116 + o.y, 180, 4 * 64);
-                case HudConfig.Frame.CharSheet: return new Rect(16 + o.x, 128 + o.y, 342, 396);
+                case HudConfig.Frame.CharSheet: return new Rect(16 + o.x, 128 + o.y, 342, 430);
                 case HudConfig.Frame.Chat:
                     return new Rect(8 + o.x, VirtH - 58 - (_chatLines * 17f) + o.y,
                         _chatW, (_chatLines * 17f) + 24);
@@ -2021,6 +2033,7 @@ namespace Aetheria.UnityClient
             DrawMicroBar();
             DrawConsumableBar();
             DrawCodexWindow();
+            DrawSelfMenu();
             DrawInnDialog();
             DrawInspectWindow();
             DrawQuestLogWindow();
@@ -2800,14 +2813,22 @@ namespace Aetheria.UnityClient
 
             // WoW rule: clicking YOUR OWN portrait frame targets yourself (the cleric's
             // self-heal in one click — the party frames never show your own row).
+            // RIGHT-click opens YOUR menu (bandit switch, sanctuary only).
             Event pf = Event.current;
-            if (pf.type == EventType.MouseDown && pf.button == 0 && haveSelf &&
-                frame.Contains(pf.mousePosition))
+            if (pf.type == EventType.MouseDown && haveSelf && frame.Contains(pf.mousePosition))
             {
-                _autoTargetPicked = false;
-                _targetHostile = false;
-                _targetId = self.Id;
-                _client.SendAttackTarget(0);
+                if (pf.button == 0)
+                {
+                    _autoTargetPicked = false;
+                    _targetHostile = false;
+                    _targetId = self.Id;
+                    _client.SendAttackTarget(0);
+                }
+                else if (pf.button == 1)
+                {
+                    _selfMenuOpen = !_selfMenuOpen;
+                }
+
                 pf.Use();
             }
 
@@ -4497,7 +4518,7 @@ namespace Aetheria.UnityClient
             // (No XP, no current HP, no gold here: the XP bar, unit frame and bags show those.)
             float y = win.y + 34f + (5 * (Slot + 4f)) + 6f;
             float half = (W - 30f) / 2f;
-            float blockH = win.yMax - y - 12f; // fill the sheet to its bottom edge — no dead space
+            float blockH = win.yMax - y - 44f; // stop ABOVE the tab row (Équipement | Réputation)
             Rect blockL = new Rect(win.x + 12, y, half, blockH);
             Rect blockR = new Rect(win.x + 18 + half, y, half, blockH);
             WowUi.Highlight(blockL);
@@ -4965,15 +4986,55 @@ namespace Aetheria.UnityClient
 
         private int _sheetTab; // 0 = équipement, 1 = réputation
 
-        // ------- CODEX: every dungeon and raid, its bosses, and its loot tables. -------
+        // ------- YOUR menu (right-click your own portrait): the bandit switch. -------
+        private bool _selfMenuOpen;
+
+        private void DrawSelfMenu()
+        {
+            if (!_selfMenuOpen) { return; }
+
+            Rect frame = FrameRect(HudConfig.Frame.PlayerFrame);
+            var box = new Rect(frame.x, frame.yMax + 6, 240, 62);
+            WowUi.Panel(box);
+
+            EntitySnapshot self;
+            bool inSanctuary = _client.TryGetSelf(out self) && !_client.InInstance && IsSafePos(self.Position);
+            bool bandit = _client.IsBandit;
+
+            if (inSanctuary)
+            {
+                string label = bandit ? "☠ Désactiver le mode bandit" : "☠ Activer le mode bandit";
+                if (WowUi.Button(new Rect(box.x + 10, box.y + 8, box.width - 20, 22), label))
+                {
+                    _client.SendSetBandit(!bandit);
+                    _selfMenuOpen = false;
+                }
+            }
+            else
+            {
+                GUI.Label(new Rect(box.x + 10, box.y + 8, box.width - 20, 22),
+                    "<size=10><color=#808080>☠ Mode bandit — disponible dans un sanctuaire uniquement.</color></size>",
+                    Rich());
+            }
+
+            if (WowUi.Button(new Rect(box.x + 10, box.y + 34, box.width - 20, 20), "Fermer"))
+            {
+                _selfMenuOpen = false;
+            }
+        }
+
+        // ------- CODEX: pick an instance, pick a boss/monster, read its loot (with tooltips). -------
         private bool _codexOpen;
-        private Vector2 _codexScroll;
+        private byte _codexInstance;
+        private byte _codexMonster;
+        private Rect _lastCodexRect;
 
         private void DrawCodexWindow()
         {
             if (!_codexOpen) { return; }
 
-            var win = new Rect((VirtW / 2f) - 230, (VirtH / 2f) - 220, 460, 440);
+            var win = new Rect((VirtW / 2f) - 250, (VirtH / 2f) - 200, 500, 400);
+            _lastCodexRect = win;
             WowUi.Panel(win);
             WowUi.GoldCentered(new Rect(win.x, win.y + 8, win.width, 20),
                 "<size=13><b>📖 Codex — Donjons & Raids</b></size>");
@@ -4983,67 +5044,124 @@ namespace Aetheria.UnityClient
                 return;
             }
 
-            var view = new Rect(win.x + 10, win.y + 32, win.width - 20, win.height - 42);
-            float contentH = 0f;
+            // LEFT COLUMN: the instances. Click one to browse it.
+            float ly = win.y + 36;
+            GUI.Label(new Rect(win.x + 12, ly, 150, 16), "<size=10><color=#a0a0a0>Instances</color></size>", Rich());
+            ly += 18;
             foreach (Aetheria.Shared.Data.InstanceDefinition inst in Data.Instances)
             {
-                contentH += 66f + (inst.LootTable.Length * 17f);
-                var seen = new HashSet<byte>();
-                foreach (Aetheria.Shared.Data.InstanceSpawn sp in inst.Spawns)
+                var btn = new Rect(win.x + 12, ly, 150, 24);
+                if (_codexInstance == inst.Id) { WowUi.Highlight(btn); }
+                if (GUI.Button(btn, "<size=10>" + inst.Name + "</size>",
+                    new GUIStyle(GUI.skin.button) { richText = true }))
                 {
-                    if (seen.Add(sp.MonsterId)) { contentH += 20f; }
+                    _codexInstance = inst.Id;
+                    _codexMonster = 0;
                 }
 
-                contentH += 14f;
+                ly += 27;
             }
 
-            _codexScroll = GUI.BeginScrollView(view, _codexScroll,
-                new Rect(0, 0, view.width - 18, contentH));
-            float y = 0f;
+            // The selected instance drives the middle and right panes.
+            Aetheria.Shared.Data.InstanceDefinition? sel = null;
             foreach (Aetheria.Shared.Data.InstanceDefinition inst in Data.Instances)
             {
-                GUI.Label(new Rect(4, y, view.width - 26, 20),
-                    "<size=13><color=#ffd100><b>" + inst.Name + "</b></color>  <size=10><color=#a0a0a0>" +
-                    (inst.IsRaid ? "Raid" : "Donjon") + " · " + inst.MinPlayers + "–" + inst.MaxPlayers +
-                    " joueurs</color></size></size>", Rich());
-                y += 24f;
-
-                // The dwellers — the LAST listed monster of the template is the boss.
-                var listed = new HashSet<byte>();
-                byte bossId = inst.Spawns.Length > 0 ? inst.Spawns[inst.Spawns.Length - 1].MonsterId : (byte)0;
-                foreach (Aetheria.Shared.Data.InstanceSpawn sp in inst.Spawns)
-                {
-                    if (!listed.Add(sp.MonsterId)) { continue; }
-
-                    Aetheria.Shared.Data.MonsterDefinition mob = Data.GetMonster(sp.MonsterId);
-                    bool boss = sp.MonsterId == bossId;
-                    GUI.Label(new Rect(16, y, view.width - 38, 18),
-                        "<size=11>" + (boss ? "<color=#ff8030>👑 " : "<color=#e0e0e0>") + mob.Name +
-                        "</color>  <size=9><color=#909090>niv." + mob.Level + (boss ? " — boss" : "") +
-                        "</color></size></size>", Rich());
-                    y += 20f;
-                }
-
-                // The prize: the table every corpse inside rolls on (boss: guaranteed).
-                GUI.Label(new Rect(16, y + 2, view.width - 38, 16),
-                    "<size=10><color=#70c0ff><b>Table de butin</b> — 15 % par monstre, garanti sur le boss :</color></size>",
-                    Rich());
-                y += 20f;
-                foreach (byte itemId in inst.LootTable)
-                {
-                    Aetheria.Shared.Data.ItemDefinition item = Data.GetItem(itemId);
-                    GUI.Label(new Rect(28, y, view.width - 50, 16),
-                        "<size=10><color=" + QualityHex(item) + ">" + item.Name + "</color>" +
-                        (item.AttackBonus > 0 ? "  <color=#909090>+" + item.AttackBonus + " att.</color>" : "") +
-                        (item.DefenseBonus > 0 ? "  <color=#909090>+" + item.DefenseBonus + " déf.</color>" : "") +
-                        "</size>", Rich());
-                    y += 17f;
-                }
-
-                y += 22f;
+                if (inst.Id == _codexInstance) { sel = inst; }
             }
 
-            GUI.EndScrollView();
+            if (sel == null)
+            {
+                WowUi.Body(new Rect(win.x + 180, win.y + 150, win.width - 200, 40),
+                    "<color=#a0a0a0>Choisis une instance à gauche.</color>");
+                return;
+            }
+
+            GUI.Label(new Rect(win.x + 176, win.y + 32, win.width - 190, 18),
+                "<size=11><color=#ffd100><b>" + sel.Name + "</b></color>  <size=9><color=#a0a0a0>" +
+                (sel.IsRaid ? "Raid" : "Donjon") + " · " + sel.MinPlayers + "–" + sel.MaxPlayers +
+                " joueurs</color></size></size>", Rich());
+
+            // MIDDLE COLUMN: its monsters (👑 = boss, the last of the template).
+            float my = win.y + 56;
+            GUI.Label(new Rect(win.x + 176, my, 150, 16), "<size=10><color=#a0a0a0>Habitants</color></size>", Rich());
+            my += 18;
+            byte bossId = sel.Spawns.Length > 0 ? sel.Spawns[sel.Spawns.Length - 1].MonsterId : (byte)0;
+            var listed = new HashSet<byte>();
+            foreach (Aetheria.Shared.Data.InstanceSpawn sp in sel.Spawns)
+            {
+                if (!listed.Add(sp.MonsterId)) { continue; }
+
+                Aetheria.Shared.Data.MonsterDefinition mob = Data.GetMonster(sp.MonsterId);
+                bool boss = sp.MonsterId == bossId;
+                var btn = new Rect(win.x + 176, my, 150, 24);
+                if (_codexMonster == sp.MonsterId) { WowUi.Highlight(btn); }
+                if (GUI.Button(btn, "<size=10>" + (boss ? "👑 " : "") + mob.Name + "</size>",
+                    new GUIStyle(GUI.skin.button) { richText = true }))
+                {
+                    _codexMonster = sp.MonsterId;
+                }
+
+                if (btn.Contains(Event.current.mousePosition))
+                {
+                    _tooltip = "<b>" + mob.Name + "</b>\n<color=#a0a0a0>Niveau " + mob.Level +
+                        (boss ? " — boss de l'instance" : "") + "</color>";
+                }
+
+                my += 27;
+            }
+
+            // RIGHT PANE: the selected monster's loot — hover a line for the item's tooltip.
+            float rx = win.x + 340;
+            float ry = win.y + 56;
+            if (_codexMonster == 0)
+            {
+                WowUi.Body(new Rect(rx, ry + 60, win.width - (rx - win.x) - 14, 60),
+                    "<color=#a0a0a0>Choisis un monstre pour voir son butin.</color>");
+                return;
+            }
+
+            Aetheria.Shared.Data.MonsterDefinition chosen = Data.GetMonster(_codexMonster);
+            bool chosenBoss = _codexMonster == bossId;
+            GUI.Label(new Rect(rx, ry, win.width - (rx - win.x) - 14, 16),
+                "<size=10><color=#70c0ff><b>Butin de " + chosen.Name + "</b></color></size>", Rich());
+            ry += 20;
+
+            void LootLine(byte itemId, string suffix)
+            {
+                Aetheria.Shared.Data.ItemDefinition item = Data.GetItem(itemId);
+                var row = new Rect(rx, ry, win.width - (rx - win.x) - 14, 17);
+                GUI.Label(row, "<size=10><color=" + QualityHex(item) + ">" + item.Name + "</color>" +
+                    "  <color=#909090>" + suffix + "</color></size>", Rich());
+                if (row.Contains(Event.current.mousePosition))
+                {
+                    _tooltip = ItemTooltip(item, 1);
+                }
+
+                ry += 17;
+            }
+
+            foreach (Aetheria.Shared.Data.LootEntry part in chosen.BodyParts)
+            {
+                LootLine(part.ItemId, "×" + part.Quantity + " (garanti)");
+            }
+
+            foreach (Aetheria.Shared.Data.GearDrop drop in chosen.GearDrops)
+            {
+                LootLine(drop.ItemId, drop.ChancePercent + " %");
+            }
+
+            ry += 6;
+            GUI.Label(new Rect(rx, ry, win.width - (rx - win.x) - 14, 16),
+                "<size=9><color=#70c0ff>Table de l'instance " + (chosenBoss ? "(garanti — boss)" : "(15 %)") +
+                " :</color></size>", Rich());
+            ry += 17;
+            foreach (byte itemId in sel.LootTable)
+            {
+                LootLine(itemId, chosenBoss ? "1 garanti au choix du sort" : "15 %");
+            }
+
+            GUI.Label(new Rect(rx, win.yMax - 24, win.width - (rx - win.x) - 14, 16),
+                "<size=8><color=#707070>Or : " + chosen.GoldReward + " pc par kill.</color></size>", Rich());
         }
 
         /// <summary>The PvP ledger: honor trophies, camp standings, and the BANDIT switch.</summary>
@@ -6047,27 +6165,44 @@ namespace Aetheria.UnityClient
                 GUI.DrawTexture(r, Texture2D.whiteTexture);
                 GUI.color = Color.white;
                 GUI.Label(r, "<b>" + frame + "</b>", RichCentered());
+            }
 
-                Event e = Event.current;
-                Vector2 mouse = e.mousePosition;
-                if (e.type == EventType.MouseDown && r.Contains(mouse))
+            // GRAB the SMALLEST frame under the cursor: big frames (chat, fiche, sacs) were
+            // shadowing the little ones stacked on top of them — those became un-draggable.
+            Event e2 = Event.current;
+            if (e2.type == EventType.MouseDown)
+            {
+                HudConfig.Frame? best = null;
+                float bestArea = float.MaxValue;
+                foreach (HudConfig.Frame frame in System.Enum.GetValues(typeof(HudConfig.Frame)))
                 {
-                    _draggingFrame = frame;
-                    _dragStartMouse = mouse;
-                    _dragStartOffset = _cfg.Offset(frame);
-                    e.Use();
+                    Rect r = FrameRect(frame);
+                    float area = r.width * r.height;
+                    if (r.Contains(e2.mousePosition) && area < bestArea)
+                    {
+                        bestArea = area;
+                        best = frame;
+                    }
                 }
-                else if (e.type == EventType.MouseDrag && _draggingFrame == frame)
+
+                if (best != null)
                 {
-                    _cfg.SetOffset(frame, _dragStartOffset + (mouse - _dragStartMouse));
-                    e.Use();
+                    _draggingFrame = best;
+                    _dragStartMouse = e2.mousePosition;
+                    _dragStartOffset = _cfg.Offset(best.Value);
+                    e2.Use();
                 }
-                else if (e.type == EventType.MouseUp && _draggingFrame == frame)
-                {
-                    _draggingFrame = null;
-                    _cfg.Save();
-                    e.Use();
-                }
+            }
+            else if (e2.type == EventType.MouseDrag && _draggingFrame != null)
+            {
+                _cfg.SetOffset(_draggingFrame.Value, _dragStartOffset + (e2.mousePosition - _dragStartMouse));
+                e2.Use();
+            }
+            else if (e2.type == EventType.MouseUp && _draggingFrame != null)
+            {
+                _draggingFrame = null;
+                _cfg.Save();
+                e2.Use();
             }
         }
 

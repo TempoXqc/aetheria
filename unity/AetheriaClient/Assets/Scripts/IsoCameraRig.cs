@@ -58,6 +58,10 @@ namespace Aetheria.UnityClient
         /// (portrait spin, item drag) and must NOT steer the camera.</summary>
         public bool SuppressDrag;
 
+        /// <summary>Set by the UI each frame: the wheel belongs to the window under the
+        /// cursor (codex, sacs, minimap…) — the camera must not zoom through it.</summary>
+        public bool SuppressZoom;
+
         /// <summary>True while either mouse button is steering the camera.</summary>
         public bool Dragging
         {
@@ -67,7 +71,7 @@ namespace Aetheria.UnityClient
         private void LateUpdate()
         {
             float scroll = Input.GetAxis("Mouse ScrollWheel");
-            if (Mathf.Abs(scroll) > 0.0001f)
+            if (Mathf.Abs(scroll) > 0.0001f && !SuppressZoom)
             {
                 _distance = Mathf.Clamp(_distance - (scroll * 5f), MinZoom, MaxZoom);
             }
