@@ -9,9 +9,13 @@ if not errorlevel 1 (
     exit /b 0
 )
 
-rem Le launcher JOUEUR compile dans SON propre dossier (artifacts-player) : ni le
-rem launcher serveur ni un ancien processus ne peuvent verrouiller sa DLL.
-dotnet run -c Release --project tools\Launcher -p:ArtifactsPath=artifacts-player
+rem Nettoyage : une version precedente creait ce dossier DANS le projet (mauvais endroit),
+rem ce qui cassait la compilation (attributs en double).
+if exist tools\Launcher\artifacts-player rmdir /s /q tools\Launcher\artifacts-player
+
+rem Le launcher JOUEUR compile dans SON propre dossier (chemin ABSOLU, hors du projet) :
+rem ni le launcher serveur ni un ancien processus ne peuvent verrouiller sa DLL.
+dotnet run -c Release --project tools\Launcher -p:ArtifactsPath="%~dp0artifacts-player"
 if errorlevel 1 (
     echo.
     echo ======================================================

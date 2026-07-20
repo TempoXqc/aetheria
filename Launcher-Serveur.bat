@@ -9,10 +9,13 @@ if not errorlevel 1 (
     exit /b 0
 )
 
-rem Le launcher SERVEUR compile dans SON propre dossier (artifacts-host) : le launcher
-rem joueur (port 5180) verrouille artifacts\bin\Launcher — plus jamais de collision
-rem "The file is locked by .NET Host" entre les deux.
-dotnet run -c Release --project tools\Launcher -p:ArtifactsPath=artifacts-host -- --host
+rem Nettoyage : une version precedente creait ce dossier DANS le projet (mauvais endroit),
+rem ce qui cassait la compilation (attributs en double).
+if exist tools\Launcher\artifacts-host rmdir /s /q tools\Launcher\artifacts-host
+
+rem Le launcher SERVEUR compile dans SON propre dossier (chemin ABSOLU, hors du projet) :
+rem le launcher joueur ne peut plus verrouiller sa DLL, et inversement.
+dotnet run -c Release --project tools\Launcher -p:ArtifactsPath="%~dp0artifacts-host" -- --host
 if errorlevel 1 (
     echo.
     echo ======================================================
