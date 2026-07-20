@@ -463,6 +463,7 @@ namespace Aetheria.UnityClient
                 else if (_worldMapOpen) { _worldMapOpen = false; }
                 else if (_questLogOpen) { _questLogOpen = false; }
                 else if (_codexOpen) { _codexOpen = false; }
+                else if (_friendsOpen) { _friendsOpen = false; _friendMenuFor = ""; }
                 else if (_logoutAt > 0f) { _logoutAt = -1f; } // Escape cancels the logout timer
                 else if (_targetId >= 0) { SetAttackIntent(-1); } // Escape drops the target first
                 else { _menuOpen = !_menuOpen; _optionsTab = -1; _layoutEditMode = false; }
@@ -1966,7 +1967,7 @@ namespace Aetheria.UnityClient
                     return new Rect(8 + o.x, VirtH - 58 - (_chatLines * 17f) + o.y,
                         _chatW, (_chatLines * 17f) + 24);
                 case HudConfig.Frame.MicroBar:
-                    return new Rect(VirtW - 16 - (6 * 29f) + o.x, VirtH - 34 + o.y, 6 * 29f, 26);
+                    return new Rect(VirtW - 16 - (7 * 29f) + o.x, VirtH - 34 + o.y, 7 * 29f, 26);
                 case HudConfig.Frame.CastBar:
                     return new Rect(((VirtW - 260f) / 2f) + o.x, VirtH - 150f + o.y, 260f, 22f);
                 case HudConfig.Frame.Shop:
@@ -2037,6 +2038,7 @@ namespace Aetheria.UnityClient
             DrawMicroBar();
             DrawConsumableBar();
             DrawCodexWindow();
+            DrawFriendsWindow();
             DrawSelfMenu();
             DrawInnDialog();
             DrawInspectWindow();
@@ -3742,14 +3744,15 @@ namespace Aetheria.UnityClient
                     Texture2D.whiteTexture);
                 GUI.color = prev;
                 string abbrev = def.Name.Length <= 2 ? def.Name : def.Name.Substring(0, 2);
+                int abbrevSize = rect.height < 26f ? 8 : 11;
                 GUI.Label(new Rect(rect.x, rect.y + 2, rect.width, 16),
-                    "<size=11><b><color=#101010>" + abbrev + "</color></b></size>", RichCentered());
+                    "<size=" + abbrevSize + "><b><color=#101010>" + abbrev + "</color></b></size>", RichCentered());
             }
 
             if (quantity > 1)
             {
                 GUI.Label(new Rect(rect.x, rect.y + rect.height - 16, rect.width - 3, 14),
-                    "<size=10><b>" + quantity + "</b></size>",
+                    "<size=" + (rect.height < 26f ? 8 : 10) + "><b>" + quantity + "</b></size>",
                     new GUIStyle(GUI.skin.label) { richText = true, alignment = TextAnchor.LowerRight });
             }
 
@@ -4112,6 +4115,63 @@ namespace Aetheria.UnityClient
             }
         }
 
+        private string _bankAmountText = "";
+
+        /// <summary>
+        /// Parse a French money amount into COPPER: « 2po », « 35pa », « 120pc », combos
+        /// (« 2po 50pa 10pc ») — a bare number counts as pièces d'argent. 0 = invalid.
+        /// </summary>
+        private static int ParseMoney(string text)
+        {
+            if (string.IsNullOrWhiteSpace(text)) { return 0; }
+
+            int total = 0;
+            int number = 0;
+            bool hasNumber = false;
+            bool anyUnit = false;
+            string t = text.ToLowerInvariant() + " ";
+            for (int i = 0; i < t.Length; i++)
+            {
+                char c = t[i];
+                if (c >= '0' && c <= '9')
+                {
+                    number = (number * 10) + (c - '0');
+                    hasNumber = true;
+                }
+                else if (hasNumber && c == 'p' && i + 1 < t.Length)
+                {
+                    char unit = t[i + 1];
+                    int mult = unit == 'o' ? 10000 : unit == 'a' ? 100 : unit == 'c' ? 1 : -1;
+                    if (mult < 0) { return 0; }
+                    total += number * mult;
+                    number = 0;
+                    hasNumber = false;
+                    anyUnit = true;
+                    i++;
+                }
+                else if (c == ' ')
+                {
+                    if (hasNumber && !anyUnit)
+                    {
+                        // Bare number: pièces d'argent.
+                        total += number * 100;
+                        number = 0;
+                        hasNumber = false;
+                    }
+                    else if (hasNumber)
+                    {
+                        return 0; // trailing digits after a united amount: ambiguous
+                    }
+                }
+                else
+                {
+                    return 0; // unknown character
+                }
+            }
+
+            return total;
+        }
+
         private void DrawBankWindow()
         {
             if (!_bankOpen) { return; }
@@ -4122,7 +4182,7 @@ namespace Aetheria.UnityClient
 
             int bagRows = Mathf.Max(1, ((_client.InventoryItems.Count - 1) / Cols) + 1);
             int bankRows = Mathf.Max(1, ((_client.BankItems.Count - 1) / Cols) + 1);
-            float height = 150f + ((bagRows + bankRows) * (Icon + 4f)) + 40f;
+            float height = 178f + ((bagRows + bankRows) * (Icon + 4f)) + 40f; // +28: the amount row
             Rect win = new Rect((VirtW - W) / 2f, (VirtH - height) / 2f, W, height);
             GUI.Box(win, "<b>Coffre de banque</b>", RichCenteredBox());
 
@@ -4135,21 +4195,40 @@ namespace Aetheria.UnityClient
             float y = win.y + 30f;
 
             // Gold, both sides.
-            GUI.Label(new Rect(win.x + 14, y, 220, 20),
+            GUI.Label(new Rect(win.x + 14, y, 300, 20),
                 "Sur toi : <b>" + FormatMoney(_client.Gold) + "</b> · au coffre : <b>" + FormatMoney(_client.BankGold) + "</b>", Rich());
-            if (GUI.Button(new Rect(win.x + W - 224, y - 2, 68, 22), "Dép. 1pa"))
+            y += 24f;
+
+            // FREE AMOUNT: type « 2po », « 35pa », « 2po 50pa », « 120pc » (or a plain number
+            // of pièces d'argent) — then deposit or withdraw exactly that.
+            GUI.Label(new Rect(win.x + 14, y + 2, 68, 20), "<size=11>Montant :</size>", Rich());
+            _bankAmountText = GUI.TextField(new Rect(win.x + 82, y, 110, 22), _bankAmountText, 16);
+            int amount = ParseMoney(_bankAmountText);
+            bool valid = amount > 0;
+            if (GUI.Button(new Rect(win.x + 200, y, 74, 22), "Déposer") && valid)
             {
-                _client.SendBank(BankOp.DepositGold, 0, 100);
+                _client.SendBank(BankOp.DepositGold, 0, Mathf.Min(amount, _client.Gold));
             }
 
-            if (GUI.Button(new Rect(win.x + W - 152, y - 2, 68, 22), "Dép. tout"))
+            if (GUI.Button(new Rect(win.x + 278, y, 74, 22), "Retirer") && valid)
+            {
+                _client.SendBank(BankOp.WithdrawGold, 0, Mathf.Min(amount, _client.BankGold));
+            }
+
+            if (GUI.Button(new Rect(win.x + 356, y, 44, 22), "Tout"))
             {
                 _client.SendBank(BankOp.DepositGold, 0, _client.Gold);
             }
 
-            if (GUI.Button(new Rect(win.x + W - 80, y - 2, 68, 22), "Ret. 1pa"))
+            if (GUI.Button(new Rect(win.x + 404, y, 44, 22), "R.tout"))
             {
-                _client.SendBank(BankOp.WithdrawGold, 0, 100);
+                _client.SendBank(BankOp.WithdrawGold, 0, _client.BankGold);
+            }
+
+            if (!valid && _bankAmountText.Trim().Length > 0)
+            {
+                GUI.Label(new Rect(win.x + 82, y + 22, 300, 16),
+                    "<size=9><color=#ff8080>Format : 2po, 35pa, 120pc ou 2po 50pa</color></size>", Rich());
             }
 
             y += 30f;
@@ -4915,6 +4994,7 @@ namespace Aetheria.UnityClient
                 ("C", "Carte du monde (" + KeyLabel(HudConfig.Bind.WorldMap) + ")", () => _worldMapOpen = !_worldMapOpen),
                 ("S", "Sacs (" + KeyLabel(HudConfig.Bind.Bags) + ")", () => _bagsOpen = !_bagsOpen),
                 ("📖", "Codex — donjons, raids et leurs butins", () => _codexOpen = !_codexOpen),
+                ("👥", "Amis", () => { _friendsOpen = !_friendsOpen; if (_friendsOpen) { _client.SendFriendAction(FriendOp.Refresh); } }),
             };
 
             const float B = 26f;
@@ -5387,6 +5467,119 @@ namespace Aetheria.UnityClient
             }
         }
 
+        // ------- FRIENDS: live presence, last-seen, invite/whisper on right-click. -------
+        private bool _friendsOpen;
+        private string _friendAddText = "";
+        private string _friendMenuFor = "";
+        private float _nextFriendsRefresh;
+
+        private void DrawFriendsWindow()
+        {
+            if (!_friendsOpen) { return; }
+
+            // A gentle periodic refresh keeps the lamps and levels live while the window is open.
+            if (Time.time >= _nextFriendsRefresh)
+            {
+                _nextFriendsRefresh = Time.time + 10f;
+                _client.SendFriendAction(FriendOp.Refresh);
+            }
+
+            var win = new Rect(VirtW - 262, 96, 250, 340);
+            WowUi.Panel(win);
+            WowUi.GoldCentered(new Rect(win.x, win.y + 8, win.width, 18), "<b>👥 Amis</b>");
+            if (GUI.Button(new Rect(win.x + win.width - 26, win.y + 5, 21, 21), "X"))
+            {
+                _friendsOpen = false;
+                _friendMenuFor = "";
+                return;
+            }
+
+            // ADD row.
+            _friendAddText = GUI.TextField(new Rect(win.x + 10, win.y + 30, win.width - 66, 20), _friendAddText, 12);
+            if (GUI.Button(new Rect(win.x + win.width - 52, win.y + 30, 42, 20), "<size=10>Ajouter</size>",
+                new GUIStyle(GUI.skin.button) { richText = true }) && _friendAddText.Trim().Length > 0)
+            {
+                _client.SendFriendAction(FriendOp.Add, _friendAddText.Trim());
+                _friendAddText = "";
+            }
+
+            float y = win.y + 58;
+            IReadOnlyList<FriendInfo> friends = _client.Friends;
+            if (friends.Count == 0)
+            {
+                WowUi.Body(new Rect(win.x + 10, y + 10, win.width - 20, 40),
+                    "<color=#a0a0a0>Ajoute un ami par le nom de son personnage.</color>");
+            }
+
+            foreach (FriendInfo f in friends)
+            {
+                var row = new Rect(win.x + 8, y, win.width - 16, 34);
+                WowUi.Highlight(row);
+
+                // Presence lamp + name; the second line tells the story.
+                string lamp = f.Online ? "#20d848" : "#707070";
+                GUI.Label(new Rect(row.x + 6, row.y + 1, row.width - 12, 16),
+                    "<size=11><color=" + lamp + ">●</color> <b><color=" +
+                    (f.Online ? "#ffffff" : "#909098") + ">" + f.Name + "</color></b></size>", Rich());
+                string detail = f.Online
+                    ? "<color=#20d848>niv." + f.Level + " · " + ClassNameOf(f.ClassId) + " · " + f.Server + "</color>"
+                    : "<color=#808088>" + (f.MinutesSinceSeen < 0 ? "Jamais vu en ligne" : "Vu " + FormatAgo(f.MinutesSinceSeen)) + "</color>";
+                GUI.Label(new Rect(row.x + 18, row.y + 17, row.width - 24, 15),
+                    "<size=9>" + detail + "</size>", Rich());
+
+                Event fe = Event.current;
+                if (fe.type == EventType.MouseDown && fe.button == 1 && row.Contains(fe.mousePosition))
+                {
+                    _friendMenuFor = _friendMenuFor == f.Name ? "" : f.Name;
+                    fe.Use();
+                }
+
+                // The little menu, inline under the row.
+                if (_friendMenuFor == f.Name)
+                {
+                    y += 36;
+                    if (f.Online && WowUi.Button(new Rect(row.x + 14, y, 100, 20), "Inviter"))
+                    {
+                        _client.SendFriendAction(FriendOp.Invite, f.Name);
+                        _friendMenuFor = "";
+                    }
+
+                    if (f.Online && WowUi.Button(new Rect(row.x + 120, y, 100, 20), "Chuchoter"))
+                    {
+                        _chatInputActive = true;
+                        _chatInput = "/w " + f.Name + " ";
+                        _friendMenuFor = "";
+                    }
+
+                    y += f.Online ? 24 : 0;
+                    if (WowUi.Button(new Rect(row.x + 14, y, 100, 20), "Retirer"))
+                    {
+                        _client.SendFriendAction(FriendOp.Remove, f.Name);
+                        _friendMenuFor = "";
+                    }
+
+                    y += 24;
+                }
+                else
+                {
+                    y += 38;
+                }
+
+                if (y > win.yMax - 40) { break; } // roster longer than the window: cut politely
+            }
+
+            GUI.Label(new Rect(win.x + 10, win.yMax - 20, win.width - 20, 16),
+                "<size=8><color=#707070>Clic droit sur un ami : inviter, chuchoter, retirer.</color></size>", Rich());
+        }
+
+        private static string FormatAgo(int minutes)
+        {
+            if (minutes < 1) { return "à l'instant"; }
+            if (minutes < 60) { return "il y a " + minutes + " min"; }
+            if (minutes < 60 * 24) { return "il y a " + (minutes / 60) + " h"; }
+            return "il y a " + (minutes / (60 * 24)) + " j";
+        }
+
         private void DrawBagsWindow()
         {
             if (!_bagsOpen) { return; }
@@ -5399,7 +5592,7 @@ namespace Aetheria.UnityClient
             WowUi.Panel(win); // opaque WoW backpack, not a see-through box
             DragTitle(HudConfig.Frame.Bags, new Rect(win.x + 8 + (EquipSlots.Bags.Length * 26f), win.y,
                 win.width - 40 - (EquipSlots.Bags.Length * 26f), 26));
-            WowUi.GoldCentered(new Rect(win.x, win.y + 7, win.width, 18), "<b>Sacs</b>");
+            WowUi.Gold(new Rect(win.x + 8 + (EquipSlots.Bags.Length * 26f) + 6, win.y + 7, 70, 18), "<b>Sacs</b>");
 
             // The FIVE worn-bag slots, top-left of the window (WoW-style): capacities add up.
             // Right-click a bag in the cells to wear it (first empty slot); right-click a worn

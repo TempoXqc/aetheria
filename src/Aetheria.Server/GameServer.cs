@@ -455,6 +455,11 @@ public sealed class GameServer
 
                     break;
 
+                case MessageType.FriendAction:
+                    FriendAction friendAct = FriendAction.Read(ref reader);
+                    HandleFriendAction(peer, session, friendAct);
+                    break;
+
                 case MessageType.SetBandit:
                     SetBanditMode bandit = SetBanditMode.Read(ref reader);
                     if (TryGetEntity(session, out ServerEntity? outlaw) && outlaw is not null && outlaw.IsAlive)
@@ -929,6 +934,11 @@ public sealed class GameServer
             }
         }
 
+        // FRIENDS: your list on arrival — and everyone who lists YOU sees the lamp turn
+        // green, with a system-chat note (the "friend is online" notification).
+        SendFriends(peer, session);
+        NotifyFriendWatchers(session.Name, online: true);
+
         _log($"'{session.Name}' entered as {entity.Faction} {data.GetRace(entity.RaceId).Name} " +
              $"{data.GetClass(entity.ClassId).Name} ({entity.Gender}, entity {entity.Id}, {peer}, " +
              $"{(isNew ? "new" : "restored")}). Players online: {PlayerCount}.");
@@ -997,13 +1007,158 @@ public sealed class GameServer
         }
 
         _activeNames.Remove(session.Name); // no longer online (the durable name claim remains)
+        NotifyFriendWatchers(session.Name, online: false);
         session.CurrentWorld.Despawn(session.EntityId);
         _worlds.DestroyInstanceIfEmpty(session.CurrentWorld);
         PersistAll();
         _log($"'{session.Name}' left (entity {session.EntityId}). Players online: {PlayerCount}.");
     }
 
-    // ------------------------------------------------------------------ Party
+    // ---------------------------------------------------------------- Friends
+
+    private void HandleFriendAction(PeerId peer, PlayerSession session, FriendAction action)
+    {
+        if (!session.HandshakeComplete)
+        {
+            return;
+        }
+
+        AccountRecord account = GetOrCreateAccount(session.AccountId);
+        string key = action.Name.Trim().ToLowerInvariant();
+        switch ((FriendOp)action.Op)
+        {
+            case FriendOp.Add:
+                if (key.Length == 0) { break; }
+                if (string.Equals(key, session.Name, StringComparison.OrdinalIgnoreCase))
+                {
+                    SendSystemLine(peer, "Tu ne peux pas t'ajouter toi-même.");
+                    break;
+                }
+
+                if (!_state.Names.ContainsKey(key))
+                {
+                    SendSystemLine(peer, $"Aucun personnage nommé « {action.Name.Trim()} » sur ce royaume.");
+                    break;
+                }
+
+                if (!account.Friends.Contains(key))
+                {
+                    account.Friends.Add(key);
+                    PersistAll();
+                    SendSystemLine(peer, $"« {DisplayNameOf(key)} » ajouté à tes amis.");
+                }
+
+                break;
+
+            case FriendOp.Remove:
+                if (account.Friends.Remove(key))
+                {
+                    PersistAll();
+                }
+
+                break;
+
+            case FriendOp.Invite:
+                foreach ((PeerId otherPeer, PlayerSession other) in _sessions)
+                {
+                    if (other.HandshakeComplete &&
+                        string.Equals(other.Name, action.Name, StringComparison.OrdinalIgnoreCase))
+                    {
+                        HandlePartyInvite(peer, session, other.EntityId);
+                        return; // no roster push needed
+                    }
+                }
+
+                SendSystemLine(peer, $"« {action.Name.Trim()} » n'est pas en ligne.");
+                return;
+        }
+
+        SendFriends(peer, session);
+    }
+
+    /// <summary>Build and push the caller's friends list (live presence, level, last-seen).</summary>
+    private void SendFriends(PeerId peer, PlayerSession session)
+    {
+        AccountRecord account = GetOrCreateAccount(session.AccountId);
+        var list = new List<FriendInfo>(account.Friends.Count);
+        long now = DateTimeOffset.UtcNow.ToUnixTimeSeconds();
+        foreach (string key in account.Friends)
+        {
+            var info = new FriendInfo { Name = DisplayNameOf(key), Server = ServerName };
+
+            // Online? Level and class come from the LIVE entity.
+            bool online = false;
+            foreach (PlayerSession other in _sessions.Values)
+            {
+                if (other.HandshakeComplete &&
+                    string.Equals(other.Name, key, StringComparison.OrdinalIgnoreCase) &&
+                    TryGetEntity(other, out ServerEntity? body) && body is not null)
+                {
+                    info.Online = true;
+                    info.Level = (byte)Math.Clamp(body.Level, 1, 255);
+                    info.ClassId = body.ClassId;
+                    online = true;
+                    break;
+                }
+            }
+
+            if (!online && _state.Names.TryGetValue(key, out string? ownerAccount) &&
+                _state.Accounts.TryGetValue(ownerAccount, out AccountRecord? owner) &&
+                owner.Characters.TryGetValue(key, out CharacterRecord? record))
+            {
+                info.Level = (byte)Math.Clamp(
+                    _worlds.GameData.Progression.LevelForXp(record.TotalXp), 1, 255);
+                info.ClassId = record.ClassId;
+                info.MinutesSinceSeen = record.LastSeenUnix > 0
+                    ? (int)Math.Max(0, (now - record.LastSeenUnix) / 60)
+                    : -1;
+            }
+
+            list.Add(info);
+        }
+
+        Send(peer, new FriendsState(list));
+    }
+
+    /// <summary>Everyone who lists this character as a friend gets a note + a fresh roster.</summary>
+    private void NotifyFriendWatchers(string characterName, bool online)
+    {
+        string key = characterName.ToLowerInvariant();
+        foreach ((PeerId otherPeer, PlayerSession other) in _sessions.ToArray())
+        {
+            if (!other.HandshakeComplete)
+            {
+                continue;
+            }
+
+            AccountRecord account = GetOrCreateAccount(other.AccountId);
+            if (account.Friends.Contains(key))
+            {
+                SendSystemLine(otherPeer, online
+                    ? $"Ton ami « {characterName} » vient de se connecter."
+                    : $"Ton ami « {characterName} » s'est déconnecté.");
+                SendFriends(otherPeer, other);
+            }
+        }
+    }
+
+    /// <summary>The canonical display casing of a known character name (falls back to the key).</summary>
+    private string DisplayNameOf(string nameKey)
+    {
+        if (_state.Names.TryGetValue(nameKey, out string? ownerAccount) &&
+            _state.Accounts.TryGetValue(ownerAccount, out AccountRecord? owner) &&
+            owner.Characters.TryGetValue(nameKey, out CharacterRecord? record))
+        {
+            return record.Name;
+        }
+
+        return nameKey;
+    }
+
+    private void SendSystemLine(PeerId peer, string text)
+        => SendWith(peer, new ChatMessage(ChatChannel.System, "", "", text).Write);
+
+        // ------------------------------------------------------------------ Party
 
     private void HandlePartyInvite(PeerId inviterPeer, PlayerSession inviterSession, int targetEntityId)
     {
@@ -2144,6 +2299,7 @@ public sealed class GameServer
     private void Send(PeerId peer, LoginResult msg) => SendWith(peer, msg.Write);
 
     private void Send(PeerId peer, ServerInfo msg) => SendWith(peer, msg.Write);
+    private void Send(PeerId peer, FriendsState msg) => SendWith(peer, msg.Write);
 
     private void SendWith(PeerId peer, Action<PacketWriter> write)
     {

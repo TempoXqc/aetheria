@@ -92,6 +92,9 @@ public sealed class GameClient
     public IReadOnlyList<ItemStack> BankItems { get; private set; } = [];
     public int BankStackCount { get; private set; }
 
+    // --- Friends (from FriendsState) ---
+    public IReadOnlyList<FriendInfo> Friends { get; private set; } = [];
+
     // --- Party & instance state ---
     public string PartyLeader { get; private set; } = string.Empty;
     public int PartySize { get; private set; }
@@ -176,6 +179,10 @@ public sealed class GameClient
 
     /// <summary>Toggle BANDIT mode (strike your own faction — and wear the mark).</summary>
     public void SendSetBandit(bool enabled) => SendWith(new SetBanditMode(enabled).Write);
+
+    /// <summary>Manage the friends list: refresh, add/remove by name, or invite an online friend.</summary>
+    public void SendFriendAction(FriendOp op, string name = "")
+        => SendWith(new FriendAction((byte)op, name).Write);
 
     /// <summary>Permanently delete this server's character (character screen only).</summary>
     public void SendDeleteCharacter()
@@ -448,6 +455,11 @@ public sealed class GameClient
                     BankGold = bankState.Gold;
                     BankItems = bankState.Items;
                     BankStackCount = bankState.Items.Count;
+                    break;
+
+                case MessageType.FriendsState:
+                    FriendsState friends = FriendsState.Read(ref reader);
+                    Friends = friends.Friends;
                     break;
 
                 case MessageType.PartyState:

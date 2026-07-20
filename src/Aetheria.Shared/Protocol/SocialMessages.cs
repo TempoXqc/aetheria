@@ -430,3 +430,99 @@ public readonly struct DropItem
         return new DropItem(itemId, qty);
     }
 }
+
+// ----------------------------------------------------------------------------------------------
+// Friends
+// ----------------------------------------------------------------------------------------------
+
+/// <summary>What a FriendAction asks for.</summary>
+public enum FriendOp : byte
+{
+    Refresh = 0,
+    Add = 1,
+    Remove = 2,
+
+    /// <summary>Invite this (online) friend to the party, by name.</summary>
+    Invite = 3,
+}
+
+/// <summary>Client → server: manage the friends list (add/remove/refresh/invite by name).</summary>
+public readonly struct FriendAction
+{
+    public readonly byte Op;
+    public readonly string Name;
+
+    public FriendAction(byte op, string name)
+    {
+        Op = op;
+        Name = name;
+    }
+
+    public void Write(PacketWriter w)
+    {
+        w.WriteByte((byte)MessageType.FriendAction);
+        w.WriteByte(Op);
+        w.WriteString(Name);
+    }
+
+    public static FriendAction Read(ref PacketReader r) => new(r.ReadByte(), r.ReadString());
+}
+
+/// <summary>One friend's live card: presence, level, realm, and when he was last seen.</summary>
+public sealed class FriendInfo
+{
+    public string Name = string.Empty;
+    public bool Online;
+    public byte Level;
+    public byte ClassId;
+
+    /// <summary>Minutes since last seen (offline only; -1 = never seen / unknown).</summary>
+    public int MinutesSinceSeen = -1;
+
+    /// <summary>Realm the friend is (or was last) on.</summary>
+    public string Server = string.Empty;
+}
+
+/// <summary>Server → client: the whole friends list, pushed on every relevant change.</summary>
+public readonly struct FriendsState
+{
+    public readonly IReadOnlyList<FriendInfo> Friends;
+
+    public FriendsState(IReadOnlyList<FriendInfo> friends) => Friends = friends;
+
+    public void Write(PacketWriter w)
+    {
+        w.WriteByte((byte)MessageType.FriendsState);
+        w.WriteByte((byte)Friends.Count);
+        for (int i = 0; i < Friends.Count; i++)
+        {
+            FriendInfo f = Friends[i];
+            w.WriteString(f.Name);
+            w.WriteBool(f.Online);
+            w.WriteByte(f.Level);
+            w.WriteByte(f.ClassId);
+            w.WriteInt(f.MinutesSinceSeen);
+            w.WriteString(f.Server);
+        }
+    }
+
+    public static FriendsState Read(ref PacketReader r)
+    {
+        int count = r.ReadByte();
+        var friends = new FriendInfo[count];
+        for (int i = 0; i < count; i++)
+        {
+            friends[i] = new FriendInfo
+            {
+                Name = r.ReadString(),
+                Online = r.ReadBool(),
+                Level = r.ReadByte(),
+                ClassId = r.ReadByte(),
+                MinutesSinceSeen = r.ReadInt(),
+                Server = r.ReadString(),
+            };
+        }
+
+        return new FriendsState(friends);
+    }
+}

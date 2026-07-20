@@ -1,3 +1,4 @@
+using System;
 using Aetheria.Server.Items;
 using Aetheria.Server.World;
 using Aetheria.Shared.Items;
@@ -41,6 +42,7 @@ public static class CharacterMapper
             RepAlliance = entity.RepAlliance,
             RepHorde = entity.RepHorde,
             Bandit = entity.IsBandit,
+            LastSeenUnix = DateTimeOffset.UtcNow.ToUnixTimeSeconds(),
         };
 
         for (int i = 1; i < EquipSlots.Count; i++)

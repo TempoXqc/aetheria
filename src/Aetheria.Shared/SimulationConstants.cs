@@ -122,7 +122,7 @@ public static class SimulationConstants
     public const int InstanceRespawnDelayTicks = 3 * 60 * TickRate;
 
     /// <summary>Protocol version — bump on any wire-format change; handshake rejects mismatches.</summary>
-    public const byte ProtocolVersion = 34;
+    public const byte ProtocolVersion = 35;
 
     /// <summary>Hearthstone cooldown, in ticks (15 minutes).</summary>
     public const int HearthstoneCooldownTicks = 15 * 60 * TickRate;
@@ -162,5 +162,5 @@ public static class SimulationConstants
     /// in the in-game HUD, and in the server startup log, so "am I up to date?" has a one-glance
     /// answer on both sides.
     /// </summary>
-    public const string GameVersion = "0.56.1";
+    public const string GameVersion = "0.57.0";
 }

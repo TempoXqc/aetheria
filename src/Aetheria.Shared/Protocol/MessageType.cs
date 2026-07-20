@@ -49,6 +49,7 @@ public enum MessageType : byte
     SetHome = 39,
     UseItem = 40,
     SetBandit = 41,
+    FriendAction = 42,
 
     // --- Server -> Client ---
     ConnectAccepted = 128,
@@ -73,6 +74,7 @@ public enum MessageType : byte
     ChatMessage = 147,
     QuestState = 148,
     QuestCatalog = 149,
+    FriendsState = 150,
 }
 
 /// <summary>Coarse kind of an entity, so the client knows how to represent it. Extended over time.</summary>

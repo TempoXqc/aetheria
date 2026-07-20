@@ -16,6 +16,9 @@ public sealed class ServerState
 
 public sealed class AccountRecord
 {
+    /// <summary>Friends by CHARACTER NAME (lowercase keys) — realm-local, account-scoped.</summary>
+    public List<string> Friends { get; set; } = new();
+
     public string AccountId { get; set; } = string.Empty;
 
     /// <summary>SHA-256 hex of the account secret, set on first connect and verified after.</summary>
@@ -71,6 +74,9 @@ public sealed class CharacterRecord
 
     /// <summary>Weapon/spell proficiency per skill line (key: line id as string, for JSON friendliness).</summary>
     public Dictionary<string, int> Skills { get; set; } = new();
+
+    /// <summary>Unix seconds of the last time this character was seen online.</summary>
+    public long LastSeenUnix { get; set; }
 
     // PvP ledger: honor trophies, per-camp standing, and the bandit switch.
     public int Honor { get; set; }
