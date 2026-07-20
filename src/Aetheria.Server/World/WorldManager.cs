@@ -111,6 +111,20 @@ public sealed class WorldManager
         return true;
     }
 
+    /// <summary>Which instance template a running world was created from (null: not an instance).</summary>
+    public InstanceDefinition? DefinitionOf(World world)
+    {
+        foreach (RunningInstance instance in _instances.Values)
+        {
+            if (ReferenceEquals(instance.World, world))
+            {
+                return instance.Definition;
+            }
+        }
+
+        return null;
+    }
+
     /// <summary>Tear down an instance world once no players remain inside it.</summary>
     public void DestroyInstanceIfEmpty(World world)
     {

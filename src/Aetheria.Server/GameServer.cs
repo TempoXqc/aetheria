@@ -1480,13 +1480,33 @@ public sealed class GameServer
         }
 
         World.World instance = session.CurrentWorld;
-        if (WorldManager.TransferPlayer(instance, _worlds.OpenWorld, session.EntityId, Vec2.Zero))
+
+        // Come out WHERE YOU WENT IN: a step in front of this dungeon's own gate (clear of
+        // its 2.2 u trigger so you don't instantly walk back in) — not at the sanctuary.
+        Vec2 exitAt = Vec2.Zero;
+        InstanceDefinition? leavingDef = _worlds.DefinitionOf(instance);
+        if (leavingDef is not null)
+        {
+            foreach ((byte defId, Vec2 gate, Vec2 _) in _portals)
+            {
+                if (defId == leavingDef.Id)
+                {
+                    float len = MathF.Sqrt((gate.X * gate.X) + (gate.Y * gate.Y));
+                    float ox = len > 0.01f ? -gate.X / len : 0f;
+                    float oy = len > 0.01f ? -gate.Y / len : -1f;
+                    exitAt = new Vec2(gate.X + (ox * 4f), gate.Y + (oy * 4f));
+                    break;
+                }
+            }
+        }
+
+        if (WorldManager.TransferPlayer(instance, _worlds.OpenWorld, session.EntityId, exitAt))
         {
             session.CurrentWorld = _worlds.OpenWorld;
             _worlds.DestroyInstanceIfEmpty(instance);
             if (notify)
             {
-                Send(peer, new InstanceResult(true, 0, "Returned to the open world."));
+                Send(peer, new InstanceResult(true, 0, "Te revoilà devant l'entrée."));
             }
         }
     }
