@@ -466,6 +466,7 @@ namespace Aetheria.UnityClient
                 else if (_codexOpen) { _codexOpen = false; }
                 else if (_friendsOpen) { _friendsOpen = false; _friendMenuFor = ""; }
                 else if (_logoutAt > 0f) { _logoutAt = -1f; } // Escape cancels the logout timer
+                else if (_layoutEditMode) { _layoutEditMode = false; } // finish HUD editing — do NOT reopen the menu (that froze movement)
                 else if (_targetId >= 0) { SetAttackIntent(-1); } // Escape drops the target first
                 else { _menuOpen = !_menuOpen; _optionsTab = -1; _layoutEditMode = false; }
             }
